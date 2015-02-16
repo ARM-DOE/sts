@@ -1,9 +1,20 @@
+#!/usr/bin/env sh
+':' //; exec "$(command -v nodejs || command -v node)" "$0" "$@"
+
 // HTTP server
+// Name:
+//		file_transfer_http_server - starts the server waits for client to send files
+// Synopsis:
+//		file_transfer_http_server
+// Author: Laurentiu Dan Marinovici
+// Pacific Northwest National Laboratory, Richland, WA
+// Last update: 2015-02-12
 
 var http = require("http");
 var stream = require("stream");
 var path = require("path");
 var fs = require("fs");
+var util = require("util");
 var uploadedBytes = 0;
 
 // To create the same folder structure as on the client, the server will eliminate the path up to pathLimName from the file path,
@@ -11,10 +22,14 @@ var uploadedBytes = 0;
 var pathLimName = "ARM_project";
 var currFolder = process.cwd();
 
+// Following line clear the treminal window and places the cursor at position (0, 0)
+process.stdout.write("\u001B[2J\u001B[0;0f");
+
 var server = http.createServer();
 
 server
 	.on("request", function(req, res) { // req= request, used to learn details about the request, res = result, used to write back to client
+		// process.stdout.write(util.inspect(req) + "\n");
 		var uploadedBytes = 0;
 		req.on("data", function(reqBody) {
 			var reqFilePath = reqBody.toString();
@@ -53,16 +68,45 @@ server
 				inputStream.on("data", function(chunk) {
 					uploadedBytes += chunk.length; // Track the uploading process
 					var progress = (uploadedBytes / fileBytes) * 100;
-					res.write("Progress for " + path.basename(reqFilePath) + " : " + parseInt(progress, 10) + "%");
+					// process.stdout.write(Math.floor(progress * 10) / 10 + "\n");
+					if (uploadedBytes < fileBytes) {
+					// if (Math.floor(progress * 10) / 10 == 25.4) {
+						res.write("========================================================================");
+						res.write("uploadedBytes = " + uploadedBytes);
+						res.write("Progress for " + path.basename(reqFilePath) + " : " + progress.toFixed(3).toString() + "%"); // parseInt(progress, 10)
+						res.write("========================================================================");
+					}
+					else if (uploadedBytes == fileBytes) {
+						res.write("========================================================================");
+						res.write("Progress for " + path.basename(reqFilePath) + " : " + progress.toFixed(3).toString() + "%");
+						res.write("File " + path.basename(reqFilePath) + " done transferring.");
+						res.write("uploadedBytes = " + uploadedBytes);
+						uploadedBytes = 0;
+						res.write("uploadedBytes = " + uploadedBytes);
+						res.write("========================================================================");
+						/*
+						inputStream.on("end", function() { // emitting the end event once all chunks for each file have been uploaded
+							res.write("Transfer for " + path.basename(reqFilePath) + " DONE!");
+							outputStream.end();
+						});
+						*/
+					}
 				});
 				
-				inputStream.on("end", function() { // emitting the end event once all chuncks for each file have been uploaded
+				inputStream.on("end", function() { // emitting the end event once all chunks for each file have been uploaded
 					res.write("Transfer for " + path.basename(reqFilePath) + " DONE!");
-					res.end();
+					outputStream.end();
 				});
+				
+				outputStream.on("finish", function() {
+					res.write("Bytes written: " + outputStream.bytesWritten);
+					process.stdout.write("Bytes written: " + outputStream.bytesWritten + "\n");
+				});
+				
 			});
 		});
 		res.writeHead(200, {"Content-Type": "text/plain"}); // setting up the response type
+		// res.end();
 	})
 	.on("listening", function() {
 		var address = server.address();
