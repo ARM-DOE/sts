@@ -1,0 +1,1015 @@
+{
+	"Source": "/home/laurentiu/work/ARM_project/Site_transfer_test/output.json",
+	"FileList": [
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.1077645,
+		"FileName": "gndradC1.GndRadData.20131105170000.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/gndradC1.GndRadData.20131105170000.dat",
+		"FileSize": 15880,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.1077645,
+		"MD5": "177d5bb51501a42ca68bd485a600bae4"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.1117647,
+		"FileName": "gvrpC1.2013-11-05_17-01-10_lv1.csv",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/gvrpC1.2013-11-05_17-01-10_lv1.csv",
+		"FileSize": 24957,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.1117647,
+		"MD5": "3fd72eb0ff03f4abe9d37f021432bc95"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.1157646,
+		"FileName": "metC1.MetData.20131105170000.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/metC1.MetData.20131105170000.dat",
+		"FileSize": 26482,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.1157646,
+		"MD5": "e6225d5ab362e92ba8ba48a4d5bc2cbc"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.2237647,
+		"FileName": "mplpolfsC1.201311051700.mpl",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/mplpolfsC1.201311051700.mpl",
+		"FileSize": 9262080,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.2237647,
+		"MD5": "15b4b838127c9b31879b583f1e42ec81"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.2277646,
+		"FileName": "mwrC1.20_20131030_120014.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/mwrC1.20_20131030_120014.dat",
+		"FileSize": 33556,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.2277646,
+		"MD5": "7a96c7b3cea3e8fb5a5923cbd9722805"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.2277646,
+		"FileName": "mwrC1.20_20130720_140013.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/mwrC1.20_20130720_140013.dat",
+		"FileSize": 33556,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.2277646,
+		"MD5": "6bb5ccb4fd6485f8528907d866056b7b"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.2317646,
+		"FileName": "mwrC1.20_20131030_130014.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/mwrC1.20_20131030_130014.dat",
+		"FileSize": 33556,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.2317646,
+		"MD5": "1617aabd2d3743246ef9b74755f95fd9"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.2317646,
+		"FileName": "mwrC1.20_20131030_140014.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/mwrC1.20_20131030_140014.dat",
+		"FileSize": 33556,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.2317646,
+		"MD5": "d7c418e305f10cdc10957e7c4488c123"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.2357645,
+		"FileName": "mwrC1.20_20131105_030002.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/mwrC1.20_20131105_030002.dat",
+		"FileSize": 12411,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.2357645,
+		"MD5": "38b3fdf711cd07000c662aa8130d1e4c"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.2397647,
+		"FileName": "mwrC1.20_20131105_173706.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/mwrC1.20_20131105_173706.dat",
+		"FileSize": 15831,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.2397647,
+		"MD5": "028c5324c4924daaf943758cea529caf"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.2397647,
+		"FileName": "mwrC1.20_20131105_093009.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/mwrC1.20_20131105_093009.dat",
+		"FileSize": 1581,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.2397647,
+		"MD5": "5bb2bc984d05ee029349bc43b046c093"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.2437646,
+		"FileName": "mwrpC1.2013102703_lv1.csv",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/mwrpC1.2013102703_lv1.csv",
+		"FileSize": 18559,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.2437646,
+		"MD5": "229d8be3a48d96aad7b06b3eec23eadd"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.2437646,
+		"FileName": "mwrpC1.2013102704_lv1.csv",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/mwrpC1.2013102704_lv1.csv",
+		"FileSize": 17905,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.2437646,
+		"MD5": "6d4175062bd68116b63b8ee1377d51a1"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.4117646,
+		"FileName": "nsa915rwpC1.00.20141125.142002.raw.2014112512.spd",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsa915rwpC1.00.20141125.142002.raw.2014112512.spd",
+		"FileSize": 17393480,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.4117646,
+		"MD5": "dd67059826312f6321710535e51edd2c"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.4157646,
+		"FileName": "nsa915rwpC1.00.20141125.142002.raw.2014112512.sph",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsa915rwpC1.00.20141125.142002.raw.2014112512.sph",
+		"FileSize": 2900,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.4157646,
+		"MD5": "595370110a5f9e1e8059ce3c2d3fb25a"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.4197645,
+		"FileName": "nsagndradC1.00.20141006.090301.raw.GND_Table213.20141006080000.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsagndradC1.00.20141006.090301.raw.GND_Table213.20141006080000.dat",
+		"FileSize": 17195,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.4197645,
+		"MD5": "79a13fc1e910c62d4d2a6b6d3c54682d"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.4197645,
+		"FileName": "nsa915rwpC1.00.20141125.142002.raw.2014112513.cnw",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsa915rwpC1.00.20141125.142002.raw.2014112513.cnw",
+		"FileSize": 42408,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.4197645,
+		"MD5": "19a5592d92453121b24cefd936c53c99"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.4237645,
+		"FileName": "nsagndradC1.00.20141210.180302.raw.GND_Table213.20141210170000.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsagndradC1.00.20141210.180302.raw.GND_Table213.20141210170000.dat",
+		"FileSize": 17117,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.4237645,
+		"MD5": "215906efcae945d0d196f9450eb6ef6b"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.4237645,
+		"FileName": "nsagndradC1.00.20150113.030301.raw.GND_Table213.20150113020000.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsagndradC1.00.20150113.030301.raw.GND_Table213.20150113020000.dat",
+		"FileSize": 17383,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.4237645,
+		"MD5": "75edf0d30b884216e07fda044764584b"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.4277647,
+		"FileName": "nsametC1.00.20141210.180501.raw.METData.20141210170000.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsametC1.00.20141210.180501.raw.METData.20141210170000.dat",
+		"FileSize": 22507,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.4277647,
+		"MD5": "9da54571f0a5d076653d0889cee177ce"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.4317646,
+		"FileName": "nsametC1.00.20150113.030502.raw.METData.20150113020000.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsametC1.00.20150113.030502.raw.METData.20150113020000.dat",
+		"FileSize": 22884,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.4317646,
+		"MD5": "208a6f86f7b9ad0c9c1114eea0680629"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.4357646,
+		"FileName": "nsamfr10mC1.00.20141006.090201.raw.20141006090202.C1",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsamfr10mC1.00.20141006.090201.raw.20141006090202.C1",
+		"FileSize": 3072,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.4357646,
+		"MD5": "f43bb15c286edce15ebf4c191055d84c"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.4357646,
+		"FileName": "nsamfrsrC1.00.20141006.090201.raw.20141006090202.C1",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsamfrsrC1.00.20141006.090201.raw.20141006090202.C1",
+		"FileSize": 2944,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.4357646,
+		"MD5": "a50c384d802c3fbfea222b345963536d"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.5277646,
+		"FileName": "nsamplpolfsC1.00.20141006.090301.raw.201410060800.mpl",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsamplpolfsC1.00.20141006.090301.raw.201410060800.mpl",
+		"FileSize": 9262080,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.5277646,
+		"MD5": "02ac96dd003a1aebcd5f8df10af0a3e3"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.6237645,
+		"FileName": "nsamplpolfsC1.00.20141210.180302.raw.201412101700.mpl",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsamplpolfsC1.00.20141210.180302.raw.201412101700.mpl",
+		"FileSize": 9262080,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.6237645,
+		"MD5": "756a78ace212089e61429fa74be67139"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7197645,
+		"FileName": "nsamplpolfsC1.00.20150113.030301.raw.201501130200.mpl",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsamplpolfsC1.00.20150113.030301.raw.201501130200.mpl",
+		"FileSize": 9262080,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7197645,
+		"MD5": "bb25c4e568329a454a2c9ec134bffd44"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7237647,
+		"FileName": "nsamwrC1.00.20141006.090201.raw.20_20141006_080014.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsamwrC1.00.20141006.090201.raw.20_20141006_080014.dat",
+		"FileSize": 33556,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7237647,
+		"MD5": "a1eb841d3256ed383e414b44f075054e"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7237647,
+		"FileName": "nsamwrC1.00.20141210.180201.raw.20_20141210_170002.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsamwrC1.00.20141210.180201.raw.20_20141210_170002.dat",
+		"FileSize": 39771,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7237647,
+		"MD5": "b157e6fb91864938371c180bd740cd0c"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7277646,
+		"FileName": "nsamwrhfC1.00.20140624.230801.raw.14062422.LV0.NC",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsamwrhfC1.00.20140624.230801.raw.14062422.LV0.NC",
+		"FileSize": 188664,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7277646,
+		"MD5": "50ec3d9cab0e8a41167041f72801bc17"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7317646,
+		"FileName": "nsanimfrC1.00.20141006.090201.raw.20141006090202.C1",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsanimfrC1.00.20141006.090201.raw.20141006090202.C1",
+		"FileSize": 3328,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7317646,
+		"MD5": "dc8abb9b71926ad61c66cebfc865b962"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7317646,
+		"FileName": "nsamwrhfC1.00.20140624.230801.raw.14062422.MET.NC",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsamwrhfC1.00.20140624.230801.raw.14062422.MET.NC",
+		"FileSize": 50840,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7317646,
+		"MD5": "98b13d00b96c06b83cd57701c7ad3489"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7357645,
+		"FileName": "nsaskyradC1.00.20141006.090401.raw.SKY_Table213.20141006080000.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsaskyradC1.00.20141006.090401.raw.SKY_Table213.20141006080000.dat",
+		"FileSize": 31939,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7357645,
+		"MD5": "0f3f0eb3227cbd17161f9a70b9f7f02c"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7477646,
+		"FileName": "nsaskyradC1.00.20141210.180401.raw.SKY_Table213.20141210170000.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsaskyradC1.00.20141210.180401.raw.SKY_Table213.20141210170000.dat",
+		"FileSize": 31814,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7477646,
+		"MD5": "bf13954b41b83097d6eae6e04bc0b457"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7517645,
+		"FileName": "nsaskyradC1.00.20150113.030401.raw.SKY_Table213.20150113020000.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsaskyradC1.00.20150113.030401.raw.SKY_Table213.20150113020000.dat",
+		"FileSize": 31947,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7517645,
+		"MD5": "410007dd25282783f4be5a4d41688d3a"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7557645,
+		"FileName": "nsatsiC1.00.20141006.090201.raw.20141005101028_tsi.properties",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/nsatsiC1.00.20141006.090201.raw.20141005101028_tsi.properties",
+		"FileSize": 2817,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7557645,
+		"MD5": "b019f90282b1ebf27dac335169628343"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7597647,
+		"FileName": "skyradC1.SkyRadData.20131105170000.dat",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/skyradC1.SkyRadData.20131105170000.dat",
+		"FileSize": 29595,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7597647,
+		"MD5": "d208fc3819c5f0a05fc670167fd8c3ac"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7637646,
+		"FileName": "twrcam40mC1.nsatwrcam40mC1.20130826_175701.jpg",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/C1/twrcam40mC1.nsatwrcam40mC1.20130826_175701.jpg",
+		"FileSize": 51551,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7637646,
+		"MD5": "16ab37d7a94aa1f4cde1956402eed601"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7677646,
+		"FileName": "ecorE10.2013_1105_1730_E10.flx.gz",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/E10/ecorE10.2013_1105_1730_E10.flx.gz",
+		"FileSize": 1520,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7677646,
+		"MD5": "de049c590107378b80cd1f87317b1e6a"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7717645,
+		"FileName": "ecorE10.2013_1105_1730_E10_irga.raw.gz",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/E10/ecorE10.2013_1105_1730_E10_irga.raw.gz",
+		"FileSize": 219164,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7717645,
+		"MD5": "be864e9d9559868395c1191c8e088cc2"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7797647,
+		"FileName": "ecorE10.2013_1105_1730_E10_sonic.raw.gz",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/E10/ecorE10.2013_1105_1730_E10_sonic.raw.gz",
+		"FileSize": 264762,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7797647,
+		"MD5": "9582bb66dc4d7bd43ee90c296923c1c7"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7837646,
+		"FileName": "nsaecorE10.00.20141006.090301.raw.2014_1006_0800_E10.flx.gz",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/E10/nsaecorE10.00.20141006.090301.raw.2014_1006_0800_E10.flx.gz",
+		"FileSize": 1527,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7837646,
+		"MD5": "4a46dd92a0d29f05c531571aa7a5ee3f"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7877645,
+		"FileName": "nsaecorE10.00.20141006.090301.raw.2014_1006_0800_E10_irga.raw.gz",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/E10/nsaecorE10.00.20141006.090301.raw.2014_1006_0800_E10_irga.raw.gz",
+		"FileSize": 247991,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7877645,
+		"MD5": "9918280fc091e5f490def119b423df8b"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7917645,
+		"FileName": "nsaecorE10.00.20141006.090301.raw.2014_1006_0800_E10_sonic.raw.gz",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/E10/nsaecorE10.00.20141006.090301.raw.2014_1006_0800_E10_sonic.raw.gz",
+		"FileSize": 311698,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7917645,
+		"MD5": "b22f570c1b82e9846b94909988f63a03"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7957647,
+		"FileName": "nsaecorE10.00.20141006.090301.raw.2014_1006_0830_E10.flx.gz",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/E10/nsaecorE10.00.20141006.090301.raw.2014_1006_0830_E10.flx.gz",
+		"FileSize": 1534,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7957647,
+		"MD5": "b5e98b0d4104c08205b288861ce779ce"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.7997646,
+		"FileName": "nsaecorE10.00.20141006.090301.raw.2014_1006_0830_E10_irga.raw.gz",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/E10/nsaecorE10.00.20141006.090301.raw.2014_1006_0830_E10_irga.raw.gz",
+		"FileSize": 247361,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.7997646,
+		"MD5": "e2cc2b5f196262441710898a03fc0882"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8077645,
+		"FileName": "nsaecorE10.00.20141210.180302.raw.2014_1210_1700_E10.flx.gz",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/E10/nsaecorE10.00.20141210.180302.raw.2014_1210_1700_E10.flx.gz",
+		"FileSize": 930,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8077645,
+		"MD5": "3b573c080d5c3b3e07131b2a9bf497ea"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8077645,
+		"FileName": "nsaecorE10.00.20141006.090301.raw.2014_1006_0830_E10_sonic.raw.gz",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/E10/nsaecorE10.00.20141006.090301.raw.2014_1006_0830_E10_sonic.raw.gz",
+		"FileSize": 312532,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8077645,
+		"MD5": "742ffca27c042ffbc4948ef3f5f6f44b"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8117645,
+		"FileName": "nsaecorE10.00.20141210.180302.raw.2014_1210_1700_E10_irga.raw.gz",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/E10/nsaecorE10.00.20141210.180302.raw.2014_1210_1700_E10_irga.raw.gz",
+		"FileSize": 330985,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8117645,
+		"MD5": "93414fb9b7f6a29da0f834cb9e2ebbf2"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8157647,
+		"FileName": "nsaecorE10.00.20141210.180302.raw.2014_1210_1730_E10.flx.gz",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/E10/nsaecorE10.00.20141210.180302.raw.2014_1210_1730_E10.flx.gz",
+		"FileSize": 932,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8157647,
+		"MD5": "d1539ec820658377b193f1ba1034ef10"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8157647,
+		"FileName": "nsaecorE10.00.20141210.180302.raw.2014_1210_1700_E10_sonic.raw.gz",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/E10/nsaecorE10.00.20141210.180302.raw.2014_1210_1700_E10_sonic.raw.gz",
+		"FileSize": 77879,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8157647,
+		"MD5": "1b9f2dfd08c6ba58ef805b4d28a727e5"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8237646,
+		"FileName": "nsaecorE10.00.20141210.180302.raw.2014_1210_1730_E10_irga.raw.gz",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/E10/nsaecorE10.00.20141210.180302.raw.2014_1210_1730_E10_irga.raw.gz",
+		"FileSize": 327806,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8237646,
+		"MD5": "9519fb601928b345c4cc09dd6e9e5c18"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8277645,
+		"FileName": "nsaecorE10.00.20141210.180302.raw.2014_1210_1730_E10_sonic.raw.gz",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/collection/E10/nsaecorE10.00.20141210.180302.raw.2014_1210_1730_E10_sonic.raw.gz",
+		"FileSize": 78352,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8277645,
+		"MD5": "72fd927971a5b2ca534f6f65ab0a2230"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8357646,
+		"FileName": "gvrC1.1383674641.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/C1/gvrC1.1383674641.log",
+		"FileSize": 1615,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8357646,
+		"MD5": "d8a84645da7387c5c8d9ddbd92539908"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8357646,
+		"FileName": "gndradC1.1383674581.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/C1/gndradC1.1383674581.log",
+		"FileSize": 1743,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8357646,
+		"MD5": "63f61c01e3989702053046d8e2cebe2f"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8397646,
+		"FileName": "gvrpC1.1383674641.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/C1/gvrpC1.1383674641.log",
+		"FileSize": 7752,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8397646,
+		"MD5": "ff2ab58538f462fd3b75dbde8333c39d"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8397646,
+		"FileName": "kazrC1.1375796627.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/C1/kazrC1.1375796627.log",
+		"FileSize": 1235,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8397646,
+		"MD5": "708a6ed8dea8eb0dca450d9810a29de4"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8437645,
+		"FileName": "kazrC1.1383250201.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/C1/kazrC1.1383250201.log",
+		"FileSize": 8076,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8437645,
+		"MD5": "52cddaa564e01321e07aac775164e75e"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8477645,
+		"FileName": "mplpolfsC1.1383674581.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/C1/mplpolfsC1.1383674581.log",
+		"FileSize": 1773,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8477645,
+		"MD5": "35be3ed4522e8e39a749611d322286cb"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8477645,
+		"FileName": "nsakazrC1.20140322.201002.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/C1/nsakazrC1.20140322.201002.comlog",
+		"FileSize": 1934,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8477645,
+		"MD5": "933ce7dd8c493a871b3cda46cd04ff1d"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8477645,
+		"FileName": "mwrC1.1383674521.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/C1/mwrC1.1383674521.log",
+		"FileSize": 2500,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8477645,
+		"MD5": "dcd202ecea8c74b1e93bfcb03382d21b"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8517647,
+		"FileName": "skyradC1.1383674641.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/C1/skyradC1.1383674641.log",
+		"FileSize": 1830,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8517647,
+		"MD5": "835f9afb43c944d2e316b670d260e8b4"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8517647,
+		"FileName": "tsiC1.1383674521.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/C1/tsiC1.1383674521.log",
+		"FileSize": 1738,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8517647,
+		"MD5": "6c0b4b9b4364982eb502c429a86224b7"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8557646,
+		"FileName": "twrcam40mC1.1374148621.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/C1/twrcam40mC1.1374148621.log",
+		"FileSize": 709,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8557646,
+		"MD5": "96d2ac518aad0f1fd048e01a3a5e2513"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8597646,
+		"FileName": "wsacrspecC1.1374331801.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/C1/wsacrspecC1.1374331801.log",
+		"FileSize": 1741,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8597646,
+		"MD5": "e277076f7214436238b1828bb060ec5f"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8597646,
+		"FileName": "twrcam40mC1.1383251222.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/C1/twrcam40mC1.1383251222.log",
+		"FileSize": 709,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8597646,
+		"MD5": "520207e454c42230bf900e602e7a2b81"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8637645,
+		"FileName": "xsaprC1.1383250504.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/C1/xsaprC1.1383250504.log",
+		"FileSize": 795,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8637645,
+		"MD5": "d9cdd48b90dde6315a7fca3fb7d60689"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8677645,
+		"FileName": "sebsE10.1383228361.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/E10/sebsE10.1383228361.log",
+		"FileSize": 8544,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8677645,
+		"MD5": "34feb28dd9c9d334fc6c71d9cc716ecc"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8677645,
+		"FileName": "ecorE10.1383674581.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/E10/ecorE10.1383674581.log",
+		"FileSize": 2792,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8677645,
+		"MD5": "5f89b5e3ebbe76fd52ad86b4619dc871"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8717647,
+		"FileName": "ecorE11.1383674581.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/E11/ecorE11.1383674581.log",
+		"FileSize": 1245,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8717647,
+		"MD5": "649e2533c304a2f4529c34ea0de1b6c6"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8757646,
+		"FileName": "nsaecorE10.20150113.030301.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsaecorE10.20150113.030301.comlog",
+		"FileSize": 4054,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8757646,
+		"MD5": "231c2513427c9285fe2d0bf32da54db7"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8757646,
+		"FileName": "nsaecorE10.20141210.180302.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsaecorE10.20141210.180302.comlog",
+		"FileSize": 4042,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8757646,
+		"MD5": "6e38f0a3a1c9f6a963264bffcd3f30b1"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8757646,
+		"FileName": "nsagndradC1.20150113.030301.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsagndradC1.20150113.030301.comlog",
+		"FileSize": 1760,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8757646,
+		"MD5": "70ed6d5016d6030dd3d5a62167b56d82"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8797646,
+		"FileName": "nsagvrC1.20150113.030401.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsagvrC1.20150113.030401.comlog",
+		"FileSize": 1361,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8797646,
+		"MD5": "07a6ff91151af57f5fe82e06a578646c"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8797646,
+		"FileName": "nsagvrC1.20141006.090401.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsagvrC1.20141006.090401.comlog",
+		"FileSize": 1361,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8797646,
+		"MD5": "1418e5bd487c5af5579518657c18c32d"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8837645,
+		"FileName": "nsakasacrC1.20141006.090502.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsakasacrC1.20141006.090502.comlog",
+		"FileSize": 280,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8837645,
+		"MD5": "cdcc097a78dcbd12286b0905361de4e9"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8837645,
+		"FileName": "nsakasacrC1.20141210.180501.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsakasacrC1.20141210.180501.comlog",
+		"FileSize": 280,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8837645,
+		"MD5": "677b0ec5b0182d1cd59d7ffd0c646d29"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8877645,
+		"FileName": "nsamfrsrC1.20141210.180201.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsamfrsrC1.20141210.180201.comlog",
+		"FileSize": 301,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8877645,
+		"MD5": "e55966564b919d3ad835031f7db01d5f"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8877645,
+		"FileName": "nsamfrsrC1.20141006.090201.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsamfrsrC1.20141006.090201.comlog",
+		"FileSize": 1742,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8877645,
+		"MD5": "1c25f69000edd99a147c9091b1a68474"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8917646,
+		"FileName": "nsamplpolfsC1.20141006.090301.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsamplpolfsC1.20141006.090301.comlog",
+		"FileSize": 1696,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8917646,
+		"MD5": "341bf96911e23a9693a199a311ee7197"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8917646,
+		"FileName": "nsamplpolfsC1.20141210.180302.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsamplpolfsC1.20141210.180302.comlog",
+		"FileSize": 1697,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8917646,
+		"MD5": "ee114ff28668a9462b8a22f34a778de5"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8957646,
+		"FileName": "nsamwrC1.20150113.030201.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsamwrC1.20150113.030201.comlog",
+		"FileSize": 1679,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8957646,
+		"MD5": "b177128f5f4bb33b7382cb8b8266e81b"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8957646,
+		"FileName": "nsamplpolfsC1.20150113.030301.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsamplpolfsC1.20150113.030301.comlog",
+		"FileSize": 1696,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8957646,
+		"MD5": "be6426f3de592636062ea02a4e6f67d3"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.8997645,
+		"FileName": "nsaskyradC1.20141006.090401.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsaskyradC1.20141006.090401.comlog",
+		"FileSize": 1760,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.8997645,
+		"MD5": "0465a0bda82f361a0f57faf21bff07d4"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9037645,
+		"FileName": "nsaskyradC1.20141210.180401.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsaskyradC1.20141210.180401.comlog",
+		"FileSize": 1760,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9037645,
+		"MD5": "634bd5d4c994999bded058b51fe2b7c4"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9037645,
+		"FileName": "nsaskyradC1.20150113.030401.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsaskyradC1.20150113.030401.comlog",
+		"FileSize": 1760,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9037645,
+		"MD5": "e949eec55291234d477329b8625d002f"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9077647,
+		"FileName": "nsasondeC1.20141210.180501.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsasondeC1.20141210.180501.comlog",
+		"FileSize": 1345,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9077647,
+		"MD5": "f72a45bfe3b49f815834144877467c7c"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9077647,
+		"FileName": "nsasondeC1.20150113.030502.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsasondeC1.20150113.030502.comlog",
+		"FileSize": 1345,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9077647,
+		"MD5": "89ccc3c1f4701664b26838a5a19dea3e"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9117646,
+		"FileName": "NSASONDEC1@collector-nsac1.1412586302.email",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/NSASONDEC1@collector-nsac1.1412586302.email",
+		"FileSize": 169,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9117646,
+		"MD5": "96e2e9a6b3b1ee5b657424232ef76609"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9117646,
+		"FileName": "nsatpsC1.20141006.090502.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsatpsC1.20141006.090502.comlog",
+		"FileSize": 1147,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9117646,
+		"MD5": "1a8012050fbb670ce07286e5c614dd3c"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9157646,
+		"FileName": "nsatpsS01.20150113.030301.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsatpsS01.20150113.030301.comlog",
+		"FileSize": 310,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9157646,
+		"MD5": "ecd7b09c10c468d980feddc08b4e8684"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9157646,
+		"FileName": "nsawsacrspecC1.20150119.185002.comlog",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/nsawsacrspecC1.20150119.185002.comlog",
+		"FileSize": 283,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9157646,
+		"MD5": "2c27797731385a62db39aca9bf05aa0b"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9197645,
+		"FileName": "aeriS01.1383674521.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/S01/aeriS01.1383674521.log",
+		"FileSize": 282,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9197645,
+		"MD5": "dc31fb98cb1e56fe62b16e7cb393204c"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9237645,
+		"FileName": "tpsS01.1383674581.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/S01/tpsS01.1383674581.log",
+		"FileSize": 339,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9237645,
+		"MD5": "ed76c745bd18cd63f7405ee7ad2a398c"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9237645,
+		"FileName": "sondeS01.1383674521.log",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/comlogs/S01/sondeS01.1383674521.log",
+		"FileSize": 1595,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9237645,
+		"MD5": "696892fad033e42da07a3e29d290aeb8"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9277647,
+		"FileName": "nsastsC1.20130806.134501.asc",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/info/nsastsC1.20130806.134501.asc",
+		"FileSize": 1510,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9277647,
+		"MD5": "00adad45632556f3c23c8ca7401129c5"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9317646,
+		"FileName": "nsastsC1.20131031.201502.asc",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/info/nsastsC1.20131031.201502.asc",
+		"FileSize": 1510,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9317646,
+		"MD5": "c391e1610926bd68cd01ddb2ab7311ee"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9317646,
+		"FileName": "nsastsC1.20131105.180501.asc",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/info/nsastsC1.20131105.180501.asc",
+		"FileSize": 1584,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9317646,
+		"MD5": "4befd3f50105459d8524d251bdf800f9"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9357646,
+		"FileName": "nsastsC1.20140302.011502.asc",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/info/nsastsC1.20140302.011502.asc",
+		"FileSize": 1584,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9357646,
+		"MD5": "e7a3160af5f062565b0f423944f12a6d"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9357646,
+		"FileName": "nsastsC1.20140918.225001.asc",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/info/nsastsC1.20140918.225001.asc",
+		"FileSize": 1584,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9357646,
+		"MD5": "4a0482d655335838f02c542fa7a1740d"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9397645,
+		"FileName": "nsastsC1.20150119.184502.asc",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/info/nsastsC1.20150119.184502.asc",
+		"FileSize": 1584,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9397645,
+		"MD5": "81ea79fdfaa852cd1708c5985bfad270"
+},
+{
+		"CreationTime": "Wed Jan 21 16:45:12 2015",
+		"CreationTimeSec": 1421887512.9397645,
+		"FileName": "nsastsC1.20141006.090502.asc",
+		"FilePath": "/home/laurentiu/work/ARM_project/File_samples/info/nsastsC1.20141006.090502.asc",
+		"FileSize": 1584,
+		"LastModTimeL": "Wed Jan 21 16:45:12 2015",
+		"LastModTimeSec": 1421887512.9397645,
+		"MD5": "9d22e2f32c58001875cd79fea2499726"
+}
+	]
+}
