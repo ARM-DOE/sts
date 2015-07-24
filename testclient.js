@@ -1,5 +1,6 @@
 var request = require('request');
 var colors = require('colors');
+var fs = require('fs');
 
 colors.setTheme({
   silly:           "rainbow",
@@ -28,7 +29,33 @@ var request = require('request');
 // })
 
 
-var format = require('string-format');
-format.extend(String.prototype)
-// console.log(format("hello, {}", "thom"));
-console.log("hello, {}".format("Thom"));
+// var format = require('string-format');
+// format.extend(String.prototype)
+// // console.log(format("hello, {}", "thom"));
+// console.log("hello, {}".format("Thom"));
+
+
+function makeRecDirs(curPath, newFoldTree) {
+	var splitFoldTree = newFoldTree.split(path.sep);
+	var newPath = "{}/{}".format(curPath, splitFoldTree[0]);
+
+	if (splitFoldTree[0].length > 0) {
+		var existsSync = fs.existsSync(newPath);
+		if (existsSync) {
+			makeRecDirs(newPath, splitFoldTree.slice(1).join(path.sep));
+			// makeRecDirs(newPath, newFoldTree.substring(splitFoldTree[0].length + 1, newFoldTree.length));
+		} else {
+			fs.mkdirSync(newPath);
+			process.stdout.write("Folder " + newPath + " has been created!\n");
+			makeRecDirs(newPath, splitFoldTree.slice(1).join(path.sep));
+			// makeRecDirs(newPath, newFoldTree.substring(splitFoldTree[0].length + 1, newFoldTree.length));
+		}
+	}
+}
+
+
+var path = "/Users/will202";
+var new_path = "Programming/arm/sts/test";
+buildPath(path, new_path, function(result) {
+	console.log(result);
+});

@@ -23,6 +23,8 @@ var path = require("path");
 var httpClient = require("./startSenderFormDataPartFile");
 // var httpClient = require("./startCoreHTTPSenderPartFile");
 var colors = require("colors");
+var format = require('string-format');
+format.extend(String.prototype)
 
 // Set color theme
 colors.setTheme({
@@ -39,8 +41,10 @@ colors.setTheme({
   formFile:        "yellow",
   formFileBegin:   "yellow",
   formField:       "red",
-  formEnd:         "cyan"
+  formEnd:         "cyan",
+  log:             "magenta"
 });
+
 
 // Following line clear the treminal window and places the cursor at position (0, 0)
 process.stdout.write("\u001B[2J\u001B[0;0f");

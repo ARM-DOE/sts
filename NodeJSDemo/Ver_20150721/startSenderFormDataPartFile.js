@@ -88,18 +88,15 @@ function startClient(fileListSource, uploadSize) {
 				// Print out the headers for each part of the form
 				// process.stdout.write(util.inspect(options.headers) + "\n");
 				var sender = http.request(options, responseHandler);
-				sender.on('response', function(err, res){
-					console.log("Sender Received Response:\nStatus Code: {}".format(res.statusCode).info)
-				});
 
 				var outputStream = fs.createWriteStream("./formFile.txt");
 				var maxUploadSize = uploadSize * Math.pow(2, 10); // Convert size to Kb
 				var startByte = 0;
 				var endByte = 0;
 				var updateStack = [];
-				// for (var i = 0; i < fileList.length; i++) {
+				for (var i = 0; i < fileList.length; i++) {
 				// Replaced fileList.length with constant 6, to have only 5 files to transfer so I can easily debug; uncomment line above and comment line below for normal run
-				for (var i = 0; i < 2; i++) {
+				// for (var i = 0; i < 2; i++) {
 					var chunkNo = 1;
 					// process.stdout.write(util.inspect(fileList[i].FileName) + "\n");
 					var jsonMetaString = JSON.stringify(fileList[i]);
@@ -138,22 +135,21 @@ function startClient(fileListSource, uploadSize) {
 
 					}
 				}
-				console.log(form);
-				// form.pipe(outputStream);
-				// Q.all(updateStack).then(function() {
-				// 	process.stdout.write("\n\n+++++++++++++++++++++++++ ALL STACK PROMISES DUE TO CHUNKING FULFILLED +++++++++++++++++++++++++++++++++\n\n".log);
-				// 	// process.stdout.write(util.inspect(form) + "\n\n");
-				// 	try {
-				// 		process.stdout.write("\n\n-------------- Reached the PIPING zone!!! -----------------------------------\n\n".verbose);
-				// 		// form.pipe(outputStream);
-				// 		form.pipe(sender);
-				// 	} catch (err) {
-				// 		process.stdout.write("\n\n WTF kind of error is this? ----- {}\n\n\n".format(err).error);
-				// 		return;
-				// 	}
-				// });
+				form.pipe(outputStream);
+				Q.all(updateStack).then(function() {
+					process.stdout.write("\n\n+++++++++++++++++++++++++ ALL STACK PROMISES DUE TO CHUNKING FULFILLED +++++++++++++++++++++++++++++++++\n\n".log);
+					// process.stdout.write(util.inspect(form) + "\n\n");
+					try {
+						process.stdout.write("\n\n-------------- Reached the PIPING zone!!! -----------------------------------\n\n".verbose);
+						// form.pipe(outputStream);
+						form.pipe(sender);
+					} catch (err) {
+						process.stdout.write("\n\n WTF kind of error is this? ----- {}\n\n\n".format(err).error);
+						return;
+					}
+				});
 
-				form.pipe(sender); // this automatically calls sender.end and end the request
+				// form.pipe(sender); // this automatically calls sender.end and end the request
 			} else {
 				process.stdout.write("The JSON object does have the property you are looking for!\n".error);
 			}
