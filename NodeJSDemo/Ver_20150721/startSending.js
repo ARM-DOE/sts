@@ -92,6 +92,17 @@ function parseInputArgs() {
 var args = parseInputArgs();
 var fileListSource = args[0];
 var uploadSize = args[1];
+
+if (fileListSource == undefined) {
+	console.log("File List Source is a required argument. Specify with -f or --file option".error);
+	process.exit();
+}
+
+if (uploadSize == undefined) {
+	console.log("Upload Size is a required argument. Specify with -u or --upload option".error);
+	process.exit();
+}
+
 fs.exists(fileListSource, function(exists) {
 	if (exists) {
 		process.stdout.write(path.resolve(fileListSource) + "\n");

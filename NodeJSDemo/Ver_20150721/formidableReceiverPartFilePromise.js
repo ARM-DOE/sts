@@ -175,7 +175,7 @@ server
           };
         });
         // ==================================================================================================
-        
+
         // ========================== FORM field EVENT =======================================================
         form.on("field", function(fieldName, fieldValue) {
           try {
@@ -209,7 +209,7 @@ server
     		  };
         });
         // ==================================================================================================
-        
+
         // ========================== FORM end EVENT =======================================================
         form.on("end", function() {
           try {
@@ -223,7 +223,7 @@ server
             process.stdout.write(colors.formEnd("*********************************************************************\n"));
             process.stdout.write(colors.formEnd("There is a total of (this.openedFiles.length = ) " + this.openedFiles.length + " files and chunks of files!\n"));
             process.stdout.write(colors.formEnd("*********************************************************************\n"));
-            for (var i = 0; i < this.openedFiles.length; i++) {  
+            for (var i = 0; i < this.openedFiles.length; i++) {
               process.stdout.write(colors.formEnd("i = " + i + "\n"));
               // var j = 0;
               // skip files until the current one is found inside the fields matrix
@@ -282,7 +282,7 @@ server
                   this.emit("error", "FILE ---- THIS IS MAD !!!!!!!!!!!!!!!!!!! ----- CODE " + res.statusCode);
                 };
               }
-              else { // if file comes in chunks           
+              else { // if file comes in chunks
                 // Temporary path to combined file will be in the same location as the chunks
   							var tempDestFile = path.join(path.dirname(this.openedFiles[i].path), this.openedFiles[i].name);
                 if (tempDestFiles.indexOf(tempDestFile) < 0) {
@@ -293,7 +293,7 @@ server
                 } else {
                   process.stdout.write(colors.formEnd("The path for the chunk's parent already exists at: " + tempDestFiles[tempDestFiles.indexOf(tempDestFile)] + ".\n"));
                 };
-  							
+
                 chunkFiles.push(this.openedFiles[i].path);
                 chunkFields.push(fields[i]);
                 // If the chunk has been correctly received, based on its hash, read it and then write it to the corresponding position in the output
@@ -333,7 +333,7 @@ server
                    process.stdout.write(colors.formEnd("The originals are: " + tempDestFiles + "\n"));
                    process.stdout.write(colors.formEnd("The destination paths are: " + destFilePaths + "\n"));
                    process.stdout.write(colors.formEnd("The original MD5s are: " + origFileMD5s + "\n"));
-                   for (iFile in tempDestFiles) { 
+                   for (iFile in tempDestFiles) {
                     var sentMD5 = origFileMD5s[iFile];
                     validateAndMove(tempDestFiles[iFile], origFileMD5s[iFile], destFilePaths[iFile]).spread(function (del, toDelete) {
                       if (del === true) {
@@ -352,7 +352,7 @@ server
                  catch (err) {
                    process.stdout.write(colors.formEnd(err + " >>>> ERROR DURING THE STITCHED FILE VALIDATION AND MOVE!\n"));
                  }
-               }); 
+               });
             } else {
               process.stdout.write("No need for PROMISES? That means, no chunked files, or something might have been wrong with some chunks.\n");
             };
@@ -384,7 +384,7 @@ server
       }
     return; // return from the IF statement
     }; // end of IF statement
-	
+
     /*
 	  res.writeHead(200, {"content-type": "text/html"});
 	  res.end(
@@ -405,7 +405,7 @@ server
 	  var address = server.address();
 	  process.stdout.write("This HTTP server " + address.address + " is designed to listen on port " + address.port + "\n");
   });
-	
+
 function makeRecDirs(curPath, newFoldTree) {
   var splitFoldTree = newFoldTree.split(path.sep);
   // process.stdout.write(curPath + "\n");
@@ -426,7 +426,7 @@ function makeRecDirs(curPath, newFoldTree) {
   }
 };
 
-// Reading each chunk as it arrives into a buffer to be then stitched to a temporary file representing a temporary copy of the original file on the receiver side 
+// Reading each chunk as it arrives into a buffer to be then stitched to a temporary file representing a temporary copy of the original file on the receiver side
 var chunkRead = function (chunkFile, fields, destFile) {
   var deferred = Q.defer();
   // process.stdout.write("***************** GOT INSIDE THE chunkRead PROMISE - The Beginning!!! -->> " + chunkFile + " **************************\n");
@@ -520,7 +520,7 @@ var validateAndMove = function (filePath, origMD5, destPath) {
   var deferred = Q.defer();
   var hashMD5;
   var crap = fs.statSync(filePath);
-  // process.stdout.write("<<<<<<<<<<<<<<<<<<< Inside calculateMD5 -- beginning >>>>>>>>>>>>>>>>>>>\n");  
+  // process.stdout.write("<<<<<<<<<<<<<<<<<<< Inside calculateMD5 -- beginning >>>>>>>>>>>>>>>>>>>\n");
   var chunkMD5 = crypto.createHash("md5");
   // process.stdout.write(colors.info("Right at the start of validateAndMove -- chunkMD5 = " + util.inspect(chunkMD5) + "\n"));
   // process.stdout.write(colors.info("Right at the start of validateAndMove -- filePath = " + filePath + " with size " + crap.size + "\n"));
@@ -575,7 +575,7 @@ var readWriteChunk = function (chunkFilePath, chunkFields, destFilePath) {
     });
     // process.stdout.write(colors.warn("destFilePath = " + __dirname + "/" + destFilePath + "\n"));
     // writeStream.write(readStream.toString());
-    
+
     /*
     readStream.on("data", function(data) {
       var d = data.toString();
@@ -586,7 +586,7 @@ var readWriteChunk = function (chunkFilePath, chunkFields, destFilePath) {
       //var d = writeStream.toString();
       //process.stdout.write(colors.info(d + "\n"));
     })
-    
+
     readStream.on("end", function() {
       process.stdout.write(colors.verbose("End of READSTREAM!!!!\t" + writeStream.bytesWritten + "\n"));
       writeStream.end();
@@ -598,7 +598,7 @@ var readWriteChunk = function (chunkFilePath, chunkFields, destFilePath) {
       deferred.resolve("readWriteChunk RESOLVED for " + chunkFilePath + " into " + destFilePath + " at " + chunkFields["StartByte"] + "\t");
       deferred.resolve();
     });
-    
+
     //writeStream.write(readStream);
     //deferred.resolve();
   } catch (err) {
