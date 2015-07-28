@@ -15,7 +15,7 @@ import (
 
 // errorHandler is called when any page that is not a registered API method is requested.
 func errorHandler(w http.ResponseWriter, r *http.Request) {
-    fmt.Fprint(w, "Page does not exist")
+    fmt.Fprint(w, http.StatusNotFound)
 }
 
 // handler receives a file from the sender via PUT request, with an added HTTP header with key "metadata" that describes the file.
@@ -66,5 +66,5 @@ func decodeJSON(json string) map[string]string {
 func main() {
     http.HandleFunc("/send.go", handler)
     http.HandleFunc("/", errorHandler)
-    http.ListenAndServe(":8080", nil)
+    http.ListenAndServe(":8081", nil)
 }

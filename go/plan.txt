@@ -1,0 +1,14 @@
+SENDER PROGRAM:
+
+- Make a system that frequently scans the file system and writes unsent files to a cache file, after it completes a check, mark in the file the last time it checked
+- On startup, read the file cache and update it based on the modification time of new files and the “last check time” from the cache file
+   - Possible fail point if system time changes.
+- Create a concept of a “bin” (of a set file size) that contains both full and partial files. A bin metadata structure needs to be devised which describes the contents of the bin, and has an md5 for each partial file in the bin. One bin will be sent for every request.
+- Write a system that makes sure the “cache file” cannot be corrupted. Write to a temp file and then rename, probably
+- Create a web server with api methods:
+	- get_file(name, bytes I’ve already got)
+
+RECIEVER PROGRAM:
+
+- Like the sender, keep a small cache of files/chunks that you are in the middle of receiving. Note the amount of bytes received for each part of the bin.
+- Save files with a temporary extension, when they are done, verify md5 for each file/chunk.

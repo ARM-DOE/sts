@@ -13,7 +13,7 @@ func main() {
     const SENDER_COUNT = 10
     var WATCH_DIRECTORY string
     fmt.Print("Directory to watch: ")
-    fmt.Scan(&WATCH_DIRECTORY)
+    WATCH_DIRECTORY = "watch_directory" //fmt.Scan(&WATCH_DIRECTORY)
     _, err := os.Open(WATCH_DIRECTORY)
     if err != nil {
         fmt.Println("Directory does not exist")
@@ -22,6 +22,8 @@ func main() {
 
     direc_listener := ListenerFactory(WATCH_DIRECTORY)
     go direc_listener.listen()
+    server := WebserverFactory()
+    go server.startServer() // Starts webserver
 
     // Dispatch senders
     dispatched_senders := 0
