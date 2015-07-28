@@ -18,11 +18,12 @@ type Listener struct {
     walked_directories []string
     event_channel      chan notify.EventInfo
     file_queue         chan string
+    cache              *Cache
     watch_directory    string
 }
 
 // ListenerFactory creates and returns a new Listener struct.
-func ListenerFactory(watch_directory string) *Listener {
+func ListenerFactory(watch_directory string, cache *Cache) *Listener {
     directory_list := make([]string, 0, 10)
     file_queue := make(chan string, 1)
     event_channel := make(chan notify.EventInfo, 1)
@@ -34,6 +35,7 @@ func ListenerFactory(watch_directory string) *Listener {
     new_listener.event_channel = event_channel
     new_listener.file_queue = file_queue
     new_listener.watch_directory = watch_directory
+    new_listener.cache = cache
     return new_listener
 }
 
@@ -54,6 +56,7 @@ func (listener *Listener) handleAddition(file_path string) {
     fmt.Println(file_path, listener.watch_directory)
     store_path := strings.Replace(file_path, filepath.Dir(listener.watch_directory)+"/", "", 1)
     json_summary := fmt.Sprintf(`{"file": {"path": "%s", "md5": "%x", "size": "%d", "modtime": "%s", "store_path": "%s"}}`, file_path, md5_hash.Sum(nil), info.Size(), info.ModTime(), store_path)
+    listener.cache.addFile(file_path)
     listener.file_queue <- json_summary
     fmt.Println(json_summary)
 }

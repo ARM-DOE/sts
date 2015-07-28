@@ -12,6 +12,7 @@ import (
 // Dispatching of senders is initially staggered to space out requests to the queue.
 func main() {
     const SENDER_COUNT = 10
+    const CACHE_FILE_NAME = "file_cache.dat"
     var WATCH_DIRECTORY string
     fmt.Print("Directory to watch: ")
     WATCH_DIRECTORY = "watch_directory" //fmt.Scan(&WATCH_DIRECTORY)
@@ -21,8 +22,12 @@ func main() {
         main()
     }
     WATCH_DIRECTORY, _ = filepath.Abs(WATCH_DIRECTORY)
+    file_cache := CacheFactory(CACHE_FILE_NAME, WATCH_DIRECTORY)
+    file_cache.loadCache()
+    fmt.Println(file_cache.last_update)
+    file_cache.scanDir()
 
-    direc_listener := ListenerFactory(WATCH_DIRECTORY)
+    direc_listener := ListenerFactory(WATCH_DIRECTORY, file_cache)
     go direc_listener.listen()
     server := WebserverFactory()
     go server.startServer() // Starts webserver
@@ -41,7 +46,7 @@ func main() {
     fmt.Println("Senders dispatched")
 
     for true {
-        time.Sleep(10 * time.Second)
+        time.Sleep(1000 * time.Millisecond)
     }
 }
 
