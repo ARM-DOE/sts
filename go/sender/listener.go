@@ -7,6 +7,7 @@ import (
     "io"
     "io/ioutil"
     "os"
+    "path/filepath"
     "strings"
 )
 
@@ -16,14 +17,14 @@ type Listener struct {
     directory          string
     walked_directories []string
     event_channel      chan notify.EventInfo
-    file_queue         *Queue
+    file_queue         chan string
     watch_directory    string
 }
 
 // ListenerFactory creates and returns a new Listener struct.
 func ListenerFactory(watch_directory string) *Listener {
     directory_list := make([]string, 0, 10)
-    file_queue := QueueFactory()
+    file_queue := make(chan string, 1)
     event_channel := make(chan notify.EventInfo, 1)
     notify.Watch(watch_directory+"/...", event_channel, notify.Create)
 
@@ -50,9 +51,10 @@ func (listener *Listener) handleAddition(file_path string) {
     }
     md5_hash := md5.New()
     io.WriteString(md5_hash, string(bytes_of_file))
-    store_path := strings.Replace(file_path, listener.watch_directory+"/", "", 1)
+    fmt.Println(file_path, listener.watch_directory)
+    store_path := strings.Replace(file_path, filepath.Dir(listener.watch_directory)+"/", "", 1)
     json_summary := fmt.Sprintf(`{"file": {"path": "%s", "md5": "%x", "size": "%d", "modtime": "%s", "store_path": "%s"}}`, file_path, md5_hash.Sum(nil), info.Size(), info.ModTime(), store_path)
-    listener.file_queue.add(json_summary)
+    listener.file_queue <- json_summary
     fmt.Println(json_summary)
 }
 

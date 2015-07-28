@@ -3,6 +3,7 @@ package main
 import (
     "fmt"
     "os"
+    "path/filepath"
     "time"
 )
 
@@ -19,6 +20,7 @@ func main() {
         fmt.Println("Directory does not exist")
         main()
     }
+    WATCH_DIRECTORY, _ = filepath.Abs(WATCH_DIRECTORY)
 
     direc_listener := ListenerFactory(WATCH_DIRECTORY)
     go direc_listener.listen()

@@ -1,2 +1,5 @@
 sender/main
 receiver/main
+receiver/watch_directory/*
+sender/watch_directory/*
+!sender/watch_directory/test_file.txt
