@@ -1,4 +1,6 @@
-NodeJSDemo/Ver_20150721/TempTransfer
-NodeJSDemo/Ver_20150721/collection
-receiverResults.txt
-formFile.txt
+sender/main
+receiver/main
+receiver/watch_directory/*
+sender/watch_directory/*
+!sender/watch_directory/test_file.txt
+sender/*.dat
