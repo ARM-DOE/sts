@@ -2,8 +2,11 @@ package main
 
 import (
     "fmt"
+    "gopkg.in/yaml.v2"
+    "io/ioutil"
     "os"
     "path/filepath"
+    "strconv"
     "time"
 )
 
@@ -11,20 +14,14 @@ import (
 // It defines constants such as sender count, and dispatches the listening and sending threads, after which it loops infinitely
 // Dispatching of senders is initially staggered to space out requests to the queue.
 func main() {
-    const SENDER_COUNT = 10
-    const CACHE_FILE_NAME = "file_cache.dat"
-    var WATCH_DIRECTORY string
-    fmt.Print("Directory to watch: ")
-    WATCH_DIRECTORY = "watch_directory" //fmt.Scan(&WATCH_DIRECTORY)
-    _, err := os.Open(WATCH_DIRECTORY)
-    if err != nil {
-        fmt.Println("Directory does not exist")
-        main()
-    }
-    WATCH_DIRECTORY, _ = filepath.Abs(WATCH_DIRECTORY)
+    config_file := parseConfig()
+    SENDER_COUNT, _ := strconv.Atoi(config_file["SenderThreads"])
+    CACHE_FILE_NAME := config_file["CacheFileName"]
+    WATCH_DIRECTORY := checkWatchDir(config_file["Directory"])
+
+    // Create and start cache scan
     file_cache := CacheFactory(CACHE_FILE_NAME, WATCH_DIRECTORY)
     file_cache.loadCache()
-    fmt.Println(file_cache.last_update)
     file_cache.scanDir()
 
     direc_listener := ListenerFactory(WATCH_DIRECTORY, file_cache)
@@ -48,6 +45,34 @@ func main() {
     for true {
         time.Sleep(1000 * time.Millisecond)
     }
+}
+
+// parseConfig parses the config.yaml file and returns the parsed results as a map of strings.
+func parseConfig() map[string]string {
+    var parsed_yaml map[string]string
+    config_fi, confg_err := ioutil.ReadFile("config.yaml")
+    if confg_err != nil {
+        fmt.Println("No config.yaml file found")
+        os.Exit(1)
+    }
+    err := yaml.Unmarshal(config_fi, &parsed_yaml)
+    if err != nil {
+        fmt.Println("Error parsing configuration file")
+        os.Exit(1)
+    }
+    return parsed_yaml
+}
+
+// checkWatchDir is called on the directory to be watched.
+// It validates that the directory exists, and returns the absolute path.
+func checkWatchDir(watch_dir string) string {
+    _, err := os.Open(watch_dir)
+    if err != nil {
+        fmt.Println("Directory does not exist")
+        os.Exit(1)
+    }
+    watch_dir, _ = filepath.Abs(watch_dir)
+    return watch_dir
 }
 
 // inArray takes an array of strings and a string value, and returns a boolean.

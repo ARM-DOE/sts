@@ -53,7 +53,6 @@ func (listener *Listener) handleAddition(file_path string) {
     }
     md5_hash := md5.New()
     io.WriteString(md5_hash, string(bytes_of_file))
-    fmt.Println(file_path, listener.watch_directory)
     store_path := strings.Replace(file_path, filepath.Dir(listener.watch_directory)+"/", "", 1)
     json_summary := fmt.Sprintf(`{"file": {"path": "%s", "md5": "%x", "size": "%d", "modtime": "%s", "store_path": "%s"}}`, file_path, md5_hash.Sum(nil), info.Size(), info.ModTime(), store_path)
     listener.cache.addFile(file_path)
