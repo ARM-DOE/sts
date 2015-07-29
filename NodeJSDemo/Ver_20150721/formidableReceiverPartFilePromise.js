@@ -174,8 +174,9 @@ server.on("listening", function() {
 				}
 			})
 			// ==================================================================================================
-// START READING HERE
+
 			// ========================== FORM field EVENT =======================================================
+			// This is where the metadata for the file/chunk is saved to an array
 			.on("field", function(fieldName, fieldValue) {
 				try {
 					if (fieldName === "METADATA") {
@@ -210,6 +211,7 @@ server.on("listening", function() {
 			})
 			// ==================================================================================================
 
+// START READING HERE
 			// ========================== FORM end EVENT =======================================================
 			.on("end", function() {
 				try {
@@ -220,9 +222,11 @@ server.on("listening", function() {
 					var tempDestFiles = []; // uniquely holds the paths to the temporary files created by stitching the chunks; added only when reaching the first chunk
 					var destFilePaths = [];
 					var origFileMD5s =[]; // uniquely holds the MD5s of the original files form which the chunks originate from; added only when reaching the first chunk
+
 					process.stdout.write(colors.formEnd("*********************************************************************\n"));
 					process.stdout.write(colors.formEnd("There is a total of (this.openedFiles.length = ) " + this.openedFiles.length + " files and chunks of files!\n"));
 					process.stdout.write(colors.formEnd("*********************************************************************\n"));
+
 					for (var i = 0; i < this.openedFiles.length; i++) {
 						process.stdout.write(colors.formEnd("i = " + i + "\n"));
 						// var j = 0;
@@ -231,6 +235,8 @@ server.on("listening", function() {
 							// j++;
 						// };
 						// process.stdout.write(colors.formEnd("j = " + j + "\n"));
+
+						// Append the following data to the output file
 						var print_text = "========= Name on sender side (from fields) ====\n";
 						print_text += "{}\n".format(fields[i]["FileName"]);  // file name in the send request fields
 						print_text += "{}\n".format(fields[i]["FilePath"]);  // file path in the send request fields; this would be the path on the sender site
@@ -263,27 +269,26 @@ server.on("listening", function() {
 									if (renErr) {
 										process.stdout.write(colors.formEnd("fs.rename CALLBACK --- ERROR during renaming process!!!\n" + "error message: " + renErr.message + "\n"));
 										return;
-									}
-									else {
+									} else {
 										// res.writeHead(200, {"content-type": "text/plain"});
-										res.statusCode = 200;
+										// res.statusCode = 200;
 										// res.write("fs.rename CALLBACK -- Status Code = " + res.statusCode + "\n");
-										res.end();
 										//res.end("<<<< NO ACTION NEEDED -- THE END >>>>\n");
 									}
 								});
 								// res.writeHead(200, {"content-type": "text/plain"});
 								res.statusCode = 200;
 								res.write("Status Code = {}. Receiver says file {} has been succesfully transfered.\n".format(res.statusCode, this.openedFiles[i].path));
-								res.end();
+								// res.end();
 								// res.end("<<<< NO ACTION NEEDED -- THE END >>>>\n");
 							} else {
 								process.stdout.write(colors.formEnd("ERROR!!!!! MD5's do not match\n"));
 								// res.writeHead(406, {"content-type": "text/plain"});
-								// res.statusCode = 406;
-								// res.write("Status Code = " + res.statusCode + ". File " + colors.verbose(this.openedFiles[i].path) + " transfer went wrong!!!\n");
-								//res.end("<<<< Please, RE-TRANSMIT FILE --- THE END >>>>\n");
-								this.emit("error", "FILE ---- THIS IS MAD !!!!!!!!!!!!!!!!!!! ----- CODE " + res.statusCode);
+								res.statusCode = 406;
+								res.write("Status Code = " + res.statusCode + ". File " + colors.verbose(this.openedFiles[i].path) + " transfer went wrong!!!\n");
+								res.end("<<<< Please, RE-TRANSMIT FILE --- THE END >>>>\n");
+								break;
+								// this.emit("error", "FILE ---- THIS IS MAD !!!!!!!!!!!!!!!!!!! ----- CODE " + res.statusCode);
 							}
 						} else {
 							// if file comes in chunks
@@ -303,7 +308,7 @@ server.on("listening", function() {
 							chunkFields.push(fields[i]);
 							// If the chunk has been correctly received, based on its hash, read it and then write it to the corresponding position in the output
 							// if (validateFileTransfer(this.openedFiles[i].hash, fields[i]["ChunkMD5"])) {
-							if (this.openedFiles[i].hash === fields[i]["ChunkMD5"]) {
+							if (this.openedFiles[i].hash === fields[i]["ChunkMD5"]+1) {
 								process.stdout.write(colors.error("\n************** Iteration number i = " + i + " VALIDATED ***************************\n"));
 								process.stdout.write(colors.formEnd("Counted for chunk number " + fields[i]["ChunkNumber"] + "\n"));
 								process.stdout.write(colors.formEnd("with the name: " + fields[i]["ChunkName"] + "\n"));
@@ -314,7 +319,7 @@ server.on("listening", function() {
 								process.stdout.write(colors.error("\n*************************************************************************************\n"));
 								// promiseStack.push(chunkRead(this.openedFiles[i].path, fields[i], tempDestFile)
 								//  .spread(chunkWrite));
-								promiseStack.push(readWriteChunk(this.openedFiles[i].path, fields[i], tempDestFile).then(function(res) {
+								promiseStack.push(readWriteChunk(this.openedFiles[i]['path'], fields[i], tempDestFile).then(function(res) {
 									// process.stdout.write(colors.info("\tValidated the chunk with result -->> " + res + "\n"));
 								}));
 							} else {
@@ -323,10 +328,11 @@ server.on("listening", function() {
 								process.stdout.write(colors.formEnd("Please, re-transmit!! Need to look into how to do this.\n"));
 								// res.writeHead(406, {"content-type": "text/plain"});
 								// res.setHeader("Content-Type", "text/plain");
-								// res.statusCode = 406;
-								// res.write("Status Code = " + res.statusCode + ". Chunk " + colors.verbose(fields[i]["ChunkName"]) + " transfer went wrong!!!\n");
-								//res.end("<<<< Please, RE-TRANSMIT CHUNK -- THE END >>>>\n");
-								this.emit("error", "CHUNK ---- THIS IS CRAZY MAD !!!!!!!!!!!!!!!!!!!! ----- CODE {}".format(res.statusCode));
+								res.statusCode = 406;
+								res.write("Status Code = " + res.statusCode + ". Chunk " + colors.verbose(fields[i]["ChunkName"]) + " transfer went wrong!!!\n");
+								res.end("<<<< Please, RE-TRANSMIT CHUNK -- THE END >>>>\n");
+								break;
+								// this.emit("error", "CHUNK ---- THIS IS CRAZY MAD !!!!!!!!!!!!!!!!!!!! ----- CODE {}".format(res.statusCode));
 							}
 						}
 					}
@@ -361,9 +367,10 @@ server.on("listening", function() {
 						process.stdout.write("No need for PROMISES? That means, no chunked files, or something might have been wrong with some chunks.\n");
 					}
 					// res.writeHead(200, {"content-type": "text/plain"});
-					// res.write("RECEIVED UPLOAD.......\n\n");
+					res.statusCode = 200
+					res.write("RECEIVED UPLOAD.......\n\n");
 					//res.setHeader("Content-Type", "text/plain");
-					res.end("THE END, this is my blood you drink!!!!\n");
+					res.end("THE END, All files have transferred successfully!!!!!\n");
 					server.close();
 				} catch(err) {
 					process.stdout.write(colors.formEnd(err + " ** form.on.END ** === Error during validation and moving stages!\nTransfer to temporary files should have been done, though! ===\n"));
@@ -372,6 +379,9 @@ server.on("listening", function() {
 			// ==================================================================================================
 
 			// ========================== FORM parse API =======================================================
+			// This is the command to parse the form.
+			// This allows the other event handlers to run.
+			// This checks for any errors thrown by formidable.parse()
 			.parse(req, function(err, _fields, _files) {
 				if (err) {
 					console.error(colors.error("Error thrown from PARSE API ---- \t" + err + "\tmaxFieldsSize = " + form.maxFieldsSize + "\n")); // + util.inspect(_fields) + "\n" + util.inspect(_files)));
@@ -574,13 +584,14 @@ var readWriteChunk = function (chunkFilePath, chunkFields, destFilePath) {
 	var deferred = Q.defer();
 	try {
 		var read_path = "{}/{}".format(__dirname, chunkFilePath);
-		var readStream = fs.createReadStream(path, function(err) {
+
+		var readStream = fs.createReadStream(chunkFilePath, function(err) {
 			if (err) {
 				process.stdout.write(colors.error("readWriteChunk ERROR while creating the READ stream. ERROR message -->> {}\n".format(err)));
 			}
 		});
 
-		var write_path = "{}/{}".format(__dirname, destFilePath;
+		var write_path = "{}/{}".format(__dirname, destFilePath);
 		var writeStream = fs.createWriteStream(write_path, {flags: "w", start: chunkFields["StartByte"]}, function(err) {
 			if (err) {
 				process.stdout.write(colors.error("readWriteChunk ERROR while creating the WRITE stream. ERROR message -->> {}\n".format(err)));
