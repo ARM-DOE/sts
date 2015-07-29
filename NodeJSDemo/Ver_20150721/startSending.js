@@ -23,6 +23,8 @@ var path = require("path");
 var httpClient = require("./startSenderFormDataPartFile");
 // var httpClient = require("./startCoreHTTPSenderPartFile");
 var colors = require("colors");
+var format = require('string-format');
+format.extend(String.prototype)
 
 // Set color theme
 colors.setTheme({
@@ -39,8 +41,10 @@ colors.setTheme({
   formFile:        "yellow",
   formFileBegin:   "yellow",
   formField:       "red",
-  formEnd:         "cyan"
+  formEnd:         "cyan",
+  log:             "magenta"
 });
+
 
 // Following line clear the treminal window and places the cursor at position (0, 0)
 process.stdout.write("\u001B[2J\u001B[0;0f");
@@ -92,6 +96,17 @@ function parseInputArgs() {
 var args = parseInputArgs();
 var fileListSource = args[0];
 var uploadSize = args[1];
+
+if (fileListSource == undefined) {
+	console.log("File List Source is a required argument. Specify with -f or --file option".error);
+	process.exit();
+}
+
+if (uploadSize == undefined) {
+	console.log("Upload Size is a required argument. Specify with -u or --upload option".error);
+	process.exit();
+}
+
 fs.exists(fileListSource, function(exists) {
 	if (exists) {
 		process.stdout.write(path.resolve(fileListSource) + "\n");
