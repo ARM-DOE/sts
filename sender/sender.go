@@ -31,7 +31,7 @@ func getPathFromJSON(file_info string) string {
 // run is the mainloop of the sender struct. It requests new data from the Queue once every second.
 // If it receives a JSON string from the Queue, it will send the specified file to the receiver.
 func (sender *Sender) run() {
-    for true {
+    for {
         select {
         case request_response := <-sender.queue:
             fmt.Println("Sending " + getPathFromJSON(request_response))

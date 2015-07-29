@@ -21,12 +21,13 @@ func main() {
     CACHE_FILE_NAME := config_file["CacheFileName"]
     WATCH_DIRECTORY := checkWatchDir(config_file["Directory"])
 
-    // Create and start cache scan
-    file_cache := CacheFactory(CACHE_FILE_NAME, WATCH_DIRECTORY)
+    addition_channel := make(chan string, 1)
+    // Create and start cache file handler, system scanner, and webserver
+    file_cache := CacheFactory(CACHE_FILE_NAME, WATCH_DIRECTORY, addition_channel)
     file_cache.loadCache()
     file_cache.scanDir()
-
     direc_listener := ListenerFactory(WATCH_DIRECTORY, file_cache)
+    go direc_listener.checkEvents()
     go direc_listener.listen()
     server := WebserverFactory()
     go server.startServer() // Starts webserver
@@ -43,9 +44,8 @@ func main() {
         time.Sleep(sender_delay * time.Millisecond)
     }
     fmt.Println("Senders dispatched")
-
-    for true {
-        time.Sleep(1000 * time.Millisecond)
+    for {
+        time.Sleep(1 * time.Second)
     }
 }
 
@@ -65,6 +65,7 @@ func parseConfig() map[string]string {
     return parsed_yaml
 }
 
+// generateMD5 generates and returns an md5 string from an array of bytes.
 func generateMD5(data []byte) string {
     new_hash := md5.New()
     bytes.NewBuffer(data).WriteTo(new_hash)

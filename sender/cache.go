@@ -13,20 +13,22 @@ import (
 // Cache is a data struct that contains and manages sending progress of all unsent files.
 // Cache maintains a local file that has a record of the status of all unsent files.
 type Cache struct {
-    file_name   string
-    last_update int64
-    files       map[string]int64
-    watch_dir   string // This is the directory that the cache holds data about
-    decoder     gob.Decoder
+    file_name        string
+    last_update      int64
+    files            map[string]int64
+    watch_dir        string // This is the directory that the cache holds data about
+    decoder          gob.Decoder
+    addition_channel chan string
 }
 
 // CacheFactory generates and returns a new Cache struct which operates on the provided cache_file_name, and contains data about the files in watch_dir.
-func CacheFactory(cache_file_name string, watch_dir string) *Cache {
+func CacheFactory(cache_file_name string, watch_dir string, addition_channel chan string) *Cache {
     new_cache := &Cache{}
     new_cache.file_name = cache_file_name
     new_cache.last_update = -1
     new_cache.watch_dir = watch_dir
     new_cache.files = make(map[string]int64)
+    new_cache.addition_channel = addition_channel
     return new_cache
 }
 
@@ -105,6 +107,7 @@ func (cache *Cache) fileWalkHandler(path string, info os.FileInfo, err error) er
         _, in_map := cache.files[path]
         if !in_map && info.ModTime().After(time.Unix(cache.last_update, 0)) {
             cache.files[path] = 0
+            cache.addition_channel <- path
         }
     }
     return nil

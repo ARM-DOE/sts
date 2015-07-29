@@ -2,19 +2,18 @@ package main
 
 import (
     "fmt"
-    "github.com/rjeczalik/notify"
     "io/ioutil"
     "os"
     "path/filepath"
     "strings"
+    "time"
 )
 
 // Listener is a data type that monitors changes on the file system, generates, and sends JSON metadata for any new files.
-// Listener contains a 3rd party package. "notify", which is used to detect changes on the file system without polling.
 type Listener struct {
     directory          string
     walked_directories []string
-    event_channel      chan notify.EventInfo
+    addition_channel   chan string
     file_queue         chan string
     cache              *Cache
     watch_directory    string
@@ -24,13 +23,9 @@ type Listener struct {
 func ListenerFactory(watch_directory string, cache *Cache) *Listener {
     directory_list := make([]string, 0, 10)
     file_queue := make(chan string, 1)
-    event_channel := make(chan notify.EventInfo, 1)
-    notify.Watch(watch_directory+"/...", event_channel, notify.Create)
-
     new_listener := &Listener{}
     new_listener.directory = watch_directory
     new_listener.walked_directories = directory_list
-    new_listener.event_channel = event_channel
     new_listener.file_queue = file_queue
     new_listener.watch_directory = watch_directory
     new_listener.cache = cache
@@ -56,17 +51,23 @@ func (listener *Listener) handleAddition(file_path string) {
     fmt.Println(json_summary)
 }
 
-// listen is the mainloop of a listener object.
-// It blocks until a file addition event is detected, after which it calls handleAddition to process the new file.
+// listen is one of the mainloops of a listener object.
+// It scans the the specified watch directory every few seconds for any file additions
 func (listener *Listener) listen() {
-    defer notify.Stop(listener.event_channel)
+    for {
+        listener.cache.scanDir()
+        time.Sleep(3 * time.Second)
+    }
+}
+
+// checkEvents is one of the mainloops of a listener object.
+// It blocks until a file addition event is detected, after which it calls handleAddition to process the new file.
+func (listener *Listener) checkEvents() {
     fmt.Println("Listening")
-    for true {
+    for {
         select {
-        case event := <-listener.event_channel:
-            if len(event.Path()) > 0 {
-                go listener.handleAddition(event.Path())
-            }
+        case addition_event := <-listener.cache.addition_channel:
+            go listener.handleAddition(addition_event)
         }
     }
 }
