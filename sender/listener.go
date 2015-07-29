@@ -1,10 +1,8 @@
 package main
 
 import (
-    "crypto/md5"
     "fmt"
     "github.com/rjeczalik/notify"
-    "io"
     "io/ioutil"
     "os"
     "path/filepath"
@@ -51,10 +49,8 @@ func (listener *Listener) handleAddition(file_path string) {
         fmt.Println("Error while exporting ", file_path)
         return
     }
-    md5_hash := md5.New()
-    io.WriteString(md5_hash, string(bytes_of_file))
     store_path := strings.Replace(file_path, filepath.Dir(listener.watch_directory)+"/", "", 1)
-    json_summary := fmt.Sprintf(`{"file": {"path": "%s", "md5": "%x", "size": "%d", "modtime": "%s", "store_path": "%s"}}`, file_path, md5_hash.Sum(nil), info.Size(), info.ModTime(), store_path)
+    json_summary := fmt.Sprintf(`{"file": {"path": "%s", "md5": "%x", "size": "%d", "modtime": "%s", "store_path": "%s"}}`, file_path, generateMD5(bytes_of_file), info.Size(), info.ModTime(), store_path)
     listener.cache.addFile(file_path)
     listener.file_queue <- json_summary
     fmt.Println(json_summary)

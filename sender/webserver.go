@@ -24,15 +24,17 @@ func (server *Webserver) startServer() {
     http.ListenAndServe(":8080", nil)
 }
 
-// getFile takes a file name and amount of bytes already read to return a whole or partial file.
+// getFile takes a file name and a start and end position in the file to return a whole or partial file.
 // This handler is called when "get_file.go" is requested.
-// Sample request: /get_file.go?name=watch_directory/test_file.txt&bytes=17
+// Sample request: /get_file.go?name=watch_directory/test_file.txt&start=0&end=30
 func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
     name := r.FormValue("name")
-    string_bytes := r.FormValue("bytes")
-    bytes_already_sent, parse_err := strconv.ParseInt(string_bytes, 10, 64)
-    if parse_err != nil {
-        fmt.Fprint(w, "byte argument "+string_bytes+" invalid")
+    start_byte_string := r.FormValue("start")
+    end_byte_string := r.FormValue("end")
+    start_byte, start_err := strconv.ParseInt(start_byte_string, 10, 64)
+    end_byte, end_err := strconv.ParseInt(end_byte_string, 10, 64)
+    if start_err != nil || end_err != nil {
+        fmt.Fprint(w, "byte argument invalid")
         return
     }
     fi, err := os.Open(name)
@@ -40,14 +42,13 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
         fmt.Fprint(w, "File "+name+" not found")
     } else {
         file_info, _ := fi.Stat()
-        unsent_byte_count := file_info.Size() - bytes_already_sent
-        if unsent_byte_count < 0 {
-            fmt.Fprint(w, "byte count less than 0")
-            return
+        if end_byte > file_info.Size() || start_byte > end_byte {
+            fmt.Fprint(w, "could not retrieve specified file portion")
         }
-        bytes_to_send := make([]byte, unsent_byte_count)
-        fi.Seek(bytes_already_sent, 0)
-        io.ReadAtLeast(fi, bytes_to_send, int(unsent_byte_count))
+        byte_count := end_byte - start_byte
+        bytes_to_send := make([]byte, byte_count)
+        fi.Seek(start_byte, 0)
+        io.ReadAtLeast(fi, bytes_to_send, int(byte_count))
         w.Write(bytes_to_send)
     }
 }

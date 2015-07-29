@@ -1,6 +1,8 @@
 package main
 
 import (
+    "bytes"
+    "crypto/md5"
     "fmt"
     "gopkg.in/yaml.v2"
     "io/ioutil"
@@ -61,6 +63,12 @@ func parseConfig() map[string]string {
         os.Exit(1)
     }
     return parsed_yaml
+}
+
+func generateMD5(data []byte) string {
+    new_hash := md5.New()
+    bytes.NewBuffer(data).WriteTo(new_hash)
+    return string(new_hash.Sum(nil))
 }
 
 // checkWatchDir is called on the directory to be watched.
