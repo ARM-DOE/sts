@@ -1,0 +1,49 @@
+****OPENED
+Time: Tue Nov  5 18:04:01 2013 GMT
+Collecting from skyradC1 on host collector-nsac1
+Enabled (Wed Jul  3 18:04:01 2013): Instrument is on-line
+
+Cleaning out files older than 28 days from /data/collection/nsa/nsaskyradC1.00
+Cleaned up old file: /data/collection/nsa/nsaskyradC1.00/SkyRadData.20131008160000.dat
+Cleaning out files older than 56 days from /data/logs/nsa/collect_logs/nsaskyradC1
+
+Log Info From: ftp_transfer
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+Version:     $Id: ftp_transfer.perl 18533 2013-08-02 20:02:57Z ermold $
+Local Host:  collector-nsac1
+Remote Host: met-nsac1.nsa.arm.gov
+
+----------------------------
+Remote Time Check:
+Could not get time from SNTP time server (met-nsac1.nsa.arm.gov): No answer from server
+Could not get time from TCP time server (met-nsac1.nsa.arm.gov): Can not connect to server
+
+Local:     collector-nsac1  1383674642 Tue Nov  5 18:04:02 2013
+Reference: ntp-nsac1.nsa.arm.gov  1383674642 Tue Nov  5 18:04:02 2013
+System:    met-nsac1.nsa.arm.gov  UNKNOWN 
+Offset:    UNKNOWN seconds
+----------------------------
+
+Transfer mode is binary
+Checking for remote files in: /SkyRad
+Found 1 files to transfer from the remote system
+Transfering files from the remote system:
+    remote: /SkyRad
+    local:  /data/collection/nsa/nsaskyradC1.00/collecting
+Downloading: SkyRadData.20131105170000.dat (29595 bytes)
+Received:    SkyRadData.20131105170000.dat (29595 bytes)
+Deleted:     SkyRadData.20131105170000.dat
+
+Total Get Files: 1
+Total Get Bytes: 29595
+
+Run Time:   10 seconds
+Close time: Tue Nov  5 18:04:12 2013 GMT
+////////////////////////////
+
+Collected:  /data/collection/nsa/nsaskyradC1.00/collecting/SkyRadData.20131105170000.dat    29595 bytes    Tue Nov  5 18:04:12 2013
+
+Status:     Successful collection
+Run Time:   11 seconds.
+Close time: Tue Nov  5 18:04:12 2013 GMT
+****CLOSED

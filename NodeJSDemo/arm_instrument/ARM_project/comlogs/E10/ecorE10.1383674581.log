@@ -1,0 +1,62 @@
+****OPENED
+Time: Tue Nov  5 18:03:01 2013 GMT
+Collecting from ecorE10 on host collector-nsac1
+Enabled (Wed Jul  3 18:03:02 2013): Instrument is on-line
+
+Cleaning out files older than 28 days from /data/collection/nsa/nsaecorE10.00
+Cleaned up old file: /data/collection/nsa/nsaecorE10.00/2013_1008_1600_E10.flx.gz
+Cleaned up old file: /data/collection/nsa/nsaecorE10.00/2013_1008_1600_E10_irga.raw.gz
+Cleaned up old file: /data/collection/nsa/nsaecorE10.00/2013_1008_1600_E10_sonic.raw.gz
+Cleaned up old file: /data/collection/nsa/nsaecorE10.00/2013_1008_1630_E10.flx.gz
+Cleaned up old file: /data/collection/nsa/nsaecorE10.00/2013_1008_1630_E10_irga.raw.gz
+Cleaned up old file: /data/collection/nsa/nsaecorE10.00/2013_1008_1630_E10_sonic.raw.gz
+Cleaning out files older than 56 days from /data/logs/nsa/collect_logs/nsaecorE10
+
+Log Info From: ftp_transfer
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+Version:     $Id: ftp_transfer.perl 18533 2013-08-02 20:02:57Z ermold $
+Local Host:  collector-nsac1
+Remote Host: 192.148.94.34
+
+----------------------------
+Remote Time Check:
+Could not get time from SNTP time server (192.148.94.34): No answer from server
+Could not get time from TCP time server (192.148.94.34): Can not connect to server
+
+Local:     collector-nsac1  1383674582 Tue Nov  5 18:03:02 2013
+Reference: ntp-nsac1.nsa.arm.gov  1383674582 Tue Nov  5 18:03:02 2013
+System:    192.148.94.34  UNKNOWN 
+Offset:    UNKNOWN seconds
+----------------------------
+
+Transfer mode is binary
+Checking for remote files in: /data
+Found 3 files to transfer from the remote system
+Transfering files from the remote system:
+    remote: /data
+    local:  /data/collection/nsa/nsaecorE10.00/collecting
+Downloading: 2013_1105_1730_E10.flx.gz (1520 bytes)
+Received:    2013_1105_1730_E10.flx.gz (1520 bytes)
+Deleted:     2013_1105_1730_E10.flx.gz
+Downloading: 2013_1105_1730_E10_irga.raw.gz (219164 bytes)
+Received:    2013_1105_1730_E10_irga.raw.gz (219164 bytes)
+Deleted:     2013_1105_1730_E10_irga.raw.gz
+Downloading: 2013_1105_1730_E10_sonic.raw.gz (264762 bytes)
+Received:    2013_1105_1730_E10_sonic.raw.gz (264762 bytes)
+Deleted:     2013_1105_1730_E10_sonic.raw.gz
+
+Total Get Files: 3
+Total Get Bytes: 485446
+
+Run Time:   12 seconds
+Close time: Tue Nov  5 18:03:14 2013 GMT
+////////////////////////////
+
+Collected:  /data/collection/nsa/nsaecorE10.00/collecting/2013_1105_1730_E10.flx.gz    1520 bytes    Tue Nov  5 18:03:14 2013
+Collected:  /data/collection/nsa/nsaecorE10.00/collecting/2013_1105_1730_E10_irga.raw.gz    219164 bytes    Tue Nov  5 18:03:14 2013
+Collected:  /data/collection/nsa/nsaecorE10.00/collecting/2013_1105_1730_E10_sonic.raw.gz    264762 bytes    Tue Nov  5 18:03:14 2013
+
+Status:     Successful collection
+Run Time:   13 seconds.
+Close time: Tue Nov  5 18:03:14 2013 GMT
+****CLOSED

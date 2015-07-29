@@ -1,0 +1,61 @@
+****OPENED
+Time: Tue Nov  5 18:02:01 2013 GMT
+Collecting from mwrC1 on host collector-nsac1
+Enabled (Wed Jul  3 18:02:01 2013): Instrument is on-line
+
+Cleaning out files older than 14 days from /data/collection/nsa/nsamwrC1.00
+Cleaned up old file: /data/collection/nsa/nsamwrC1.00/20_20131022_160013.dat
+Cleaning out files older than 56 days from /data/logs/nsa/collect_logs/nsamwrC1
+
+Log Info From: ftp_transfer
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+Version:     $Id: ftp_transfer.perl 18533 2013-08-02 20:02:57Z ermold $
+Local Host:  collector-nsac1
+Remote Host: mwr-nsac1.nsa.arm.gov
+
+----------------------------
+Remote Time Check:
+Could not get time from SNTP time server (mwr-nsac1.nsa.arm.gov): No answer from server
+Could not get time from TCP time server (mwr-nsac1.nsa.arm.gov): Can not connect to server
+
+Local:     collector-nsac1  1383674522 Tue Nov  5 18:02:02 2013
+Reference: ntp-nsac1.nsa.arm.gov  1383674522 Tue Nov  5 18:02:02 2013
+System:    mwr-nsac1.nsa.arm.gov  UNKNOWN 
+Offset:    UNKNOWN seconds
+----------------------------
+
+Transfer mode is binary
+Checking for remote files in: /
+Found 4 files to transfer from the remote system
+Transfering files from the remote system:
+    remote: /
+    local:  /data/collection/nsa/nsamwrC1.00/collecting
+Downloading: 20_20131105_030002.dat (12411 bytes)
+Received:    20_20131105_030002.dat (12411 bytes)
+Deleted:     20_20131105_030002.dat
+Downloading: 20_20131105_093009.dat (1581 bytes)
+Received:    20_20131105_093009.dat (1581 bytes)
+Deleted:     20_20131105_093009.dat
+Downloading: 20_20131105_153351.dat (0 bytes)
+Received:    20_20131105_153351.dat (0 bytes)
+Deleted:     20_20131105_153351.dat
+Downloading: 20_20131105_173706.dat (15831 bytes)
+Received:    20_20131105_173706.dat (15831 bytes)
+Deleted:     20_20131105_173706.dat
+
+Total Get Files: 4
+Total Get Bytes: 29823
+
+Run Time:   10 seconds
+Close time: Tue Nov  5 18:02:12 2013 GMT
+////////////////////////////
+
+Collected:  /data/collection/nsa/nsamwrC1.00/collecting/20_20131105_030002.dat    12411 bytes    Tue Nov  5 18:02:12 2013
+Collected:  /data/collection/nsa/nsamwrC1.00/collecting/20_20131105_093009.dat    1581 bytes    Tue Nov  5 18:02:12 2013
+Removing zero length file: /data/collection/nsa/nsamwrC1.00/collecting/20_20131105_153351.dat
+Collected:  /data/collection/nsa/nsamwrC1.00/collecting/20_20131105_173706.dat    15831 bytes    Tue Nov  5 18:02:12 2013
+
+Status:     Successful collection
+Run Time:   11 seconds.
+Close time: Tue Nov  5 18:02:12 2013 GMT
+****CLOSED

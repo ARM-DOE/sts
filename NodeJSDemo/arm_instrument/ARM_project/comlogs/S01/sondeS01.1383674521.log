@@ -1,0 +1,47 @@
+****OPENED
+Time: Tue Nov  5 18:02:01 2013 GMT
+Collecting from sondeS01 on host collector-nsac1
+Enabled (Wed Jul  3 18:02:01 2013): Instrument is on-line
+
+Cleaning out files older than 28 days from /data/collection/nsa/nsasondeS01.00
+Cleaning out files older than 56 days from /data/logs/nsa/collect_logs/nsasondeS01
+
+Log Info From: ftp_transfer
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+Version:     $Id: ftp_transfer.perl 18533 2013-08-02 20:02:57Z ermold $
+Local Host:  collector-nsac1
+Remote Host: 192.148.94.20
+
+----------------------------
+Remote Time Check:
+Could not get time from SNTP time server (192.148.94.20): No answer from server
+Could not get time from TCP time server (192.148.94.20): Can not connect to server
+
+Local:     collector-nsac1  1383674522 Tue Nov  5 18:02:02 2013
+Reference: ntp-nsac1.nsa.arm.gov  1383674522 Tue Nov  5 18:02:02 2013
+System:    192.148.94.20  UNKNOWN 
+Offset:    UNKNOWN seconds
+----------------------------
+
+Transfer mode is binary
+Checking for remote files in: /send_dir
+Found 0 files to transfer from the remote system
+
+Total Get Files: 0
+Total Get Bytes: 0
+
+Run Time:   10 seconds
+Close time: Tue Nov  5 18:02:12 2013 GMT
+////////////////////////////
+
+
+SONE WMO_LOG from file: 1383674221.wmolog
+------------------------------------------------------------
+Can't open directory, /data/collection/nsa/nsasondeS01.00/collecting/in: No such file or directory
+------------------------------------------------------------
+
+
+Status:     Failed => No data was collected from the instrument.
+Run Time:   11 seconds.
+Close time: Tue Nov  5 18:02:12 2013 GMT
+****CLOSED

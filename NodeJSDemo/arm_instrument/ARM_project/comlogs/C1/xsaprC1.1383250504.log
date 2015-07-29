@@ -1,0 +1,25 @@
+****OPENED
+Time: Thu Oct 31 20:15:04 2013 GMT
+Collecting from xsaprC1 on host collector-nsac1
+Enabled (Thu Aug 29 18:07:14 2013): updated ip -tjm
+
+Cleaning out files older than 7 days from /data/collection/nsa/nsaxsaprC1.00
+Cleaning out files older than 56 days from /data/logs/nsa/collect_logs/nsaxsaprC1
+
+Log Info From: ftp_transfer
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+Version:     $Id: ftp_transfer.perl 18533 2013-08-02 20:02:57Z ermold $
+Local Host:  collector-nsac1
+Remote Host: 198.124.105.50
+
+ERROR: Failed to get new ftp object: Net::FTP: connect: timeout
+
+Run Time:   62 seconds
+Close time: Thu Oct 31 20:16:11 2013 GMT
+////////////////////////////
+
+
+Status:     Failed => No data was collected from the instrument.
+Run Time:   73 seconds.
+Close time: Thu Oct 31 20:16:17 2013 GMT
+****CLOSED

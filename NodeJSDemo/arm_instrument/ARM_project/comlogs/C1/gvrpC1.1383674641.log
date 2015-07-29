@@ -1,0 +1,92 @@
+****OPENED
+Time: Tue Nov  5 18:04:01 2013 GMT
+Collecting from gvrpC1 on host collector-nsac1
+Enabled (Wed Sep 25 18:16:00 2013): Enabled 2013-09-25 -ds2
+
+Cleaning out files older than 28 days from /data/collection/nsa/nsagvrpC1.00
+Cleaned up old file: /data/collection/nsa/nsagvrpC1.00/2013-10-08_16-00-28_lv1.csv
+Cleaning out files older than 56 days from /data/logs/nsa/collect_logs/nsagvrpC1
+
+Log Output From: gvrp_comm
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+Use of uninitialized value in numeric gt (>) at /apps/transfer/bin/gvrp_comm line 605, <CONF_FH> line 35.
+
+Opened FTP connection to: 192.148.94.13
+Transfer mode is binary
+Got: 2013-11-05_00-00-01_lv1.csv	(429598 bytes)
+Closed FTP connection to 192.148.94.13
+Extracting hourly lv1 files.
+Extracted file: 2013-11-05_17-01-10_lv1.csv
+
+Run Time:   0 seconds
+////////////////////////////
+
+Collected:  /data/collection/nsa/nsagvrpC1.00/collecting/2013-11-05_17-01-10_lv1.csv    24957 bytes    Tue Nov  5 18:04:02 2013
+
+Status:     Successful collection
+Run Time:   1 seconds.
+Close time: Tue Nov  5 18:04:02 2013 GMT
+****CLOSED

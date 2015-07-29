@@ -1,0 +1,36 @@
+****OPENED
+Time: Tue Aug  6 13:43:47 2013 GMT
+Collecting from kazrC1 on host collector-nsac1
+Enabled (Wed Jul  3 18:10:01 2013): Instrument is on-line
+
+Cleaning out files older than 28 days from /data/collection/nsa/nsakazrC1.00
+Cleaning out files older than 56 days from /data/logs/nsa/collect_logs/nsakazrC1
+
+Log Info From: ftp_transfer
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+Version:     $Id: ftp_transfer.perl 13397 2012-04-13 21:07:33Z ermold $
+Local Host:  collector-nsac1
+Remote Host: 192.148.94.5
+
+----------------------------
+Remote Time Check:
+Could not get time from SNTP time server (192.148.94.5): No answer from server
+Could not get time from TCP time server (192.148.94.5): Can not connect to server
+
+Local:     collector-nsac1  1375796627 Tue Aug  6 13:43:47 2013
+Reference: ntp-nsac1.nsa.arm.gov  1375796627 Tue Aug  6 13:43:47 2013
+System:    192.148.94.5  UNKNOWN 
+Offset:    UNKNOWN seconds
+----------------------------
+
+ERROR: Failed FTP login to 192.148.94.5: bad user name or password
+
+Run Time:   41 seconds
+Close time: Tue Aug  6 13:44:28 2013 GMT
+////////////////////////////
+
+
+Status:     Failed => No data was collected from the instrument.
+Run Time:   41 seconds.
+Close time: Tue Aug  6 13:44:28 2013 GMT
+****CLOSED
