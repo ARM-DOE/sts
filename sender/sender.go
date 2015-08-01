@@ -7,72 +7,66 @@ import (
     "net/http"
     "net/textproto"
     "os"
-    "strings"
 )
 
-// Sender is a data structure that continually requests new items from a Queue.
-// When an available item is found, Sender transmits the file to the receiver.
+// Sender is a data structure that continually requests new Bins from a channel.
+// When an available Bin is found, Sender converts the Bin to a multipart file, which it then transmits to the reciever.
 type Sender struct {
-    queue      chan string
+    queue      chan Bin
     chunk_size int64
 }
 
 // SenderFactory creates and returns a new instance of the Sender struct.
-func SenderFactory(file_queue chan string) *Sender {
+// It takes a Bin channel as an argument, which the Sender uses to receiver newly filled or loaded Bins.
+func SenderFactory(file_queue chan Bin) *Sender {
     new_sender := &Sender{}
     new_sender.queue = file_queue
     new_sender.chunk_size = 100
     return new_sender
 }
 
-// getPathFromJSON is a temporary parsing function that retrieves the file path on the system of the sender from a JSON string.
-func getPathFromJSON(file_info string) string {
-    return strings.Split(strings.Split(file_info, `{"path": "`)[1], `", "`)[0]
-}
-
-// run is the mainloop of the sender struct. It blocks until it receives data from the file queue channel.
-// If it receives a JSON string from the Queue, it will send the specified file to the receiver as a multipart file.
+// run is the mainloop of the sender struct. It blocks until it receives a Bin from the bin channel.
+// Once the Sender receives a Bin, it creates the body of the file and sends it.
 func (sender *Sender) run() {
     for {
         select {
-        case request_response := <-sender.queue:
-            fmt.Println("Sending " + getPathFromJSON(request_response))
-            chunked_file, boundary := chunkFile(getPathFromJSON(request_response), sender.chunk_size)
-            byte_reader := bytes.NewReader(chunked_file)
+        case send_bin := <-sender.queue:
+            fmt.Println("Sending Bin of size ", send_bin.size)
+            bytes_to_send, boundary := getBinBody(send_bin)
+            byte_reader := bytes.NewReader(bytes_to_send)
             request, _ := http.NewRequest("PUT", "http://localhost:8081/send.go", byte_reader)
-            request.Header.Add("metadata", request_response)
             request.Header.Add("boundary", boundary)
-            request.Header.Add("chunk_size", fmt.Sprintf("%d", sender.chunk_size))
             client := http.Client{}
             client.Do(request)
         }
     }
 }
 
-// getChunkLocation formats a string for sending as an HTTP header.
-// It takes two byte parameters. The first int64 represents the first byte of the chunk in the file, the second represents the size of the chunk.
-func getChunkLocation(start int64, chunk_size int64) string {
-    return fmt.Sprintf("%d:%d", start, start+chunk_size)
-}
-
-// chunkFile takes a filepath and chunk_size (in bytes) to split a file into a mime/multipart file.
-// chunkFile also calculates the MD5 for each file chunk and adds it as a header of that chunk
-func chunkFile(path string, chunk_size int64) ([]byte, string) {
-    info, _ := os.Stat(path)
-    fi, _ := os.Open(path)
-    byte_buffer := bytes.Buffer{}
-    multipart_writer := multipart.NewWriter(&byte_buffer)
-    for chunks := int64(0); chunks < (info.Size()/chunk_size)+1; chunks++ {
-        chunk_from_file := make([]byte, chunk_size)
-        fi.Read(chunk_from_file)
+// getBinBody generates and returns a multipart file based on the Parts defined in the Bin.
+// getBinBody returns a byte array that contains the bytes of the multipart file, and a boudnary string, which is needed to parse the multipart file.
+func getBinBody(bin Bin) ([]byte, string) {
+    body_buffer := bytes.Buffer{}
+    multipart_writer := multipart.NewWriter(&body_buffer)
+    for _, part := range bin.files {
+        fi, _ := os.Open(part.path)
+        chunk_bytes := make([]byte, part.end-part.start)
+        fi.Seek(part.start, 0)
+        fi.Read(chunk_bytes)
         chunk_header := textproto.MIMEHeader{}
-        md5 := generateMD5(chunk_from_file)
+        md5 := generateMD5(chunk_bytes)
         chunk_header.Add("md5", md5)
-        chunk_header.Add("name", path)
-        chunk_header.Add("location", getChunkLocation(chunks*chunk_size, chunk_size))
-        part_writer, _ := multipart_writer.CreatePart(chunk_header)
-        part_writer.Write(chunk_from_file)
+        chunk_header.Add("name", getStorePath(part.path, bin.watch_dir))
+        chunk_header.Add("total_size", fmt.Sprintf("%d", part.total_size))
+        chunk_header.Add("location", getChunkLocation(part.start, part.end))
+        new_part, _ := multipart_writer.CreatePart(chunk_header)
+        new_part.Write(chunk_bytes)
     }
     multipart_writer.Close()
-    return byte_buffer.Bytes(), multipart_writer.Boundary()
+    return body_buffer.Bytes(), multipart_writer.Boundary()
+}
+
+// getChunkLocation formats a string for sending as an HTTP header.
+// It takes two byte parameters. The first int64 represents the first byte of the chunk in the file, the second represents the size of the chunk.
+func getChunkLocation(start int64, end int64) string {
+    return fmt.Sprintf("%d:%d", start, end)
 }

@@ -12,23 +12,27 @@ import (
 
 // Cache is a data struct that contains and manages sending progress of all unsent files.
 // Cache maintains a local file that has a record of the status of all unsent files.
+// Cache also contains methods for scanning the file system for changes.
 type Cache struct {
-    file_name        string
-    last_update      int64
-    files            map[string]int64
-    watch_dir        string // This is the directory that the cache holds data about
-    decoder          gob.Decoder
-    addition_channel chan string
+    file_name       string
+    last_update     int64
+    files           map[string]int64
+    watch_dir       string // This is the directory that the cache holds data about
+    decoder         gob.Decoder
+    bin_channel     chan Bin
+    files_available bool
+    bin_size        int64
 }
 
 // CacheFactory generates and returns a new Cache struct which operates on the provided cache_file_name, and contains data about the files in watch_dir.
-func CacheFactory(cache_file_name string, watch_dir string, addition_channel chan string) *Cache {
+func CacheFactory(cache_file_name string, watch_dir string, bin_channel chan Bin) *Cache {
     new_cache := &Cache{}
     new_cache.file_name = cache_file_name
     new_cache.last_update = -1
     new_cache.watch_dir = watch_dir
     new_cache.files = make(map[string]int64)
-    new_cache.addition_channel = addition_channel
+    new_cache.bin_channel = bin_channel
+    new_cache.bin_size = 3000
     return new_cache
 }
 
@@ -53,7 +57,7 @@ func (cache *Cache) loadCache() {
     cache.last_update = cache.files["__TIMESTAMP__"]
 }
 
-// writeCache dumps the in-memory cache to file.
+// writeCache dumps the in-memory cache to local file.
 func (cache *Cache) writeCache() {
     cache.files["__TIMESTAMP__"] = cache.last_update
     byte_buffer := new(bytes.Buffer)
@@ -62,7 +66,7 @@ func (cache *Cache) writeCache() {
     if encode_err != nil {
         cache.codingError(encode_err)
     }
-    // create temporary cache file while writing
+    // Create temporary cache file while writing.
     ioutil.WriteFile(cache.file_name+".tmp", byte_buffer.Bytes(), 0644)
     os.Rename(cache.file_name+".tmp", cache.file_name)
 }
@@ -79,10 +83,16 @@ func (cache *Cache) addFile(path string) {
     cache.writeCache()
 }
 
-// updateFile updates the record of bytes that have been sent to the receiver.
-func (cache *Cache) updateFile(path string, new_byte_progress int64) {
+// updateFile updates the record of bytes that have been allocated to a Bin.
+// Take note that updateFile does NOT update the local cache.
+func (cache *Cache) updateFile(path string, new_byte_progress int64, info os.FileInfo) {
+    if new_byte_progress == info.Size() {
+        new_byte_progress = -1
+    }
+    if new_byte_progress > info.Size() {
+        panic("Bin stored too many bytes")
+    }
     cache.files[path] = new_byte_progress
-    cache.writeCache()
 }
 
 // removeFile deletes a file and it's progress from the cache.
@@ -93,11 +103,31 @@ func (cache *Cache) removeFile(path string) {
 }
 
 // scanDir recursively checks a directory for files that aren't in the cache, and adds them.
+// If new files are found, allocate() is called, and Bins are created until all parts of the new files have been allocated to a Bin.
 // When finished, it updates the local cache file.
 func (cache *Cache) scanDir() {
     filepath.Walk(cache.watch_dir, cache.fileWalkHandler)
     cache.last_update = getTimestamp()
+    if cache.files_available {
+        cache.allocate()
+    }
     cache.writeCache()
+}
+
+// allocate is called when a new file is detected.
+// While there are still any unallocated bytes in the cache, allocate continuously fills new Bins.
+// When a new non-empty Bin is filled, it is sent down the Bin channel.
+// Allocate stops when a Bin is filled, but is empty.
+func (cache *Cache) allocate() {
+    for cache.files_available {
+        new_bin := BinFactory(cache.bin_size, cache.watch_dir)
+        new_bin.fill(cache)
+        if new_bin.empty {
+            cache.files_available = false
+        } else {
+            cache.bin_channel <- new_bin
+        }
+    }
 }
 
 // fileWalkHandler is called for every file and directory in the directory managed by the Cache instance.
@@ -105,12 +135,22 @@ func (cache *Cache) scanDir() {
 func (cache *Cache) fileWalkHandler(path string, info os.FileInfo, err error) error {
     if !info.IsDir() {
         _, in_map := cache.files[path]
-        if !in_map && info.ModTime().After(time.Unix(cache.last_update, 0)) {
+        if !in_map && info.ModTime().After(time.Unix(cache.last_update, 0)) && info.Name() != ".DS_Store" {
             cache.files[path] = 0
-            cache.addition_channel <- path
+            cache.files_available = true
         }
     }
     return nil
+}
+
+// listen is a loop that operates on the cache, adding new files.
+// It scans the the specified watch directory every few seconds for any file additions.
+// Due to its need to continuously scan the file system, it should always be called by a goroutine
+func (cache *Cache) listen() {
+    for {
+        cache.scanDir()
+        time.Sleep(3 * time.Second)
+    }
 }
 
 // codingError is called when there is an error encoding the in-memory cache, or decoding the local copy of the cache.
