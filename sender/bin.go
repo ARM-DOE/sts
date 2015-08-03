@@ -62,15 +62,16 @@ func BinFactory(size int64, watch_dir string) Bin {
     return new_bin
 }
 
-// loadBins is an unimplemented function that will allow unfinished Bins to continue sending after an unexpected shutdown.
-// After a Bin is finished sending, it will be written to a file, so that file allocations are not lost.
-// On startup, the program will read all Bin files, and create unfinished Bins, which may then continue to be processed by Senders.
+// loadBins allows unfinished Bins to continue sending after an unexpected shutdown.
+// After a Bin is finished sending, it is written to a file, so that file allocations are not lost.
+// On startup, all Bin files are read, and any unfinished Bins are loaded into memory, after which the Senders may continue to process them.
 func (cache *Cache) loadBins() {
     filepath.Walk("bins", cache.walkBin)
 }
 
-// loadBin is an unimplemented function that will be called by loadBins.
-// loadBin will decode a Bin object from a file, and pass it to the bin channel to be processed.
+// walkBin is called by loadBins for every file in the "bins" directory.
+// Whenever a file path ending in .bin is encountered, walkBin will pass it to loadBin for deserialization.
+// Each deserialized Bin is then passed to the Bin channel.
 func (cache *Cache) walkBin(path string, info os.FileInfo, err error) error {
     if strings.HasSuffix(path, ".bin") {
         bin_file, _ := ioutil.ReadFile(path)
@@ -80,6 +81,8 @@ func (cache *Cache) walkBin(path string, info os.FileInfo, err error) error {
     return nil
 }
 
+// loadBin is called when a serialized bin file is found that needs to be loaded into memory.
+// loadBin takes an array of bytes, uses the gob deserializer, and returns the decoded Bin.
 func (cache *Cache) loadBin(bin_bytes []byte) Bin {
     bin_buffer := bytes.NewBuffer(bin_bytes)
     decoded_bin := Bin{}
@@ -91,6 +94,7 @@ func (cache *Cache) loadBin(bin_bytes []byte) Bin {
     return decoded_bin
 }
 
+// save dumps an in-memory Bin to a local file in the directory "bins" with filename md5_of(bin.Files)+.bin
 func (bin *Bin) save() {
     byte_buffer := new(bytes.Buffer)
     bin_encoder := gob.NewEncoder(byte_buffer)
