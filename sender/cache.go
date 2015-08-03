@@ -122,7 +122,7 @@ func (cache *Cache) allocate() {
     for cache.files_available {
         new_bin := BinFactory(cache.bin_size, cache.watch_dir)
         new_bin.fill(cache)
-        if new_bin.empty {
+        if new_bin.Empty {
             cache.files_available = false
         } else {
             cache.bin_channel <- new_bin

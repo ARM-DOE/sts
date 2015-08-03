@@ -15,7 +15,6 @@ import (
 // main is the entry point for the sender program.
 // It parses config values that are necessary during runtime, and dispatches the listening and sending threads, after which it loops infinitely.
 func main() {
-    fmt.Println(os.Getwd())
     config_file := parseConfig()
     SENDER_COUNT, _ := strconv.Atoi(config_file["SenderThreads"])
     CACHE_FILE_NAME := config_file["CacheFileName"]
@@ -41,6 +40,7 @@ func main() {
         time.Sleep(sender_delay * time.Millisecond)
     }
     fmt.Println("Senders dispatched")
+    file_cache.loadBins()
     go file_cache.listen() // Start the listener thread
     for {
         time.Sleep(1 * time.Second)

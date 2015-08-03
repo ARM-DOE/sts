@@ -45,14 +45,12 @@ func handleFile(bytes_of_file []byte, boundary string) {
         chunk_path := next_part.Header.Get("name")
         _, exists := os.Open(chunk_path)
         if os.IsNotExist(exists) {
-            fmt.Println("It file is not exist!")
             total_size, _ := strconv.ParseInt(next_part.Header.Get("total_size"), 10, 64)
             createNewFile(chunk_path, total_size)
         }
         new_fi, _ := os.OpenFile(chunk_path, os.O_APPEND|os.O_WRONLY, 0600)
         chunk_start, chunk_end := getChunkLocation(next_part.Header.Get("location"))
         chunk_size := chunk_end - chunk_start
-        fmt.Println(chunk_size)
         bytes_of_chunk := make([]byte, chunk_size)
         next_part.Read(bytes_of_chunk)
 

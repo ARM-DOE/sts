@@ -31,7 +31,7 @@ func (sender *Sender) run() {
     for {
         select {
         case send_bin := <-sender.queue:
-            fmt.Println("Sending Bin of size ", send_bin.size)
+            fmt.Println("Sending Bin of size ", send_bin.Size)
             bytes_to_send, boundary := getBinBody(send_bin)
             byte_reader := bytes.NewReader(bytes_to_send)
             request, _ := http.NewRequest("PUT", "http://localhost:8081/send.go", byte_reader)
@@ -47,17 +47,17 @@ func (sender *Sender) run() {
 func getBinBody(bin Bin) ([]byte, string) {
     body_buffer := bytes.Buffer{}
     multipart_writer := multipart.NewWriter(&body_buffer)
-    for _, part := range bin.files {
-        fi, _ := os.Open(part.path)
-        chunk_bytes := make([]byte, part.end-part.start)
-        fi.Seek(part.start, 0)
+    for _, part := range bin.Files {
+        fi, _ := os.Open(part.Path)
+        chunk_bytes := make([]byte, part.End-part.Start)
+        fi.Seek(part.Start, 0)
         fi.Read(chunk_bytes)
         chunk_header := textproto.MIMEHeader{}
         md5 := generateMD5(chunk_bytes)
         chunk_header.Add("md5", md5)
-        chunk_header.Add("name", getStorePath(part.path, bin.watch_dir))
-        chunk_header.Add("total_size", fmt.Sprintf("%d", part.total_size))
-        chunk_header.Add("location", getChunkLocation(part.start, part.end))
+        chunk_header.Add("name", getStorePath(part.Path, bin.WatchDir))
+        chunk_header.Add("total_size", fmt.Sprintf("%d", part.TotalSize))
+        chunk_header.Add("location", getChunkLocation(part.Start, part.End))
         new_part, _ := multipart_writer.CreatePart(chunk_header)
         new_part.Write(chunk_bytes)
     }

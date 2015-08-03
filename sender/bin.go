@@ -1,6 +1,10 @@
 package main
 
 import (
+    "bytes"
+    "encoding/gob"
+    "fmt"
+    "io/ioutil"
     "os"
     "path/filepath"
     "strings"
@@ -9,12 +13,12 @@ import (
 // Part represents a part of a multipart file.
 // It contains the data necessary to create a part of a multipart file which can then be parsed on the receiving end.
 type Part struct {
-    path       string
-    progress   int64
-    size       int64
-    start      int64
-    end        int64
-    total_size int64
+    Path      string
+    Progress  int64
+    Size      int64
+    Start     int64
+    End       int64
+    TotalSize int64
 }
 
 // PartFactory creates and returns a new instance of a Part.
@@ -25,12 +29,12 @@ type Part struct {
 func PartFactory(path string, start int64, end int64, total_size int64) Part {
     new_part := Part{}
     info, _ := os.Stat(path)
-    new_part.size = info.Size()
-    new_part.path = path
-    new_part.start = start
-    new_part.end = end
-    new_part.progress = 0
-    new_part.total_size = total_size
+    new_part.Size = info.Size()
+    new_part.Path = path
+    new_part.Start = start
+    new_part.End = end
+    new_part.Progress = 0
+    new_part.TotalSize = total_size
     return new_part
 }
 
@@ -38,11 +42,11 @@ func PartFactory(path string, start int64, end int64, total_size int64) Part {
 // When new files are detected in the watch directory, new Bins are created and filled until all the new files have been allocated.
 // The filled Bins are passed down the bin channel to senders, which construct and send a multipart file from the list of Parts.
 type Bin struct {
-    files      []Part
-    watch_dir  string
-    size       int64
-    bytes_left int64
-    empty      bool
+    Files     []Part
+    WatchDir  string
+    Size      int64
+    BytesLeft int64
+    Empty     bool
 }
 
 // BinFactory creates a new empty Bin object.
@@ -50,11 +54,11 @@ type Bin struct {
 // It also takes argument watch_dir, which allows the Bin to generate a path where the files will be stored on the receiving end.
 func BinFactory(size int64, watch_dir string) Bin {
     new_bin := Bin{}
-    new_bin.size = size
-    new_bin.bytes_left = size
-    new_bin.files = make([]Part, 0)
-    new_bin.watch_dir = watch_dir
-    new_bin.empty = true
+    new_bin.Size = size
+    new_bin.BytesLeft = size
+    new_bin.Files = make([]Part, 0)
+    new_bin.WatchDir = watch_dir
+    new_bin.Empty = true
     return new_bin
 }
 
@@ -62,16 +66,41 @@ func BinFactory(size int64, watch_dir string) Bin {
 // After a Bin is finished sending, it will be written to a file, so that file allocations are not lost.
 // On startup, the program will read all Bin files, and create unfinished Bins, which may then continue to be processed by Senders.
 func (cache *Cache) loadBins() {
-    filepath.Walk("bins", cache.loadBin)
+    filepath.Walk("bins", cache.walkBin)
 }
 
 // loadBin is an unimplemented function that will be called by loadBins.
 // loadBin will decode a Bin object from a file, and pass it to the bin channel to be processed.
-func (cache *Cache) loadBin(path string, info os.FileInfo, err error) error {
+func (cache *Cache) walkBin(path string, info os.FileInfo, err error) error {
     if strings.HasSuffix(path, ".bin") {
-        // Decode bin
+        bin_file, _ := ioutil.ReadFile(path)
+        loaded_bin := cache.loadBin(bin_file)
+        cache.bin_channel <- loaded_bin
     }
     return nil
+}
+
+func (cache *Cache) loadBin(bin_bytes []byte) Bin {
+    bin_buffer := bytes.NewBuffer(bin_bytes)
+    decoded_bin := Bin{}
+    bin_decoder := gob.NewDecoder(bin_buffer)
+    eff := bin_decoder.Decode(&decoded_bin)
+    if eff != nil {
+        fmt.Println(eff.Error())
+    }
+    return decoded_bin
+}
+
+func (bin *Bin) save() {
+    byte_buffer := new(bytes.Buffer)
+    bin_encoder := gob.NewEncoder(byte_buffer)
+    err := bin_encoder.Encode(bin)
+    if err != nil {
+        println(err.Error())
+    }
+    bin_md5 := generateMD5([]byte(fmt.Sprintf("%v", bin.Files)))
+    ioutil.WriteFile("bins/"+bin_md5+".bin.tmp", byte_buffer.Bytes(), 0700)
+    os.Rename("bins/"+bin_md5+".bin.tmp", "bins/"+bin_md5+".bin")
 }
 
 // fill iterates through files in the cache until it finds one that is not completely allocated.
@@ -80,7 +109,7 @@ func (cache *Cache) loadBin(path string, info os.FileInfo, err error) error {
 // After a bin is filled, the local cache will be updated.
 func (bin *Bin) fill(cache *Cache) {
     for path, allocation := range cache.files {
-        if bin.bytes_left == 0 {
+        if bin.BytesLeft == 0 {
             // Bin is full
             break
         }
@@ -92,11 +121,14 @@ func (bin *Bin) fill(cache *Cache) {
         if allocation < file_size && allocation != -1 {
             // File has not already been allocated to another Bin
             added_bytes := bin.fitBytes(allocation, file_size)
-            bin.bytes_left = bin.bytes_left - added_bytes
+            bin.BytesLeft = bin.BytesLeft - added_bytes
             bin.addPart(path, allocation, allocation+added_bytes, info)
             cache.updateFile(path, allocation+added_bytes, info)
-            bin.empty = false
+            bin.Empty = false
         }
+    }
+    if !bin.Empty {
+        bin.save()
     }
     cache.writeCache()
 }
@@ -106,9 +138,9 @@ func (bin *Bin) fill(cache *Cache) {
 // fitBytes returns either all the bytes in the file, or how many can fit into the Bin.
 func (bin *Bin) fitBytes(allocation int64, file_size int64) int64 {
     unallocated_bytes := file_size - allocation
-    if unallocated_bytes > bin.bytes_left {
+    if unallocated_bytes > bin.BytesLeft {
         // Can't fit the whole file, return everything left in the bin.
-        return bin.bytes_left
+        return bin.BytesLeft
     } else {
         // The file does fit, return it's size
         return unallocated_bytes
@@ -119,5 +151,5 @@ func (bin *Bin) fitBytes(allocation int64, file_size int64) int64 {
 // See documentation for PartFactory for an indepth explanation of addParts' arguments.
 func (bin *Bin) addPart(path string, start int64, end int64, info os.FileInfo) {
     new_part := PartFactory(path, start, end, info.Size())
-    bin.files = append(bin.files, new_part)
+    bin.Files = append(bin.Files, new_part)
 }
