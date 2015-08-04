@@ -8,6 +8,7 @@ import (
     "os"
     "path/filepath"
     "strings"
+    "util"
 )
 
 // Part represents a part of a multipart file.
@@ -47,6 +48,7 @@ type Bin struct {
     Size      int64
     BytesLeft int64
     Empty     bool
+    Name      string
 }
 
 // BinFactory creates a new empty Bin object.
@@ -98,13 +100,18 @@ func (cache *Cache) loadBin(bin_bytes []byte) Bin {
 func (bin *Bin) save() {
     byte_buffer := new(bytes.Buffer)
     bin_encoder := gob.NewEncoder(byte_buffer)
+    bin_md5 := util.GenerateMD5([]byte(fmt.Sprintf("%v", bin.Files)))
+    bin.Name = "bins/" + bin_md5 + ".bin"
     err := bin_encoder.Encode(bin)
     if err != nil {
         println(err.Error())
     }
-    bin_md5 := generateMD5([]byte(fmt.Sprintf("%v", bin.Files)))
-    ioutil.WriteFile("bins/"+bin_md5+".bin.tmp", byte_buffer.Bytes(), 0700)
-    os.Rename("bins/"+bin_md5+".bin.tmp", "bins/"+bin_md5+".bin")
+    ioutil.WriteFile(bin.Name+".tmp", byte_buffer.Bytes(), 0700)
+    os.Rename(bin.Name+".tmp", bin.Name)
+}
+
+func (bin *Bin) delete() {
+    os.Remove(bin.Name)
 }
 
 // fill iterates through files in the cache until it finds one that is not completely allocated.

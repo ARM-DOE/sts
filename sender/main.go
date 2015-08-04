@@ -1,7 +1,6 @@
 package main
 
 import (
-    "crypto/md5"
     "fmt"
     "gopkg.in/yaml.v2"
     "io/ioutil"
@@ -20,12 +19,12 @@ func main() {
     CACHE_FILE_NAME := config_file["CacheFileName"]
     WATCH_DIRECTORY := checkWatchDir(config_file["Directory"])
 
-    // Create the channel through which new bins will be sent from the sender to the
+    // Create the channel through which new bins will be sent from the sender to the receiver.
     bin_channel := make(chan Bin, 1)
     // Create and start cache file handler and webserver
     file_cache := CacheFactory(CACHE_FILE_NAME, WATCH_DIRECTORY, bin_channel)
     file_cache.loadCache()
-    server := WebserverFactory()
+    server := WebserverFactory(file_cache, WATCH_DIRECTORY)
     go server.startServer()
 
     // Dispatch senders
@@ -62,13 +61,6 @@ func parseConfig() map[string]string {
         os.Exit(1)
     }
     return parsed_yaml
-}
-
-// generateMD5 generates and returns an md5 string from an array of bytes.
-func generateMD5(data []byte) string {
-    new_hash := md5.New()
-    new_hash.Write(data)
-    return fmt.Sprintf("%x", new_hash.Sum(nil))
 }
 
 // getStorePath returns the path that the receiver should use to store a file.

@@ -10,16 +10,22 @@ import (
 
 // Webserver acts as a layer of abstraction to separate webserver functions from the "main" functions in the rest of the package.
 type Webserver struct {
+    cache     *Cache
+    watch_dir string
 }
 
 // WebserverFactory creates and returns a new Webserver struct
-func WebserverFactory() *Webserver {
-    return &Webserver{}
+func WebserverFactory(cache *Cache, watch_dir string) *Webserver {
+    new_server := &Webserver{}
+    new_server.cache = cache
+    new_server.watch_dir = watch_dir
+    return new_server
 }
 
 // startServer is the entry point of the webserver. It is responsible for registering handlers and beginning the request serving loop.
 func (server *Webserver) startServer() {
     http.HandleFunc("/get_file.go", server.getFile)
+    http.HandleFunc("/remove.go", server.removeFromCache)
     http.HandleFunc("/", server.errorHandler)
     http.ListenAndServe(":8080", nil)
 }
@@ -51,6 +57,14 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
         io.ReadAtLeast(fi, bytes_to_send, int(byte_count))
         w.Write(bytes_to_send)
     }
+}
+
+// removeFromCache is called when the receiver confirms that a file is totally sent, and wants the Sender to remove it from the list of files that are in line to be processed.
+// removeFromCache takes only a file name argument.
+// Example request: /remove.go?name=watch_directory/test_file.txt
+func (server *Webserver) removeFromCache(w http.ResponseWriter, r *http.Request) {
+    file_path := r.FormValue("name")
+    server.cache.removeFile(file_path)
 }
 
 // errorHandler is called when any page that is not a registered API method is requested.

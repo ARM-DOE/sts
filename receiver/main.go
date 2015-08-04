@@ -2,14 +2,17 @@ package main
 
 import (
     "bytes"
-    "crypto/md5"
     "fmt"
+    "io/ioutil"
     "mime/multipart"
     "net/http"
+    "net/textproto"
     "os"
     "path/filepath"
     "strconv"
     "strings"
+    "time"
+    "util"
 )
 
 // errorHandler is called when any page that is not a registered API method is requested.
@@ -54,15 +57,38 @@ func handleFile(bytes_of_file []byte, boundary string) {
         bytes_of_chunk := make([]byte, chunk_size)
         next_part.Read(bytes_of_chunk)
 
-        if next_part.Header.Get("md5") != generateMD5(bytes_of_chunk) {
+        if next_part.Header.Get("md5") != util.GenerateMD5(bytes_of_chunk) {
             // validation failed, request this specific chunk again using chunk size
             fmt.Println("Bad chunk of " + next_part.Header.Get("name") + " from bytes " + next_part.Header.Get("location"))
+            new_bytes, boundary := requestPart(next_part.Header.Get("name"), next_part.Header, chunk_start, chunk_end)
+            handleFile(new_bytes, boundary)
         } else {
             num, _ := new_fi.WriteAt(bytes_of_chunk, chunk_start)
             fmt.Println("Wrote ", num, " bytes of chunk")
             new_fi.Close()
         }
     }
+}
+
+// requestPart sends an HTTP request to the sender which requests a file part.
+// After receiving a file part, requestPart will create a multipart file with only one chunk, and pass it back into handleFile for validation.
+func requestPart(path string, part_header textproto.MIMEHeader, start int64, end int64) ([]byte, string) {
+    post_url := fmt.Sprintf("http://localhost:8080/get_file.go?name=%s&start=%d&end=%d", path, start, end)
+    client := http.Client{}
+    request, _ := http.NewRequest("POST", post_url, nil)
+    resp, err := client.Do(request)
+    body_bytes, _ := ioutil.ReadAll(resp.Body)
+    if err != nil {
+        // MODIFY behavior here later. Currently just tries again every 5 seconds.
+        time.Sleep(5 * time.Second)
+        return requestPart(path, part_header, start, end)
+    }
+    byte_buffer := bytes.Buffer{}
+    multipart_writer := multipart.NewWriter(&byte_buffer)
+    part, _ := multipart_writer.CreatePart(part_header)
+    part.Write(body_bytes)
+    multipart_writer.Close()
+    return byte_buffer.Bytes(), multipart_writer.Boundary()
 }
 
 // createNewFile is called when a multipart chunk is encountered and the whole file hasn't been created on the reciever yet.
@@ -72,13 +98,6 @@ func createNewFile(path string, size int64) {
     fi, _ := os.Create(path)
     fi.Truncate(size)
     fi.Close()
-}
-
-// generateMD5 generates and returns an md5 string from an array of bytes.
-func generateMD5(data []byte) string {
-    new_hash := md5.New()
-    new_hash.Write(data)
-    return fmt.Sprintf("%x", new_hash.Sum(nil))
 }
 
 // main is the entry point of the webserver. It is responsible for registering handlers and beginning the request serving loop.

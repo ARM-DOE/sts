@@ -7,6 +7,8 @@ import (
     "net/http"
     "net/textproto"
     "os"
+    "time"
+    "util"
 )
 
 // Sender is a data structure that continually requests new Bins from a channel.
@@ -27,6 +29,7 @@ func SenderFactory(file_queue chan Bin) *Sender {
 
 // run is the mainloop of the sender struct. It blocks until it receives a Bin from the bin channel.
 // Once the Sender receives a Bin, it creates the body of the file and sends it.
+// After sending is complete, the Bin is deleted.
 func (sender *Sender) run() {
     for {
         select {
@@ -37,7 +40,14 @@ func (sender *Sender) run() {
             request, _ := http.NewRequest("PUT", "http://localhost:8081/send.go", byte_reader)
             request.Header.Add("boundary", boundary)
             client := http.Client{}
-            client.Do(request)
+            response, sending_err := client.Do(request)
+            if sending_err != nil {
+                fmt.Println(sending_err.Error(), response)
+                time.Sleep(5 * time.Second) // Wait so you don't choke the Bin queue if it keeps failing in quick succession.
+                sender.queue <- send_bin    // Pass the bin back into the Bin queue.
+            } else {
+                send_bin.delete() // Sending is complete, so remove the bin file
+            }
         }
     }
 }
@@ -53,7 +63,7 @@ func getBinBody(bin Bin) ([]byte, string) {
         fi.Seek(part.Start, 0)
         fi.Read(chunk_bytes)
         chunk_header := textproto.MIMEHeader{}
-        md5 := generateMD5(chunk_bytes)
+        md5 := util.GenerateMD5(chunk_bytes)
         chunk_header.Add("md5", md5)
         chunk_header.Add("name", getStorePath(part.Path, bin.WatchDir))
         chunk_header.Add("total_size", fmt.Sprintf("%d", part.TotalSize))
