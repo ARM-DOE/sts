@@ -14,12 +14,12 @@ import (
 // Part represents a part of a multipart file.
 // It contains the data necessary to create a part of a multipart file which can then be parsed on the receiving end.
 type Part struct {
-    Path      string
-    Progress  int64
-    Size      int64
-    Start     int64
-    End       int64
-    TotalSize int64
+    Path       string
+    Progress   int64
+    Start      int64
+    End        int64
+    TotalSize  int64
+    TotalParts int64
 }
 
 // PartFactory creates and returns a new instance of a Part.
@@ -29,13 +29,12 @@ type Part struct {
 // The total size of the file, so that a file full of empty bytes can be generated on the other end, no matter which part comes in first.
 func PartFactory(path string, start int64, end int64, total_size int64) Part {
     new_part := Part{}
-    info, _ := os.Stat(path)
-    new_part.Size = info.Size()
+    new_part.TotalSize = total_size
+    new_part.TotalParts = getTotalParts(new_part.TotalSize)
     new_part.Path = path
     new_part.Start = start
     new_part.End = end
     new_part.Progress = 0
-    new_part.TotalSize = total_size
     return new_part
 }
 
@@ -163,4 +162,14 @@ func (bin *Bin) fitBytes(allocation int64, file_size int64) int64 {
 func (bin *Bin) addPart(path string, start int64, end int64, info os.FileInfo) {
     new_part := PartFactory(path, start, end, info.Size())
     bin.Files = append(bin.Files, new_part)
+}
+
+// getTotalParts calculates the total number of parts that will be needed to represent a file.
+// It relies on util.BIN_SIZE for it's calculation.
+func getTotalParts(file_size int64) int64 {
+    divide_value := file_size / util.BIN_SIZE
+    if file_size%util.BIN_SIZE == 0 {
+        return divide_value
+    }
+    return divide_value + 1
 }

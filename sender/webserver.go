@@ -64,6 +64,7 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
 // Example request: /remove.go?name=watch_directory/test_file.txt
 func (server *Webserver) removeFromCache(w http.ResponseWriter, r *http.Request) {
     file_path := r.FormValue("name")
+    file_path = getWholePath(file_path)
     server.cache.removeFile(file_path)
 }
 

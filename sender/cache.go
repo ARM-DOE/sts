@@ -8,6 +8,7 @@ import (
     "os"
     "path/filepath"
     "time"
+    "util"
 )
 
 // Cache is a data struct that contains and manages sending progress of all unsent files.
@@ -21,7 +22,6 @@ type Cache struct {
     decoder         gob.Decoder
     bin_channel     chan Bin
     files_available bool
-    bin_size        int64
 }
 
 // CacheFactory generates and returns a new Cache struct which operates on the provided cache_file_name, and contains data about the files in watch_dir.
@@ -32,7 +32,6 @@ func CacheFactory(cache_file_name string, watch_dir string, bin_channel chan Bin
     new_cache.watch_dir = watch_dir
     new_cache.files = make(map[string]int64)
     new_cache.bin_channel = bin_channel
-    new_cache.bin_size = 3000
     return new_cache
 }
 
@@ -120,7 +119,7 @@ func (cache *Cache) scanDir() {
 // Allocate stops when a Bin is filled, but is empty.
 func (cache *Cache) allocate() {
     for cache.files_available {
-        new_bin := BinFactory(cache.bin_size, cache.watch_dir)
+        new_bin := BinFactory(util.BIN_SIZE, cache.watch_dir)
         new_bin.fill(cache)
         if new_bin.Empty {
             cache.files_available = false

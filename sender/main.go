@@ -42,6 +42,7 @@ func main() {
     file_cache.loadBins()
     go file_cache.listen() // Start the listener thread
     for {
+        fmt.Println(file_cache.files)
         time.Sleep(1 * time.Second)
     }
 }
@@ -70,6 +71,15 @@ func getStorePath(full_path string, watch_directory string) string {
     return store_path
 }
 
+// getWholePath returns the absolute path of the file given the path where the file will be stored on the receiver.
+func getWholePath(store_path string) string {
+    abs_path, err := filepath.Abs(store_path)
+    if err != nil {
+        fmt.Println(err.Error())
+    }
+    return abs_path
+}
+
 // checkWatchDir is called on the directory to be watched.
 // It validates that the directory exists, and returns the absolute path.
 func checkWatchDir(watch_dir string) string {
@@ -80,15 +90,4 @@ func checkWatchDir(watch_dir string) string {
     }
     watch_dir, _ = filepath.Abs(watch_dir)
     return watch_dir
-}
-
-// inArray takes an array of strings and a string value, and returns a boolean.
-// true if the value is equal to a value in the array, else false.
-func inArray(array []string, value string) bool {
-    for _, element := range array {
-        if element == value {
-            return true
-        }
-    }
-    return false
 }

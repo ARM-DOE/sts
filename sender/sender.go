@@ -57,6 +57,7 @@ func (sender *Sender) run() {
 func getBinBody(bin Bin) ([]byte, string) {
     body_buffer := bytes.Buffer{}
     multipart_writer := multipart.NewWriter(&body_buffer)
+    multipart_writer.SetBoundary(util.MULTIPART_BOUNDARY)
     for _, part := range bin.Files {
         fi, _ := os.Open(part.Path)
         chunk_bytes := make([]byte, part.End-part.Start)
@@ -68,6 +69,7 @@ func getBinBody(bin Bin) ([]byte, string) {
         chunk_header.Add("name", getStorePath(part.Path, bin.WatchDir))
         chunk_header.Add("total_size", fmt.Sprintf("%d", part.TotalSize))
         chunk_header.Add("location", getChunkLocation(part.Start, part.End))
+        chunk_header.Add("max_parts", fmt.Sprintf("%d", part.TotalParts))
         new_part, _ := multipart_writer.CreatePart(chunk_header)
         new_part.Write(chunk_bytes)
     }
