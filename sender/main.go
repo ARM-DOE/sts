@@ -23,7 +23,7 @@ func main() {
     bin_channel := make(chan Bin, 1)
     // Create and start cache file handler and webserver
     file_cache := CacheFactory(CACHE_FILE_NAME, WATCH_DIRECTORY, bin_channel)
-    file_cache.loadCache()
+    file_cache.listener.LoadCache()
     server := WebserverFactory(file_cache, WATCH_DIRECTORY)
     go server.startServer()
 
@@ -40,7 +40,7 @@ func main() {
     }
     fmt.Println("Senders dispatched")
     file_cache.loadBins()
-    go file_cache.listen() // Start the listener thread
+    go file_cache.scan() // Start the listener thread
     for {
         time.Sleep(1 * time.Second)
     }

@@ -116,7 +116,7 @@ func (bin *Bin) delete() {
 // If the Bin has enough space for the whole file, it will continue looking for and adding unallocated files until it is full.
 // After a bin is filled, the local cache will be updated.
 func (bin *Bin) fill(cache *Cache) {
-    for path, allocation := range cache.files {
+    for path, allocation := range cache.listener.Files {
         if bin.BytesLeft == 0 {
             // Bin is full
             break
@@ -138,7 +138,7 @@ func (bin *Bin) fill(cache *Cache) {
     if !bin.Empty {
         bin.save()
     }
-    cache.writeCache()
+    cache.listener.WriteCache()
 }
 
 // fitBytes checks a file to see how much of that file can fit inside a Bin.
