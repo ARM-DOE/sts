@@ -42,7 +42,6 @@ func main() {
     file_cache.loadBins()
     go file_cache.listen() // Start the listener thread
     for {
-        fmt.Println(file_cache.files)
         time.Sleep(1 * time.Second)
     }
 }

@@ -67,15 +67,14 @@ func handleFile(bytes_of_file []byte) {
             if os.IsNotExist(err) {
                 // The file which this chunk belongs to does not already exist. Create a new empty file and companion file.
                 total_size, _ := strconv.ParseInt(next_part.Header.Get("total_size"), 10, 64)
-                max_parts, _ := strconv.Atoi(next_part.Header.Get("max_parts"))
-                createEmptyFile(chunk_path, total_size, max_parts)
+                createEmptyFile(chunk_path, total_size)
             }
             // Write bytes of chunk to specific location in file, append chunk md5 to companion file.
             new_fi, _ := os.OpenFile(write_path, os.O_APPEND|os.O_WRONLY, 0600)
             num, _ := new_fi.WriteAt(bytes_of_chunk, chunk_start)
             fmt.Println("Wrote ", num, " bytes of chunk")
             new_fi.Close()
-            addPartToCompanion(chunk_path, next_part.Header.Get("md5"))
+            addPartToCompanion(chunk_path, next_part.Header.Get("md5"), next_part.Header.Get("location"))
             if isFileComplete(chunk_path) {
                 fmt.Println("Fully assembled ", chunk_path)
                 os.Rename(write_path, chunk_path)
@@ -100,11 +99,19 @@ func removeFromCache(path string) {
 }
 
 // isFileComplete decodes the companion file of a given path and determines whether the file is complete.
-// isFileComplete measures the length of chunk md5s in companion.CurrentParts and checks if it equals companion.MaxParts
+// isFileComplete sums the number of bytes in each chunk in the companion file. If the sum equals the total file size, the file is marked as complete.
 func isFileComplete(path string) bool {
     is_done := false
     decoded_companion := decodeCompanion(path)
-    if len(decoded_companion.CurrentParts) == decoded_companion.MaxParts {
+    companion_size := int64(0)
+    for _, element := range decoded_companion.CurrentParts {
+        part_locations := strings.Split(strings.Split(element, ";")[1], ":")
+        start, _ := strconv.ParseInt(part_locations[0], 10, 64)
+        end, _ := strconv.ParseInt(part_locations[1], 10, 64)
+        part_size := end - start
+        companion_size += part_size
+    }
+    if companion_size == decoded_companion.TotalSize {
         is_done = true
     }
     return is_done
@@ -113,7 +120,7 @@ func isFileComplete(path string) bool {
 // Companion is a struct that represents the data of a JSON companion file.
 type Companion struct {
     Path         string
-    MaxParts     int
+    TotalSize    int64
     CurrentParts []string
 }
 
@@ -129,17 +136,18 @@ func decodeCompanion(path string) *Companion {
 // addPartToCompanion decodes a companion struct, adds the specified id to CurrentParts (must be unique) and writes the modified companion struct back to disk.
 // It implements a "companion lock" system, to prevent the same companion file being written to by two goroutines at the same time.
 // addPartToCompanion takes the path of the "final file".
-func addPartToCompanion(path string, id string) {
+func addPartToCompanion(path string, id string, location string) {
     if !companion_lock {
         companion_lock = true
     } else {
         time.Sleep(20 * time.Millisecond)
-        addPartToCompanion(path, id)
+        addPartToCompanion(path, id, location)
         return
     }
     companion := decodeCompanion(path)
-    if !util.IsStringInArray(companion.CurrentParts, id) {
-        companion.CurrentParts = append(companion.CurrentParts, id)
+    chunk_addition := id + ";" + location
+    if !util.IsStringInArray(companion.CurrentParts, chunk_addition) {
+        companion.CurrentParts = append(companion.CurrentParts, chunk_addition)
     }
     companion.encodeAndWrite()
     companion_lock = false
@@ -155,9 +163,9 @@ func (comp *Companion) encodeAndWrite() {
 }
 
 // newCompanion creates a new companion file initialized with specified parameters, and writes it to disk.
-func newCompanion(path string, max_parts int) {
+func newCompanion(path string, size int64) {
     current_parts := make([]string, 0)
-    new_companion := Companion{path, max_parts, current_parts}
+    new_companion := Companion{path, size, current_parts}
     new_companion.encodeAndWrite()
 }
 
@@ -185,9 +193,9 @@ func requestPart(path string, part_header textproto.MIMEHeader, start int64, end
 
 // createNewFile is called when a multipart chunk is encountered and the whole file hasn't been created on the reciever yet.
 // It fills a file with zero value bytes so that the created file is equal to the final size of multipart file.
-func createEmptyFile(path string, size int64, max_parts int) {
+func createEmptyFile(path string, size int64) {
     os.MkdirAll(filepath.Dir(path), os.ModePerm)
-    newCompanion(path, max_parts)
+    newCompanion(path, size)
     fi, _ := os.Create(path + ".tmp")
     fi.Truncate(size)
     fi.Close()

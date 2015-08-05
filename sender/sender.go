@@ -69,7 +69,6 @@ func getBinBody(bin Bin) ([]byte, string) {
         chunk_header.Add("name", getStorePath(part.Path, bin.WatchDir))
         chunk_header.Add("total_size", fmt.Sprintf("%d", part.TotalSize))
         chunk_header.Add("location", getChunkLocation(part.Start, part.End))
-        chunk_header.Add("max_parts", fmt.Sprintf("%d", part.TotalParts))
         new_part, _ := multipart_writer.CreatePart(chunk_header)
         new_part.Write(chunk_bytes)
     }

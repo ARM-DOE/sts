@@ -4,6 +4,5 @@ receiver/watch_directory/*
 sender/watch_directory/*
 !sender/watch_directory/test_file.txt
 sender/*.dat
-sender/bins/*.bin
 lib/src/gopkg.in
 lib/pkg
