@@ -134,7 +134,11 @@ func (cache *Cache) allocate() {
 func (cache *Cache) fileWalkHandler(path string, info os.FileInfo, err error) error {
     if !info.IsDir() {
         _, in_map := cache.files[path]
-        if !in_map && info.ModTime().After(time.Unix(cache.last_update, 0)) && info.Name() != ".DS_Store" {
+        modtime := info.ModTime()
+        if modtime == time.Unix(cache.last_update, 0) { // Special case: since ModTime doesn't offer resolution to a fraction of a second
+            modtime = time.Unix(cache.last_update-1, 0) // If modtime and the last cache update are equal, shift ModTime back by one second.
+        }
+        if !in_map && modtime.After(time.Unix(cache.last_update, 0)) && info.Name() != ".DS_Store" {
             cache.files[path] = 0
             cache.files_available = true
         }
