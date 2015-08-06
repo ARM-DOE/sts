@@ -8,14 +8,16 @@ import (
 type Cache struct {
     files_available bool
     bin_channel     chan Bin
+    bin_size        int64
     watch_dir       string
     listener        *util.Listener
 }
 
-func CacheFactory(cache_file_name string, watch_dir string, bin_channel chan Bin) *Cache {
+func CacheFactory(cache_file_name string, watch_dir string, bin_channel chan Bin, bin_size int64) *Cache {
     new_cache := &Cache{}
     new_cache.files_available = false
     new_cache.watch_dir = watch_dir
+    new_cache.bin_size = bin_size
     new_cache.bin_channel = bin_channel
     new_cache.listener = util.ListenerFactory(cache_file_name, watch_dir)
     return new_cache
@@ -46,7 +48,7 @@ func (cache *Cache) removeFile(path string) {
 // Allocate stops when a Bin is filled, but is empty.
 func (cache *Cache) allocate() {
     for cache.files_available {
-        new_bin := BinFactory(util.BIN_SIZE, cache.watch_dir)
+        new_bin := BinFactory(cache.bin_size, cache.watch_dir)
         new_bin.fill(cache)
         if new_bin.Empty {
             cache.files_available = false

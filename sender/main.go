@@ -21,7 +21,7 @@ func main() {
     // Create the channel through which new bins will be sent from the sender to the receiver.
     bin_channel := make(chan Bin, 1)
     // Create and start cache file handler and webserver
-    file_cache := CacheFactory(CACHE_FILE_NAME, WATCH_DIRECTORY, bin_channel)
+    file_cache := CacheFactory(CACHE_FILE_NAME, WATCH_DIRECTORY, bin_channel, config_file.Bin_Size)
     file_cache.listener.LoadCache()
     server := WebserverFactory(file_cache, WATCH_DIRECTORY)
     go server.startServer()
