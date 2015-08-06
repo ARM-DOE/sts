@@ -1,4 +1,4 @@
-<center>STS - Golang</center>
+STS - Golang
 --------------
 
 ###**Done**:
@@ -11,4 +11,3 @@
 - Testing
 - Logging
 - More error handling
-- Don't read whole files into memory

@@ -1,4 +1,5 @@
-Directory: watch_directory
-SenderThreads: "10"
-LogFileDurationHours: "48"
-CacheFileName: file_cache.dat
+directory: watch_directory
+sender_threads: 10
+log_file_duration_hours: 3000
+cache_file_name: file_cache.dat
+bin_size: 30000

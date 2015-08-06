@@ -6,7 +6,6 @@ import (
     "io/ioutil"
     "os"
     "path/filepath"
-    "strconv"
     "strings"
     "time"
 )
@@ -15,9 +14,9 @@ import (
 // It parses config values that are necessary during runtime, and dispatches the listening and sending threads, after which it loops infinitely.
 func main() {
     config_file := parseConfig()
-    SENDER_COUNT, _ := strconv.Atoi(config_file["SenderThreads"])
-    CACHE_FILE_NAME := config_file["CacheFileName"]
-    WATCH_DIRECTORY := checkWatchDir(config_file["Directory"])
+    SENDER_COUNT := config_file.Sender_Threads
+    CACHE_FILE_NAME := config_file.Cache_File_Name
+    WATCH_DIRECTORY := checkWatchDir(config_file.Directory)
 
     // Create the channel through which new bins will be sent from the sender to the receiver.
     bin_channel := make(chan Bin, 1)
@@ -46,21 +45,30 @@ func main() {
     }
 }
 
-// parseConfig parses the config.yaml file and returns the parsed results as a map of strings.
-func parseConfig() map[string]string {
-    var parsed_yaml map[string]string
+// Config is the struct that all values from the configuration file are loaded into when it is parsed.
+type Config struct {
+    Directory               string
+    Sender_Threads          int
+    Log_File_Duration_Hours int
+    Cache_File_Name         string
+    Bin_Size                int64
+}
+
+// parseConfig parses the config.yaml file and returns the parsed results as an instance of the Config struct.
+func parseConfig() Config {
+    var loaded_config Config
     abs_path, _ := filepath.Abs("config.yaml")
-    config_fi, confg_err := ioutil.ReadFile(abs_path)
-    if confg_err != nil {
+    config_fi, config_err := ioutil.ReadFile(abs_path)
+    if config_err != nil {
         fmt.Println("No config.yaml file found")
         os.Exit(1)
     }
-    err := yaml.Unmarshal(config_fi, &parsed_yaml)
+    err := yaml.Unmarshal(config_fi, &loaded_config)
     if err != nil {
-        fmt.Println("Error parsing configuration file")
+        fmt.Println(err.Error())
         os.Exit(1)
     }
-    return parsed_yaml
+    return loaded_config
 }
 
 // getStorePath returns the path that the receiver should use to store a file.
