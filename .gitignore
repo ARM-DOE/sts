@@ -6,3 +6,4 @@ sender/watch_directory/*
 sender/*.dat
 lib/src/gopkg.in
 lib/pkg
+receiver/listener_cache.dat

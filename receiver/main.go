@@ -79,7 +79,6 @@ func handleFile(bytes_of_file []byte) {
                 fmt.Println("Fully assembled ", chunk_path)
                 os.Rename(write_path, chunk_path)
                 os.Remove(chunk_path + ".comp")
-                removeFromCache(chunk_path)
             }
         }
     }
@@ -201,9 +200,31 @@ func createEmptyFile(path string, size int64) {
     fi.Close()
 }
 
+func finishFile(addition_channel chan string, config_file string) {
+    for {
+        select {
+        case new_file := <-addition_channel:
+            if !(strings.HasSuffix(new_file, ".comp") || strings.HasSuffix(new_file, ".tmp")) && new_file != config_file {
+                removeFromCache(new_file)
+                fmt.Println("Removed ", new_file, " from cache")
+            }
+        }
+    }
+}
+
 // main is the entry point of the webserver. It is responsible for registering handlers and beginning the request serving loop.
 func main() {
     companion_lock = false
+    // Create and start listener
+    cwd, _ := os.Getwd()
+    addition_channel := make(chan string, 1)
+    listener_cache_file := "listener_cache.dat"
+    listener_cache_file, _ = filepath.Abs(listener_cache_file)
+    listener := util.ListenerFactory("listener_cache.dat", cwd)
+    go finishFile(addition_channel, listener_cache_file)
+    listener.LoadCache()
+    go listener.Listen(addition_channel)
+
     http.HandleFunc("/send.go", handler)
     http.HandleFunc("/", errorHandler)
     http.ListenAndServe(":8081", nil)

@@ -4,17 +4,38 @@ package util
 import (
     "crypto/md5"
     "fmt"
+    "os"
 )
 
 // Both the sender and receiver use the same multipart boundary and bin size.
 const MULTIPART_BOUNDARY = "83c64d3ae066414b27bfbff29a53ff1a500d5fac0a0799990c9c6464a1fb"
-const BIN_SIZE = int64(3000)
+const BIN_SIZE = int64(50000000)
 
 // generateMD5 generates and returns an md5 string from an array of bytes.
 func GenerateMD5(data []byte) string {
     new_hash := md5.New()
     new_hash.Write(data)
     return fmt.Sprintf("%x", new_hash.Sum(nil))
+}
+
+// FileMD5 calculates the MD5 of a file given a path.
+// Unline GenerateMD5, FileMD5 doesn't load the whole file into memory.
+func FileMD5(path string) string {
+    block_size := 4096
+    fi, err := os.Open(path)
+    if err != nil {
+        panic("File " + path + " does not exist, can't generate MD5")
+    }
+    next_bytes := make([]byte, block_size)
+    new_hash := md5.New()
+    for {
+        _, err := fi.Read(next_bytes)
+        new_hash.Write(next_bytes)
+        if err != nil {
+            // file is done
+            return fmt.Sprintf("%x", new_hash.Sum(nil))
+        }
+    }
 }
 
 // IsStringInArray takes an array of strings and a string value, and returns a boolean.

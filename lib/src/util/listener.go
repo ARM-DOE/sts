@@ -101,6 +101,7 @@ func (listener *Listener) fileWalkHandler(path string, info os.FileInfo, err err
 
 // Listen is a loop that operates on the watched directory, adding new files.
 // It scans the the specified watch directory every few seconds for any file additions.
+// Make sure to call LoadCache before you call Listen, or the last timestamp won't be loaded from file.
 // Due to its need to continuously scan the file system, it should always be called by a goroutine
 func (listener *Listener) Listen(new_file chan string) {
     listener.update_channel = new_file
