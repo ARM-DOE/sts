@@ -49,7 +49,7 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
     } else {
         file_info, _ := fi.Stat()
         if end_byte > file_info.Size() || start_byte > end_byte {
-            fmt.Fprint(w, "could not retrieve specified file portion")
+            fmt.Fprint(w, http.StatusBadRequest)
         }
         byte_count := end_byte - start_byte
         bytes_to_send := make([]byte, byte_count)

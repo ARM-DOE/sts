@@ -2,7 +2,7 @@ package util
 
 import (
     "bytes"
-    "encoding/gob"
+    "encoding/json"
     "fmt"
     "io/ioutil"
     "os"
@@ -19,7 +19,6 @@ type Listener struct {
     last_update    int64
     Files          map[string]int64
     watch_dir      string // This is the directory that the cache holds data about
-    decoder        gob.Decoder
     update_channel chan string
 }
 
@@ -44,9 +43,8 @@ func (listener *Listener) LoadCache() {
     }
     raw_file_bytes, _ := ioutil.ReadFile(listener.file_name)
     byte_buffer := bytes.NewBuffer(raw_file_bytes)
-    decoder := gob.NewDecoder(byte_buffer)
-    var new_map map[string]int64
-    decode_err := decoder.Decode(&new_map)
+    new_map := make(map[string]int64)
+    decode_err := json.Unmarshal(byte_buffer.Bytes(), &new_map)
     if decode_err != nil {
         listener.codingError(decode_err)
     }
@@ -57,14 +55,12 @@ func (listener *Listener) LoadCache() {
 // WriteCache dumps the in-memory cache to local file.
 func (listener *Listener) WriteCache() {
     listener.Files["__TIMESTAMP__"] = listener.last_update
-    byte_buffer := new(bytes.Buffer)
-    cache_encoder := gob.NewEncoder(byte_buffer)
-    encode_err := cache_encoder.Encode(listener.Files)
+    json_bytes, encode_err := json.Marshal(listener.Files)
     if encode_err != nil {
         listener.codingError(encode_err)
     }
     // Create temporary cache file while writing.
-    ioutil.WriteFile(listener.file_name+".tmp", byte_buffer.Bytes(), 0644)
+    ioutil.WriteFile(listener.file_name+".tmp", json_bytes, 0644)
     os.Rename(listener.file_name+".tmp", listener.file_name)
 }
 
@@ -86,6 +82,9 @@ func (listener *Listener) scanDir() {
 // fileWalkHandler is called for every file and directory in the directory managed by the Listener instance.
 // It checks the managed directory for any files that have been modified since the last cache update, and sends them up update_channel.
 func (listener *Listener) fileWalkHandler(path string, info os.FileInfo, err error) error {
+    if info == nil { // Check to make sure the file still exists
+        return nil
+    }
     if !info.IsDir() {
         _, in_map := listener.Files[path]
         modtime := info.ModTime()

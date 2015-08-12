@@ -4,6 +4,8 @@ package util
 import (
     "crypto/md5"
     "fmt"
+    "hash"
+    "io"
     "os"
 )
 
@@ -33,6 +35,45 @@ func FileMD5(path string) string {
         if err != nil {
             // file is done
             return fmt.Sprintf("%x", new_hash.Sum(nil))
+        }
+    }
+}
+
+// StreamMD5 is a struct that manages the digesting of byte blocks to an instance of an MD5 hash.
+type StreamMD5 struct {
+    md5        hash.Hash
+    BlockSize  int
+    bytes_sent int64
+}
+
+// NewStreamMD5 creates a new instance of the StreamMD5 struct with a default BlockSize of 8192.
+func NewStreamMD5() *StreamMD5 {
+    new_stream := &StreamMD5{}
+    new_stream.md5 = md5.New()
+    new_stream.BlockSize = 8192
+    return new_stream
+}
+
+// Update(bytes) is the same as calling md5.Write(bytes)
+func (stream *StreamMD5) Update(added_bytes []byte) {
+    stream.md5.Write(added_bytes)
+    stream.bytes_sent += int64(len(added_bytes))
+}
+
+// SumString returns the sum of the MD5 hash formatted as a string.
+func (stream *StreamMD5) SumString() string {
+    return fmt.Sprintf("%x", stream.md5.Sum(nil))
+}
+
+// ReadAll takes an io.Reader and consumes chunks of it in the BlockSize of the StreamMD5.
+// When finished, it returns the SumString of the MD5.
+func (stream *StreamMD5) ReadAll(read_stream io.Reader) string {
+    byte_block := make([]byte, stream.BlockSize)
+    for {
+        _, eof := read_stream.Read(byte_block)
+        stream.Update(byte_block)
+        if eof != nil {
+            return stream.SumString()
         }
     }
 }

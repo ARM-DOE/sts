@@ -19,6 +19,7 @@ type Part struct {
     Start     int64
     End       int64
     TotalSize int64
+    MD5       string
 }
 
 // PartFactory creates and returns a new instance of a Part.
@@ -33,7 +34,33 @@ func PartFactory(path string, start int64, end int64, total_size int64) Part {
     new_part.Start = start
     new_part.End = end
     new_part.Progress = 0
+    new_part.getMD5()
     return new_part
+}
+
+// getMD5 uses StreamMD5 to digest the file part that the Part instance refers to, and update its Part.MD5 value.
+func (part *Part) getMD5() {
+    fi, _ := os.Open(part.Path)
+    fi.Seek(part.Start, 0)
+    md5_stream := util.NewStreamMD5()
+    file_buff := make([]byte, md5_stream.BlockSize)
+    reads_necessary := part.countReads(md5_stream.BlockSize)
+    for i := int64(0); i < reads_necessary; i++ {
+        if i == reads_necessary-1 {
+            file_buff = make([]byte, (part.End-part.Start)%int64(md5_stream.BlockSize))
+        }
+        fi.Read(file_buff)
+        md5_stream.Update(file_buff)
+    }
+    part.MD5 = md5_stream.SumString()
+}
+
+func (part *Part) countReads(block_size int) int64 {
+    part_size := part.End - part.Start
+    if part_size%int64(block_size) == 0 {
+        return part_size / int64(block_size)
+    }
+    return (part_size / int64(block_size)) + 1
 }
 
 // Bin is a container for Part(s).
@@ -124,7 +151,10 @@ func (bin *Bin) fill(cache *Cache) {
         if path == "__TIMESTAMP__" {
             continue
         }
-        info, _ := os.Stat(path)
+        info, info_err := os.Stat(path)
+        if info_err != nil {
+            panic(fmt.Sprintf("File: %s registered in cache, but does not exist", path))
+        }
         file_size := info.Size()
         if allocation < file_size && allocation != -1 {
             // File has not already been allocated to another Bin

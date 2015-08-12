@@ -25,14 +25,6 @@ func errorHandler(w http.ResponseWriter, r *http.Request) {
     fmt.Fprint(w, http.StatusNotFound)
 }
 
-// handler receives a multipart file from the sender via PUT request, with an added HTTP header that specifies the boundary used to split the multipart file.
-// handler calls handleFile as a goroutine, which validates and writes the file to disk.
-func handler(w http.ResponseWriter, r *http.Request) {
-    byte_buffer := bytes.Buffer{}
-    byte_buffer.ReadFrom(r.Body)
-    handleFile(byte_buffer.Bytes())
-}
-
 // getChunkLocation parses the "location" file Header and returns the first and last byte from the chunk.
 func getChunkLocation(location string) (int64, int64) {
     split_chunk := strings.Split(location, ":")
@@ -41,46 +33,63 @@ func getChunkLocation(location string) (int64, int64) {
     return start, end
 }
 
-// handleFile is called by handler when a file and the boundary are sent via PUT request.
+// sendHandler receives a multipart file from the sender via PUT request.
 // It is responsible for verifying the md5 of each chunk in the file, replicating it's directory structure as it was on the sender, and writing the file to disk.
-func handleFile(bytes_of_file []byte) {
-    multipart_reader := multipart.NewReader(bytes.NewReader(bytes_of_file), util.MULTIPART_BOUNDARY)
+func sendHandler(w http.ResponseWriter, r *http.Request) {
+    multipart_reader := multipart.NewReader(r.Body, util.MULTIPART_BOUNDARY)
     for {
         next_part, end_of_file := multipart_reader.NextPart()
         if end_of_file != nil { // Reached end of multipart file
             break
         }
-        chunk_path := next_part.Header.Get("name")
-        write_path := chunk_path + ".tmp"
-        chunk_start, chunk_end := getChunkLocation(next_part.Header.Get("location"))
-        chunk_size := chunk_end - chunk_start
-        bytes_of_chunk := make([]byte, chunk_size)
-        next_part.Read(bytes_of_chunk)
-        if next_part.Header.Get("md5") != util.GenerateMD5(bytes_of_chunk) {
-            // validation failed, request this specific chunk again using chunk size
-            fmt.Println("Bad chunk of " + next_part.Header.Get("name") + " from bytes " + next_part.Header.Get("location"))
-            new_bytes := requestPart(next_part.Header.Get("name"), next_part.Header, chunk_start, chunk_end)
-            handleFile(new_bytes)
-        } else {
-            // Validation succeeded, write chunk to disk
-            _, err := os.Open(write_path)
-            if os.IsNotExist(err) {
-                // The file which this chunk belongs to does not already exist. Create a new empty file and companion file.
-                total_size, _ := strconv.ParseInt(next_part.Header.Get("total_size"), 10, 64)
-                createEmptyFile(chunk_path, total_size)
-            }
-            // Write bytes of chunk to specific location in file, append chunk md5 to companion file.
-            new_fi, _ := os.OpenFile(write_path, os.O_APPEND|os.O_WRONLY, 0600)
-            num, _ := new_fi.WriteAt(bytes_of_chunk, chunk_start)
-            fmt.Println("Wrote ", num, " bytes of chunk")
-            new_fi.Close()
-            addPartToCompanion(chunk_path, next_part.Header.Get("md5"), next_part.Header.Get("location"))
-            if isFileComplete(chunk_path) {
-                fmt.Println("Fully assembled ", chunk_path)
-                os.Rename(write_path, chunk_path)
-                os.Remove(chunk_path + ".comp")
-            }
+        handlePart(next_part)
+    }
+}
+
+// handlePart is called for each part in the multipart file that is sent to sendHandler.
+// handlePart reads from the Part stream, and writes the part to a file while calculating the md5.
+// If the file is bad, it will be reaquired and passed back into sendHandler.
+func handlePart(part *multipart.Part) {
+    // Gather data about part from headers
+    part_path := part.Header.Get("name")
+    write_path := part_path + ".tmp"
+    part_start, _ := getChunkLocation(part.Header.Get("location"))
+    part_md5 := util.NewStreamMD5()
+    // If the file which this chunk belongs to does not already exist, create a new empty file and companion file.
+    _, err := os.Open(write_path)
+    if os.IsNotExist(err) {
+        total_size, _ := strconv.ParseInt(part.Header.Get("total_size"), 10, 64)
+        fmt.Println(total_size)
+        createEmptyFile(part_path, total_size)
+    }
+    // Start reading and iterating over part
+    part_fi, _ := os.OpenFile(write_path, os.O_WRONLY, 0600)
+    part_fi.Seek(part_start, 0)
+    part_bytes := make([]byte, part_md5.BlockSize)
+    for {
+        bytes_read, err := part.Read(part_bytes) // This doesn't always return 8192
+        part_md5.Update(part_bytes[0:bytes_read])
+        part_fi.Write(part_bytes[0:bytes_read])
+        if err != nil {
+            break
         }
+    }
+    part_fi.Close()
+    // Validate part
+    if part.Header.Get("md5") != part_md5.SumString() {
+        // validation failed, request this specific chunk again using chunk size
+        fmt.Printf("Bad chunk of %s from bytes %s", part_path, part.Header.Get("location"))
+        //new_bytes := requestPart(part_path, part.Header, part_start, part_end)
+        time.Sleep(5 * time.Second)
+        //handleFile(new_bytes)
+        return
+    }
+    // Update the companion file of the part, and check if the whole file is done
+    addPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"))
+    if isFileComplete(part_path) {
+        fmt.Println("Fully assembled ", part_path)
+        os.Rename(write_path, part_path)
+        os.Remove(part_path + ".comp")
     }
 }
 
@@ -93,6 +102,7 @@ func removeFromCache(path string) {
     _, err := client.Do(request)
     if err != nil {
         fmt.Println("Request to remove from cache failed")
+        time.Sleep(5 * time.Second)
         removeFromCache(path)
     }
 }
@@ -225,7 +235,7 @@ func main() {
     listener.LoadCache()
     go listener.Listen(addition_channel)
 
-    http.HandleFunc("/send.go", handler)
+    http.HandleFunc("/send.go", sendHandler)
     http.HandleFunc("/", errorHandler)
     http.ListenAndServe(":8081", nil)
 }
