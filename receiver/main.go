@@ -1,6 +1,7 @@
 package main
 
 import (
+    "compress/gzip"
     "encoding/json"
     "fmt"
     "io/ioutil"
@@ -35,13 +36,17 @@ func getChunkLocation(location string) (int64, int64) {
 // sendHandler receives a multipart file from the sender via PUT request.
 // It is responsible for verifying the md5 of each chunk in the file, replicating it's directory structure as it was on the sender, and writing the file to disk.
 func sendHandler(w http.ResponseWriter, r *http.Request) {
+    compression := false
+    if r.Header.Get("Content-Encoding") == "gzip" {
+        compression = true
+    }
     multipart_reader := multipart.NewReader(r.Body, util.MULTIPART_BOUNDARY)
     for {
         next_part, end_of_file := multipart_reader.NextPart()
         if end_of_file != nil { // Reached end of multipart file
             break
         }
-        handlePart(next_part)
+        handlePart(next_part, compression)
     }
     fmt.Fprint(w, http.StatusOK)
 }
@@ -49,7 +54,7 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 // handlePart is called for each part in the multipart file that is sent to sendHandler.
 // handlePart reads from the Part stream, and writes the part to a file while calculating the md5.
 // If the file is bad, it will be reaquired and passed back into sendHandler.
-func handlePart(part *multipart.Part) {
+func handlePart(part *multipart.Part, compressed bool) {
     // Gather data about part from headers
     part_path := part.Header.Get("name")
     write_path := part_path + ".tmp"
@@ -66,8 +71,18 @@ func handlePart(part *multipart.Part) {
     part_fi, _ := os.OpenFile(write_path, os.O_WRONLY, 0600)
     part_fi.Seek(part_start, 0)
     part_bytes := make([]byte, part_md5.BlockSize)
+    var gzip_reader *gzip.Reader
+    if compressed {
+        gzip_reader, _ = gzip.NewReader(part)
+    }
     for {
-        bytes_read, err := part.Read(part_bytes) // This doesn't always return 8192
+        var err error
+        var bytes_read int
+        if compressed {
+            bytes_read, err = gzip_reader.Read(part_bytes)
+        } else {
+            bytes_read, err = part.Read(part_bytes) // This doesn't always return BlockSize
+        }
         part_md5.Update(part_bytes[0:bytes_read])
         part_fi.Write(part_bytes[0:bytes_read])
         if err != nil {
@@ -81,7 +96,7 @@ func handlePart(part *multipart.Part) {
         fmt.Printf("Bad chunk of %s from bytes %s", part_path, part.Header.Get("location"))
         new_stream := requestPart(part_path, part.Header, part_start, part_end)
         time.Sleep(5 * time.Second)
-        handlePart(new_stream)
+        handlePart(new_stream, compressed)
         return
     }
     // Update the companion file of the part, and check if the whole file is done

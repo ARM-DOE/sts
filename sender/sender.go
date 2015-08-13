@@ -2,6 +2,7 @@ package main
 
 import (
     "bytes"
+    "compress/gzip"
     "fmt"
     "io"
     "io/ioutil"
@@ -16,16 +17,18 @@ import (
 // Sender is a data structure that continually requests new Bins from a channel.
 // When an available Bin is found, Sender converts the Bin to a multipart file, which it then transmits to the reciever.
 type Sender struct {
-    queue      chan Bin
-    chunk_size int64
+    queue       chan Bin
+    chunk_size  int64
+    compression bool
 }
 
 // SenderFactory creates and returns a new instance of the Sender struct.
 // It takes a Bin channel as an argument, which the Sender uses to receiver newly filled or loaded Bins.
-func SenderFactory(file_queue chan Bin) *Sender {
+func SenderFactory(file_queue chan Bin, compression bool) *Sender {
     new_sender := &Sender{}
     new_sender.queue = file_queue
     new_sender.chunk_size = 100
+    new_sender.compression = compression
     return new_sender
 }
 
@@ -39,20 +42,26 @@ func (sender *Sender) run() {
             send_bin.Files[index].getMD5()
         }
         bin_body := CreateBinBody(send_bin)
+        bin_body.compression = sender.compression
         request, err := http.NewRequest("PUT", "http://localhost:8081/send.go", bin_body)
         request.ContentLength = bin_body.getContentLength()
+        if bin_body.compression {
+            request.Header.Add("Content-Encoding", "gzip")
+        }
         if err != nil {
             fmt.Println(err)
         }
         client := http.Client{}
         response, sending_err := client.Do(request)
-        response_code, _ := ioutil.ReadAll(response.Body)
-        if sending_err != nil || string(response_code) != "200" {
+        if sending_err != nil {
             fmt.Println(sending_err.Error(), response)
             time.Sleep(5 * time.Second) // Wait so you don't choke the Bin queue if it keeps failing in quick succession.
             sender.queue <- send_bin    // Pass the bin back into the Bin queue.
         } else {
-            send_bin.delete() // Sending is complete, so remove the bin file
+            response_code, _ := ioutil.ReadAll(response.Body)
+            if string(response_code) == "200" {
+                send_bin.delete() // Sending is complete, so remove the bin file
+            }
         }
     }
 }
@@ -68,6 +77,9 @@ type BinBody struct {
     file_index    int          // The index of the Part currently being operated on from Bin.Files
     part_progress int64        // A sum of the byte counts read from the current file.
     eof_returned  bool         // Set to true when an EOF is returned so that further calls to read do not cause an error.
+    compression   bool         // Set to true if you want to enable Bin compression.
+    gzip_writer   *gzip.Writer
+    gzip_buffer   bytes.Buffer
 }
 
 // CreateBinBody creates a new instance of a BinBody from an instance of Bin.
@@ -78,6 +90,9 @@ func CreateBinBody(bin Bin) *BinBody {
     }
     new_body := &BinBody{}
     new_body.eof_returned = false
+    new_body.compression = false
+    new_body.gzip_buffer = bytes.Buffer{}
+    new_body.gzip_writer, _ = gzip.NewWriterLevel(&new_body.gzip_buffer, gzip.BestCompression)
     new_body.bin = bin
     new_body.writer_buffer = bytes.Buffer{}
     new_body.file_index = 0
@@ -140,6 +155,14 @@ func (body *BinBody) Read(file_buffer []byte) (int, error) {
         temp_buffer = make([]byte, bytes_left)
     }
     bytes_read, file_read_error := body.file_handle.Read(temp_buffer)
+    // Do compression if enabled
+    if body.compression {
+        body.gzip_buffer.Reset()
+        body.gzip_writer.Write(temp_buffer)
+        body.gzip_writer.Flush()
+        temp_buffer = body.gzip_buffer.Bytes()
+        bytes_read = len(temp_buffer)
+    }
     copy(file_buffer, temp_buffer)
     body.part_progress += int64(bytes_read)
     // If an EOF is encountered or the part is out of room, start a new part.

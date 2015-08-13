@@ -31,7 +31,7 @@ func main() {
     sender_delay := time.Duration(1000 / SENDER_COUNT)
     senders := make([]*Sender, 0, SENDER_COUNT)
     for dispatched_senders < SENDER_COUNT {
-        created_sender := SenderFactory(file_cache.bin_channel)
+        created_sender := SenderFactory(file_cache.bin_channel, config_file.Compression)
         go created_sender.run()
         senders = append(senders, created_sender)
         dispatched_senders++
@@ -52,6 +52,7 @@ type Config struct {
     Log_File_Duration_Hours int
     Cache_File_Name         string
     Bin_Size                int64
+    Compression             bool
 }
 
 // parseConfig parses the config.yaml file and returns the parsed results as an instance of the Config struct.

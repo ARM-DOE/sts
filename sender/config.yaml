@@ -3,3 +3,4 @@ sender_threads: 10
 log_file_duration_hours: 3000
 cache_file_name: file_cache.dat
 bin_size: 30000
+compression: false
