@@ -79,7 +79,7 @@ func CreateBinBody(bin Bin) *BinBody {
     new_body := &BinBody{}
     new_body.eof_returned = false
     new_body.bin = bin
-    new_body.writer_buffer = bytes.Buffer{} // bytes.NewBuffer(make([]byte, new_body.block_size))
+    new_body.writer_buffer = bytes.Buffer{}
     new_body.file_index = 0
     new_body.writer = multipart.NewWriter(&new_body.writer_buffer)
     new_body.writer.SetBoundary(util.MULTIPART_BOUNDARY)
@@ -118,10 +118,10 @@ func (body *BinBody) startNextPart() ([]byte, error) {
     return body.writer_buffer.Bytes(), nil
 }
 
-// Read is BinBody's implementation of an io.Reader read Read().
+// Read is BinBody's implementation of an io.Reader Read().
 // If the bin isn't already finished processing, and no new parts need to be started, it reads a portion of the Bin file into file_buffer until every part has been completed.
 func (body *BinBody) Read(file_buffer []byte) (int, error) {
-    if body.eof_returned { // If the Bin is already done processing, return EOF and 0.
+    if body.eof_returned { // If the Bin is already done processing, return the closing boundary and EOF.
         ending_boundary := []byte(fmt.Sprintf("--%s--", util.MULTIPART_BOUNDARY))
         copy(file_buffer[0:len(ending_boundary)], ending_boundary)
         return len(ending_boundary), io.EOF

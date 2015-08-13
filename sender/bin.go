@@ -34,7 +34,6 @@ func PartFactory(path string, start int64, end int64, total_size int64) Part {
     new_part.Start = start
     new_part.End = end
     new_part.Progress = 0
-    new_part.getMD5()
     return new_part
 }
 
@@ -162,7 +161,6 @@ func (bin *Bin) fill(cache *Cache) {
             bin.BytesLeft = bin.BytesLeft - added_bytes
             bin.addPart(path, allocation, allocation+added_bytes, info)
             cache.updateFile(path, allocation+added_bytes, info)
-            bin.Empty = false
         }
     }
     if !bin.Empty {
@@ -190,4 +188,5 @@ func (bin *Bin) fitBytes(allocation int64, file_size int64) int64 {
 func (bin *Bin) addPart(path string, start int64, end int64, info os.FileInfo) {
     new_part := PartFactory(path, start, end, info.Size())
     bin.Files = append(bin.Files, new_part)
+    bin.Empty = false
 }

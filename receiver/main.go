@@ -1,7 +1,6 @@
 package main
 
 import (
-    "bytes"
     "encoding/json"
     "fmt"
     "io/ioutil"
@@ -53,7 +52,7 @@ func handlePart(part *multipart.Part) {
     // Gather data about part from headers
     part_path := part.Header.Get("name")
     write_path := part_path + ".tmp"
-    part_start, _ := getChunkLocation(part.Header.Get("location"))
+    part_start, part_end := getChunkLocation(part.Header.Get("location"))
     part_md5 := util.NewStreamMD5()
     // If the file which this chunk belongs to does not already exist, create a new empty file and companion file.
     _, err := os.Open(write_path)
@@ -77,11 +76,11 @@ func handlePart(part *multipart.Part) {
     part_fi.Close()
     // Validate part
     if part.Header.Get("md5") != part_md5.SumString() {
-        // validation failed, request this specific chunk again using chunk size
+        // Validation failed, request this specific chunk again using chunk size
         fmt.Printf("Bad chunk of %s from bytes %s", part_path, part.Header.Get("location"))
-        //new_bytes := requestPart(part_path, part.Header, part_start, part_end)
+        new_stream := requestPart(part_path, part.Header, part_start, part_end)
         time.Sleep(5 * time.Second)
-        //handleFile(new_bytes)
+        handlePart(new_stream)
         return
     }
     // Update the companion file of the part, and check if the whole file is done
@@ -180,24 +179,22 @@ func newCompanion(path string, size int64) {
 
 // requestPart sends an HTTP request to the sender which requests a file part.
 // After receiving a file part, requestPart will create a multipart file with only one chunk, and pass it back into handleFile for validation.
-func requestPart(path string, part_header textproto.MIMEHeader, start int64, end int64) []byte {
+func requestPart(path string, part_header textproto.MIMEHeader, start int64, end int64) *multipart.Part {
     post_url := fmt.Sprintf("http://localhost:8080/get_file.go?name=%s&start=%d&end=%d", path, start, end)
     client := http.Client{}
     request, _ := http.NewRequest("POST", post_url, nil)
-    resp, err := client.Do(request)
-    body_bytes, _ := ioutil.ReadAll(resp.Body)
-    if err != nil {
-        // MODIFY behavior here later. Currently just tries again every 5 seconds.
+    resp, req_err := client.Do(request)
+    if req_err != nil {
+        fmt.Println("Failed to re-request part. Sender must be down.")
         time.Sleep(5 * time.Second)
-        return requestPart(path, part_header, start, end)
+        return requestPart(path, part_header, start, end) // If the sender is down for a really really long time, could cause a stack overflow
     }
-    byte_buffer := bytes.Buffer{}
-    multipart_writer := multipart.NewWriter(&byte_buffer)
-    multipart_writer.SetBoundary(util.MULTIPART_BOUNDARY)
-    part, _ := multipart_writer.CreatePart(part_header)
-    part.Write(body_bytes)
-    multipart_writer.Close()
-    return byte_buffer.Bytes()
+    reader := multipart.NewReader(resp.Body, util.MULTIPART_BOUNDARY)
+    part, part_err := reader.NextPart()
+    if part_err != nil {
+        fmt.Println(part_err)
+    }
+    return part
 }
 
 // createNewFile is called when a multipart chunk is encountered and the whole file hasn't been created on the reciever yet.

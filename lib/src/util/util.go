@@ -11,6 +11,7 @@ import (
 
 // Both the sender and receiver use the same multipart boundary and bin size.
 const MULTIPART_BOUNDARY = "83c64d3ae066414b27bfbff29a53ff1a500d5fac0a0799990c9c6464a1fb"
+const DEFAULT_BLOCK_SIZE = 8192
 
 // generateMD5 generates and returns an md5 string from an array of bytes.
 func GenerateMD5(data []byte) string {

@@ -19,11 +19,11 @@ func main() {
     WATCH_DIRECTORY := checkWatchDir(config_file.Directory)
 
     // Create the channel through which new bins will be sent from the sender to the receiver.
-    bin_channel := make(chan Bin, 1)
+    bin_channel := make(chan Bin, SENDER_COUNT+5) // Create a bin channel with buffer size large enough to accommodate all sender threads and a little wiggle room.
     // Create and start cache file handler and webserver
     file_cache := CacheFactory(CACHE_FILE_NAME, WATCH_DIRECTORY, bin_channel, config_file.Bin_Size)
     file_cache.listener.LoadCache()
-    server := WebserverFactory(file_cache, WATCH_DIRECTORY)
+    server := WebserverFactory(file_cache, WATCH_DIRECTORY, config_file.Bin_Size)
     go server.startServer()
 
     // Dispatch senders
