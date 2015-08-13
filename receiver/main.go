@@ -40,13 +40,14 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
     if r.Header.Get("Content-Encoding") == "gzip" {
         compression = true
     }
-    multipart_reader := multipart.NewReader(r.Body, util.MULTIPART_BOUNDARY)
+    boundary := r.Header.Get("Boundary")
+    multipart_reader := multipart.NewReader(r.Body, boundary)
     for {
         next_part, end_of_file := multipart_reader.NextPart()
         if end_of_file != nil { // Reached end of multipart file
             break
         }
-        handlePart(next_part, compression)
+        handlePart(next_part, boundary, compression)
     }
     fmt.Fprint(w, http.StatusOK)
 }
@@ -54,7 +55,7 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 // handlePart is called for each part in the multipart file that is sent to sendHandler.
 // handlePart reads from the Part stream, and writes the part to a file while calculating the md5.
 // If the file is bad, it will be reaquired and passed back into sendHandler.
-func handlePart(part *multipart.Part, compressed bool) {
+func handlePart(part *multipart.Part, boundary string, compressed bool) {
     // Gather data about part from headers
     part_path := part.Header.Get("name")
     write_path := part_path + ".tmp"
@@ -94,9 +95,9 @@ func handlePart(part *multipart.Part, compressed bool) {
     if part.Header.Get("md5") != part_md5.SumString() {
         // Validation failed, request this specific chunk again using chunk size
         fmt.Printf("Bad chunk of %s from bytes %s", part_path, part.Header.Get("location"))
-        new_stream := requestPart(part_path, part.Header, part_start, part_end)
+        new_stream := requestPart(part_path, part.Header, part_start, part_end, boundary)
         time.Sleep(5 * time.Second)
-        handlePart(new_stream, compressed)
+        handlePart(new_stream, boundary, compressed)
         return
     }
     // Update the companion file of the part, and check if the whole file is done
@@ -195,7 +196,7 @@ func newCompanion(path string, size int64) {
 
 // requestPart sends an HTTP request to the sender which requests a file part.
 // After receiving a file part, requestPart will create a multipart file with only one chunk, and pass it back into handleFile for validation.
-func requestPart(path string, part_header textproto.MIMEHeader, start int64, end int64) *multipart.Part {
+func requestPart(path string, part_header textproto.MIMEHeader, start int64, end int64, boundary string) *multipart.Part {
     post_url := fmt.Sprintf("http://localhost:8080/get_file.go?name=%s&start=%d&end=%d", path, start, end)
     client := http.Client{}
     request, _ := http.NewRequest("POST", post_url, nil)
@@ -203,9 +204,9 @@ func requestPart(path string, part_header textproto.MIMEHeader, start int64, end
     if req_err != nil {
         fmt.Println("Failed to re-request part. Sender must be down.")
         time.Sleep(5 * time.Second)
-        return requestPart(path, part_header, start, end) // If the sender is down for a really really long time, could cause a stack overflow
+        return requestPart(path, part_header, start, end, boundary) // If the sender is down for a really really long time, could cause a stack overflow
     }
-    reader := multipart.NewReader(resp.Body, util.MULTIPART_BOUNDARY)
+    reader := multipart.NewReader(resp.Body, boundary)
     part, part_err := reader.NextPart()
     if part_err != nil {
         fmt.Println(part_err)

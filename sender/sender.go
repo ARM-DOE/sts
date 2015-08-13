@@ -44,6 +44,7 @@ func (sender *Sender) run() {
         bin_body := CreateBinBody(send_bin)
         bin_body.compression = sender.compression
         request, err := http.NewRequest("PUT", "http://localhost:8081/send.go", bin_body)
+        request.Header.Add("Boundary", bin_body.Boundary())
         request.ContentLength = bin_body.getContentLength()
         if bin_body.compression {
             request.Header.Add("Content-Encoding", "gzip")
@@ -97,7 +98,6 @@ func CreateBinBody(bin Bin) *BinBody {
     new_body.writer_buffer = bytes.Buffer{}
     new_body.file_index = 0
     new_body.writer = multipart.NewWriter(&new_body.writer_buffer)
-    new_body.writer.SetBoundary(util.MULTIPART_BOUNDARY)
     return new_body
 }
 
@@ -107,8 +107,13 @@ func (body *BinBody) getContentLength() int64 {
     for _, element := range body.bin.Files {
         content_length += element.Start - element.End
     }
-    content_length += int64(len(fmt.Sprintf("--%s--", util.MULTIPART_BOUNDARY)))
+    content_length += int64(len(fmt.Sprintf("--%s--", body.Boundary())))
     return content_length
+}
+
+// Boundary returns the multipart boundary from the BinBody.writer object.
+func (body *BinBody) Boundary() string {
+    return body.writer.Boundary()
 }
 
 // startNextPart is called when the size of the part is read or EOF is reached in the part file.
@@ -137,7 +142,7 @@ func (body *BinBody) startNextPart() ([]byte, error) {
 // If the bin isn't already finished processing, and no new parts need to be started, it reads a portion of the Bin file into file_buffer until every part has been completed.
 func (body *BinBody) Read(file_buffer []byte) (int, error) {
     if body.eof_returned { // If the Bin is already done processing, return the closing boundary and EOF.
-        ending_boundary := []byte(fmt.Sprintf("--%s--", util.MULTIPART_BOUNDARY))
+        ending_boundary := []byte(fmt.Sprintf("--%s--", body.Boundary()))
         copy(file_buffer[0:len(ending_boundary)], ending_boundary)
         return len(ending_boundary), io.EOF
     }
@@ -183,7 +188,7 @@ func (body *BinBody) Read(file_buffer []byte) (int, error) {
 func getBinBody(bin Bin) ([]byte, string) {
     body_buffer := bytes.Buffer{}
     multipart_writer := multipart.NewWriter(&body_buffer)
-    multipart_writer.SetBoundary(util.MULTIPART_BOUNDARY)
+    multipart_writer.SetBoundary(multipart_writer.Boundary())
     for _, part := range bin.Files {
         fi, _ := os.Open(part.Path)
         chunk_bytes := make([]byte, part.End-part.Start)
