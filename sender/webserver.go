@@ -76,6 +76,7 @@ func (server *Webserver) removeFromCache(w http.ResponseWriter, r *http.Request)
     file_path := r.FormValue("name")
     file_path = getWholePath(file_path)
     server.cache.removeFile(file_path)
+    fmt.Fprint(w, http.StatusOK)
 }
 
 // errorHandler is called when any page that is not a registered API method is requested.

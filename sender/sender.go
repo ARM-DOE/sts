@@ -4,6 +4,7 @@ import (
     "bytes"
     "fmt"
     "io"
+    "io/ioutil"
     "mime/multipart"
     "net/http"
     "net/textproto"
@@ -33,26 +34,25 @@ func SenderFactory(file_queue chan Bin) *Sender {
 // After sending is complete, the Bin is deleted.
 func (sender *Sender) run() {
     for {
-        select {
-        case send_bin := <-sender.queue:
-            for index, _ := range send_bin.Files {
-                send_bin.Files[index].getMD5()
-            }
-            bin_body := CreateBinBody(send_bin)
-            request, err := http.NewRequest("PUT", "http://localhost:8081/send.go", bin_body)
-            request.ContentLength = bin_body.getContentLength()
-            if err != nil {
-                fmt.Println(err)
-            }
-            client := http.Client{}
-            response, sending_err := client.Do(request)
-            if sending_err != nil {
-                fmt.Println(sending_err.Error(), response)
-                time.Sleep(5 * time.Second) // Wait so you don't choke the Bin queue if it keeps failing in quick succession.
-                sender.queue <- send_bin    // Pass the bin back into the Bin queue.
-            } else {
-                send_bin.delete() // Sending is complete, so remove the bin file
-            }
+        send_bin := <-sender.queue
+        for index, _ := range send_bin.Files {
+            send_bin.Files[index].getMD5()
+        }
+        bin_body := CreateBinBody(send_bin)
+        request, err := http.NewRequest("PUT", "http://localhost:8081/send.go", bin_body)
+        request.ContentLength = bin_body.getContentLength()
+        if err != nil {
+            fmt.Println(err)
+        }
+        client := http.Client{}
+        response, sending_err := client.Do(request)
+        response_code, _ := ioutil.ReadAll(response.Body)
+        if sending_err != nil || string(response_code) != "200" {
+            fmt.Println(sending_err.Error(), response)
+            time.Sleep(5 * time.Second) // Wait so you don't choke the Bin queue if it keeps failing in quick succession.
+            sender.queue <- send_bin    // Pass the bin back into the Bin queue.
+        } else {
+            send_bin.delete() // Sending is complete, so remove the bin file
         }
     }
 }

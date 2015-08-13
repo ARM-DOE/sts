@@ -1,8 +1,7 @@
 package main
 
 import (
-    "bytes"
-    "encoding/gob"
+    "encoding/json"
     "fmt"
     "io/ioutil"
     "os"
@@ -109,27 +108,23 @@ func (cache *Cache) walkBin(path string, info os.FileInfo, err error) error {
 // loadBin is called when a serialized bin file is found that needs to be loaded into memory.
 // loadBin takes an array of bytes, uses the gob deserializer, and returns the decoded Bin.
 func (cache *Cache) loadBin(bin_bytes []byte) Bin {
-    bin_buffer := bytes.NewBuffer(bin_bytes)
     decoded_bin := Bin{}
-    bin_decoder := gob.NewDecoder(bin_buffer)
-    eff := bin_decoder.Decode(&decoded_bin)
-    if eff != nil {
-        fmt.Println(eff.Error())
+    decode_err := json.Unmarshal(bin_bytes, &decoded_bin)
+    if decode_err != nil {
+        fmt.Println(decode_err.Error())
     }
     return decoded_bin
 }
 
 // save dumps an in-memory Bin to a local file in the directory "bins" with filename md5_of(bin.Files)+.bin
 func (bin *Bin) save() {
-    byte_buffer := new(bytes.Buffer)
-    bin_encoder := gob.NewEncoder(byte_buffer)
     bin_md5 := util.GenerateMD5([]byte(fmt.Sprintf("%v", bin.Files)))
     bin.Name = "bins/" + bin_md5 + ".bin"
-    err := bin_encoder.Encode(bin)
-    if err != nil {
-        println(err.Error())
+    json_bytes, encode_err := json.Marshal(bin)
+    if encode_err != nil {
+        println(encode_err.Error())
     }
-    ioutil.WriteFile(bin.Name+".tmp", byte_buffer.Bytes(), 0700)
+    ioutil.WriteFile(bin.Name+".tmp", json_bytes, 0700)
     os.Rename(bin.Name+".tmp", bin.Name)
 }
 

@@ -43,6 +43,7 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
         }
         handlePart(next_part)
     }
+    fmt.Fprint(w, http.StatusOK)
 }
 
 // handlePart is called for each part in the multipart file that is sent to sendHandler.
@@ -209,12 +210,10 @@ func createEmptyFile(path string, size int64) {
 
 func finishFile(addition_channel chan string, config_file string) {
     for {
-        select {
-        case new_file := <-addition_channel:
-            if !(strings.HasSuffix(new_file, ".comp") || strings.HasSuffix(new_file, ".tmp")) && new_file != config_file {
-                removeFromCache(new_file)
-                fmt.Println("Removed ", new_file, " from cache")
-            }
+        new_file := <-addition_channel
+        if !(strings.HasSuffix(new_file, ".comp") || strings.HasSuffix(new_file, ".tmp")) && new_file != config_file {
+            removeFromCache(new_file)
+            fmt.Println("Removed ", new_file, " from cache")
         }
     }
 }
