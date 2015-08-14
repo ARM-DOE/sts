@@ -105,6 +105,7 @@ func handlePart(part *multipart.Part, boundary string, compressed bool) {
     if isFileComplete(part_path) {
         fmt.Println("Fully assembled ", part_path)
         os.Rename(write_path, part_path)
+        os.Chtimes(part_path, time.Now(), time.Now()) // Update mtime so that listener will pick up the file
         os.Remove(part_path + ".comp")
     }
 }
@@ -218,11 +219,22 @@ func createEmptyFile(path string, size int64) {
     fi.Close()
 }
 
+// getStorePath returns the path that the receiver should use to store a file.
+// Given parameters full_path and watch_directory, it will remove watch directory from the full path.
+// This function differs from getStorePath() on the sender because the receiver watches its containing directory.
+func getStorePath(full_path string, watch_directory string) string {
+    store_path := strings.Replace(full_path, watch_directory+"/", "", 1)
+    return store_path
+}
+
+// finishFile blocks while listening for any additions on addition_channel.
+// Once a file that isn't a temp file is found, it removes it from the senders cache.
 func finishFile(addition_channel chan string, config_file string) {
     for {
         new_file := <-addition_channel
         if !(strings.HasSuffix(new_file, ".comp") || strings.HasSuffix(new_file, ".tmp")) && new_file != config_file {
-            removeFromCache(new_file)
+            cwd, _ := os.Getwd()
+            removeFromCache(getStorePath(new_file, cwd))
             fmt.Println("Removed ", new_file, " from cache")
         }
     }

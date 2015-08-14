@@ -11,7 +11,7 @@ import (
 )
 
 // Listener is a data struct that scans the filesystem for any additions to a directory.
-// When an addition is detected, it is passed down the update_channel.
+// When an addition is detected, it is passed to update_channel.
 // Listener maintains a local file that contains a timestamp for when it last checked a directory.
 // This local cache also has the capacity to store information about files.
 type Listener struct {
@@ -71,7 +71,7 @@ func GetTimestamp() int64 {
 }
 
 // scanDir recursively checks a directory for files that are newer than the current timestamp.
-// If new files are found, their paths are passed up update_channel.
+// If new files are found, their paths are sent to update_channel.
 // When finished, it updates the local cache file.
 func (listener *Listener) scanDir() {
     filepath.Walk(listener.watch_dir, listener.fileWalkHandler)
@@ -80,7 +80,7 @@ func (listener *Listener) scanDir() {
 }
 
 // fileWalkHandler is called for every file and directory in the directory managed by the Listener instance.
-// It checks the managed directory for any files that have been modified since the last cache update, and sends them up update_channel.
+// It checks the managed directory for any files that have been modified since the last cache update, and sends them to update_channel.
 func (listener *Listener) fileWalkHandler(path string, info os.FileInfo, err error) error {
     if info == nil { // Check to make sure the file still exists
         return nil
@@ -98,7 +98,7 @@ func (listener *Listener) fileWalkHandler(path string, info os.FileInfo, err err
     return nil
 }
 
-// Listen is a loop that operates on the watched directory, adding new files.
+// Listen is a loop that operates on the watched directory, adding new files to update_channel.
 // It scans the the specified watch directory every few seconds for any file additions.
 // Make sure to call LoadCache before you call Listen, or the last timestamp won't be loaded from file.
 // Due to its need to continuously scan the file system, it should always be called by a goroutine

@@ -43,7 +43,7 @@ func (cache *Cache) updateFile(path string, new_byte_progress int64, info os.Fil
 // removeFile deletes a file and it's progress from the cache.
 // It should only be used when a file has been confirmed to have completely sent.
 func (cache *Cache) removeFile(path string) {
-    delete(cache.listener.Files, path)
+    delete(cache.listener.Files, getWholePath(path))
     cache.listener.WriteCache()
 }
 
