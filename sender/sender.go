@@ -38,6 +38,7 @@ func SenderFactory(file_queue chan Bin, compression bool) *Sender {
 func (sender *Sender) run() {
     for {
         send_bin := <-sender.queue
+        fmt.Println("Sending bin of size ", send_bin.Size)
         for index, _ := range send_bin.Files {
             send_bin.Files[index].getMD5()
         }
@@ -114,6 +115,11 @@ func (body *BinBody) getContentLength() int64 {
 // Boundary returns the multipart boundary from the BinBody.writer object.
 func (body *BinBody) Boundary() string {
     return body.writer.Boundary()
+}
+
+// SetBoundary sets the boundary string in the BinBody instance of multipart writer.
+func (body *BinBody) SetBoundary(boundary string) {
+    body.writer.SetBoundary(boundary)
 }
 
 // startNextPart is called when the size of the part is read or EOF is reached in the part file.

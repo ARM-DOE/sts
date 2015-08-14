@@ -12,13 +12,14 @@ import (
     "path/filepath"
     "strconv"
     "strings"
+    "sync"
     "time"
     "util"
 )
 
 // companion_lock prevents the same companion file from being written to by multiple threads.
-// This is done in order to avoid overwriting new part data in companion files.
-var companion_lock bool
+// This is done in order to avoid overwriting newly added part data in companion files.
+var companion_lock sync.Mutex
 
 // errorHandler is called when any page that is not a registered API method is requested.
 func errorHandler(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +66,6 @@ func handlePart(part *multipart.Part, boundary string, compressed bool) {
     _, err := os.Open(write_path)
     if os.IsNotExist(err) {
         total_size, _ := strconv.ParseInt(part.Header.Get("total_size"), 10, 64)
-        fmt.Println(total_size)
         createEmptyFile(part_path, total_size)
     }
     // Start reading and iterating over part
@@ -162,20 +162,14 @@ func decodeCompanion(path string) *Companion {
 // It implements a "companion lock" system, to prevent the same companion file being written to by two goroutines at the same time.
 // addPartToCompanion takes the path of the "final file".
 func addPartToCompanion(path string, id string, location string) {
-    if !companion_lock {
-        companion_lock = true
-    } else {
-        time.Sleep(20 * time.Millisecond)
-        addPartToCompanion(path, id, location)
-        return
-    }
+    companion_lock.Lock()
     companion := decodeCompanion(path)
     chunk_addition := id + ";" + location
     if !util.IsStringInArray(companion.CurrentParts, chunk_addition) {
         companion.CurrentParts = append(companion.CurrentParts, chunk_addition)
     }
     companion.encodeAndWrite()
-    companion_lock = false
+    companion_lock.Unlock()
 }
 
 // encodeAndWrite takes the in-memory representation of a companion file, creates a JSON representation, and writes it to disk.
@@ -197,7 +191,7 @@ func newCompanion(path string, size int64) {
 // requestPart sends an HTTP request to the sender which requests a file part.
 // After receiving a file part, requestPart will create a multipart file with only one chunk, and pass it back into handleFile for validation.
 func requestPart(path string, part_header textproto.MIMEHeader, start int64, end int64, boundary string) *multipart.Part {
-    post_url := fmt.Sprintf("http://localhost:8080/get_file.go?name=%s&start=%d&end=%d", path, start, end)
+    post_url := fmt.Sprintf("http://localhost:8080/get_file.go?name=%s&start=%d&end=%d&boundary=%s", path, start, end, boundary)
     client := http.Client{}
     request, _ := http.NewRequest("POST", post_url, nil)
     resp, req_err := client.Do(request)
@@ -236,7 +230,7 @@ func finishFile(addition_channel chan string, config_file string) {
 
 // main is the entry point of the webserver. It is responsible for registering handlers and beginning the request serving loop.
 func main() {
-    companion_lock = false
+    companion_lock = sync.Mutex{}
     // Create and start listener
     cwd, _ := os.Getwd()
     addition_channel := make(chan string, 1)

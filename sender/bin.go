@@ -53,6 +53,7 @@ func (part *Part) getMD5() {
     part.MD5 = md5_stream.SumString()
 }
 
+// countReads returns an int that represents the number of calls to Read() it will take to read in a Part given a block size.
 func (part *Part) countReads(block_size int) int64 {
     part_size := part.End - part.Start
     if part_size%int64(block_size) == 0 {
@@ -91,6 +92,7 @@ func BinFactory(size int64, watch_dir string) Bin {
 // On startup, all Bin files are read, and any unfinished Bins are loaded into memory, after which the Senders may continue to process them.
 func (cache *Cache) loadBins() {
     filepath.Walk("bins", cache.walkBin)
+    cache.allocate()
 }
 
 // walkBin is called by loadBins for every file in the "bins" directory.
@@ -128,6 +130,7 @@ func (bin *Bin) save() {
     os.Rename(bin.Name+".tmp", bin.Name)
 }
 
+// delete removes the local copy of the bin from disk.
 func (bin *Bin) delete() {
     os.Remove(bin.Name)
 }

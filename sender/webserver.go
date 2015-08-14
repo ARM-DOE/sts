@@ -34,9 +34,10 @@ func (server *Webserver) startServer() {
 
 // getFile takes a file name, start, and end position in the file to return a whole or partial file.
 // This handler is called when "get_file.go" is requested.
-// Sample request: /get_file.go?name=watch_directory/test_file.txt&start=0&end=30
+// Sample request: /get_file.go?name=watch_directory/test_file.txt&start=0&end=30&boundary=865876njgbhrnghu
 func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
     name := r.FormValue("name")
+    boundary := r.FormValue("boundary")
     start_byte_string := r.FormValue("start")
     end_byte_string := r.FormValue("end")
     start_byte, start_err := strconv.ParseInt(start_byte_string, 10, 64)
@@ -58,6 +59,7 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
         bin.addPart(name, start_byte, end_byte, file_info)
         bin.Files[0].getMD5()
         bin_stream := CreateBinBody(bin)
+        bin_stream.SetBoundary(boundary)
         byte_buffer := make([]byte, util.DEFAULT_BLOCK_SIZE)
         for {
             bytes_read, eof := bin_stream.Read(byte_buffer)
