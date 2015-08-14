@@ -20,6 +20,7 @@ type Sender struct {
     queue       chan Bin
     chunk_size  int64
     compression bool
+    Busy        bool
 }
 
 // SenderFactory creates and returns a new instance of the Sender struct.
@@ -38,6 +39,7 @@ func SenderFactory(file_queue chan Bin, compression bool) *Sender {
 func (sender *Sender) run() {
     for {
         send_bin := <-sender.queue
+        sender.Busy = true
         fmt.Println("Sending bin of size ", send_bin.Size)
         for index, _ := range send_bin.Files {
             send_bin.Files[index].getMD5()
@@ -65,6 +67,7 @@ func (sender *Sender) run() {
                 send_bin.delete() // Sending is complete, so remove the bin file
             }
         }
+        sender.Busy = false
     }
 }
 

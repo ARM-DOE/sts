@@ -33,6 +33,7 @@ func main() {
         go created_sender.run()
         senders[dispatched_senders] = created_sender
     }
+    file_cache.SetSenders(senders)
     fmt.Println("Senders dispatched")
     file_cache.loadBins()
     go file_cache.scan() // Start the listener thread
