@@ -95,10 +95,12 @@ func (listener *Listener) fileWalkHandler(path string, info os.FileInfo, err err
     if !info.IsDir() {
         _, in_map := listener.Files[path]
         modtime := info.ModTime()
+        special_case := false
         if modtime == time.Unix(listener.last_update, 0) { // Special case: since ModTime doesn't offer resolution to a fraction of a second
+            special_case = true
             modtime = time.Unix(listener.last_update-1, 0) // If modtime and the last cache update are equal, shift ModTime back by one second.
         }
-        if !in_map && modtime.After(time.Unix(listener.last_update, 0)) && info.Name() != ".DS_Store" {
+        if !in_map && info.Name() != ".DS_Store" && (modtime.After(time.Unix(listener.last_update, 0)) || special_case) {
             listener.new_files = true
             listener.update_channel <- path
         }
