@@ -20,7 +20,12 @@ type Listener struct {
     Files          map[string]int64
     watch_dir      string // This is the directory that the cache holds data about
     update_channel chan string
+    onFinish       FinishFunc // Function called when a scan that detects new files finishes.
+    new_files      bool       // Set to true if there were new files found in the scan
 }
+
+// Function called after a scan that detects new files
+type FinishFunc func()
 
 // ListenerFactory generates and returns a new Listener struct which operates on the provided watch_dir, and saves it's data to cache_file_name.
 func ListenerFactory(cache_file_name string, watch_dir string) *Listener {
@@ -74,9 +79,11 @@ func GetTimestamp() int64 {
 // If new files are found, their paths are sent to update_channel.
 // When finished, it updates the local cache file.
 func (listener *Listener) scanDir() {
+    listener.new_files = false
     filepath.Walk(listener.watch_dir, listener.fileWalkHandler)
     listener.last_update = GetTimestamp()
     listener.WriteCache()
+    listener.afterScan()
 }
 
 // fileWalkHandler is called for every file and directory in the directory managed by the Listener instance.
@@ -92,10 +99,23 @@ func (listener *Listener) fileWalkHandler(path string, info os.FileInfo, err err
             modtime = time.Unix(listener.last_update-1, 0) // If modtime and the last cache update are equal, shift ModTime back by one second.
         }
         if !in_map && modtime.After(time.Unix(listener.last_update, 0)) && info.Name() != ".DS_Store" {
+            listener.new_files = true
             listener.update_channel <- path
         }
     }
     return nil
+}
+
+// afterScan is called by the listener after a scan completes
+// If new files were detected, the settable onFinish function is called.
+func (listener *Listener) afterScan() {
+    if listener.onFinish != nil && listener.new_files {
+        listener.onFinish()
+    }
+}
+
+func (listener *Listener) SetOnFinish(onFinish FinishFunc) {
+    listener.onFinish = onFinish
 }
 
 // Listen is a loop that operates on the watched directory, adding new files to update_channel.

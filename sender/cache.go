@@ -82,11 +82,11 @@ func (cache *Cache) allocate() {
 // When an addition is detected, it creates a new entry in the cache for the file and calls cache.allocate()
 func (cache *Cache) scan() {
     update_channel := make(chan string, 1)
+    cache.listener.SetOnFinish(cache.allocate)
     go cache.listener.Listen(update_channel)
     for {
         new_path := <-update_channel
         cache.listener.Files[new_path] = 0
-        cache.allocate()
     }
 }
 

@@ -45,8 +45,9 @@ func (sender *Sender) run() {
         bin_body := CreateBinBody(send_bin)
         bin_body.compression = sender.compression
         request, err := http.NewRequest("PUT", "http://localhost:8081/send.go", bin_body)
+        request.Header.Add("Transfer-Encoding", "chunked")
         request.Header.Add("Boundary", bin_body.Boundary())
-        request.ContentLength = bin_body.getContentLength()
+        request.ContentLength = -1
         if bin_body.compression {
             request.Header.Add("Content-Encoding", "gzip")
         }
@@ -81,6 +82,7 @@ type BinBody struct {
     part_progress int64        // A sum of the byte counts read from the current file.
     eof_returned  bool         // Set to true when an EOF is returned so that further calls to read do not cause an error.
     compression   bool         // Set to true if you want to enable Bin compression.
+    unsent_header []byte
     gzip_writer   *gzip.Writer // Gzip writer for writing compressed bytes if compression is enabled.
     gzip_buffer   bytes.Buffer
 }
@@ -99,17 +101,72 @@ func CreateBinBody(bin Bin) *BinBody {
     new_body.writer_buffer = bytes.Buffer{}
     new_body.file_index = 0
     new_body.writer = multipart.NewWriter(&new_body.writer_buffer)
+    new_body.startNextPart()
     return new_body
 }
 
-// getContentLength uses the location headers in the Bin + extra multipart data to calculate the total content length of the Bin.
-func (body *BinBody) getContentLength() int64 {
-    content_length := int64(0)
-    for _, element := range body.bin.Files {
-        content_length += element.Start - element.End
+// startNextPart is called when the size of the part is read or EOF is reached in the part file.
+// When a new part is started, startNextPart() returns the header for that part.
+func (body *BinBody) startNextPart() {
+    if len(body.bin.Files) == body.file_index { // If the file index will cause an error next time it is used for slicing, the Bin is finished processing.
+        body.eof_returned = true
+        return
     }
-    content_length += int64(len(body.getClosingBoundary()))
-    return content_length
+    body.part_progress = 0
+    body.writer_buffer.Truncate(0)
+    body.bin_part = body.bin.Files[body.file_index]
+    body.file_handle, _ = os.Open(body.bin_part.Path)
+    body.file_handle.Seek(body.bin_part.Start, 0)
+    new_header := textproto.MIMEHeader{}
+    new_header.Add("Content-Disposition", "form-data")
+    new_header.Add("Content-Type", "application/octet-stream")
+    new_header.Add("md5", body.bin_part.MD5)
+    new_header.Add("name", getStorePath(body.bin_part.Path, body.bin.WatchDir))
+    new_header.Add("total_size", fmt.Sprintf("%d", body.bin_part.TotalSize))
+    new_header.Add("location", getPartLocation(body.bin_part.Start, body.bin_part.End))
+    body.writer.CreatePart(new_header)
+    body.unsent_header = body.writer_buffer.Bytes()
+    body.file_index++
+}
+
+// Read is BinBody's implementation of an io.Reader Read().
+// If the bin isn't already finished processing, and no new parts need to be started, it reads a portion of the Bin file into file_buffer until every part has been completed.
+func (body *BinBody) Read(file_buffer []byte) (int, error) {
+    if body.eof_returned {
+        // Files are done, return closing boundary and EOF.
+        ending_boundary := []byte(body.getClosingBoundary())
+        copy(file_buffer[0:len(ending_boundary)], ending_boundary)
+        return len(ending_boundary), io.EOF
+    } else if body.unsent_header != nil {
+        // A new part was started, send its header.
+        copy(file_buffer[0:len(body.unsent_header)], body.unsent_header)
+        header_len := len(body.unsent_header)
+        body.unsent_header = nil
+        return header_len, nil
+    } else {
+        // Read from file
+        bytes_left := (body.bin_part.End - body.bin_part.Start) - body.part_progress
+        temp_buffer := file_buffer
+        if bytes_left < int64(len(file_buffer)) {
+            temp_buffer = make([]byte, bytes_left)
+        }
+        bytes_read, file_read_error := body.file_handle.Read(temp_buffer)
+        // Do compression if enabled
+        if body.compression {
+            body.gzip_buffer.Reset()
+            body.gzip_writer.Write(temp_buffer)
+            body.gzip_writer.Flush()
+            temp_buffer = body.gzip_buffer.Bytes()
+            bytes_read = len(temp_buffer)
+        }
+        copy(file_buffer, temp_buffer)
+        body.part_progress += int64(bytes_read)
+        if file_read_error != nil || bytes_left < int64(len(file_buffer)) {
+            body.startNextPart()
+        }
+        return bytes_read, nil
+    }
+    return 0, nil
 }
 
 // Boundary returns the multipart boundary from the BinBody.writer object.
@@ -125,73 +182,6 @@ func (body *BinBody) SetBoundary(boundary string) {
 // getClosingBoundary returns the string that signifies the end of a multipart file.
 func (body *BinBody) getClosingBoundary() string {
     return fmt.Sprintf("--%s--", body.Boundary())
-}
-
-// startNextPart is called when the size of the part is read or EOF is reached in the part file.
-// When a new part is started, startNextPart() returns the header for that part.
-func (body *BinBody) startNextPart() ([]byte, error) {
-    if len(body.bin.Files) == body.file_index { // If the file index will cause an error next time it is used for slicing, the Bin is finished processing.
-        body.eof_returned = true
-        return nil, io.EOF
-    }
-    body.part_progress = 0
-    body.bin_part = body.bin.Files[body.file_index]
-    body.file_handle, _ = os.Open(body.bin_part.Path)
-    body.file_handle.Seek(body.bin_part.Start, 0)
-    new_header := textproto.MIMEHeader{}
-    new_header.Add("Content-Disposition", "form-data")
-    new_header.Add("Content-Type", "application/octet-stream")
-    new_header.Add("md5", body.bin_part.MD5)
-    new_header.Add("name", getStorePath(body.bin_part.Path, body.bin.WatchDir))
-    new_header.Add("total_size", fmt.Sprintf("%d", body.bin_part.TotalSize))
-    new_header.Add("location", getPartLocation(body.bin_part.Start, body.bin_part.End))
-    body.writer.CreatePart(new_header)
-    return body.writer_buffer.Bytes(), nil
-}
-
-// Read is BinBody's implementation of an io.Reader Read().
-// If the bin isn't already finished processing, and no new parts need to be started, it reads a portion of the Bin file into file_buffer until every part has been completed.
-func (body *BinBody) Read(file_buffer []byte) (int, error) {
-    if body.eof_returned { // If the Bin is already done processing, return the closing boundary and EOF.
-        ending_boundary := []byte(body.getClosingBoundary())
-        copy(file_buffer[0:len(ending_boundary)], ending_boundary)
-        return len(ending_boundary), io.EOF
-    }
-    // If this is the first call to Read, start the first part of the Bin and return the header.
-    if body.file_index == 0 {
-        initial_header, _ := body.startNextPart()
-        body.file_index++
-        copy(file_buffer, initial_header)
-        return len(initial_header), nil
-    }
-    // Check to see that we're not going over max part size.
-    bytes_left := (body.bin_part.End - body.bin_part.Start) - body.part_progress
-    temp_buffer := file_buffer
-    if bytes_left < int64(len(file_buffer)) {
-        temp_buffer = make([]byte, bytes_left)
-    }
-    bytes_read, file_read_error := body.file_handle.Read(temp_buffer)
-    // Do compression if enabled
-    if body.compression {
-        body.gzip_buffer.Reset()
-        body.gzip_writer.Write(temp_buffer)
-        body.gzip_writer.Flush()
-        temp_buffer = body.gzip_buffer.Bytes()
-        bytes_read = len(temp_buffer)
-    }
-    copy(file_buffer, temp_buffer)
-    body.part_progress += int64(bytes_read)
-    // If an EOF is encountered or the part is out of room, start a new part.
-    if file_read_error != nil || bytes_left < int64(len(file_buffer)) {
-        header_bytes, eof := body.startNextPart()
-        body.file_index++
-        if eof != nil {
-            return bytes_read, nil
-        } else {
-            return len(header_bytes), eof
-        }
-    }
-    return bytes_read, nil
 }
 
 // getBinBody generates and returns a multipart file based on the Parts defined in the Bin.
