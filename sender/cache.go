@@ -40,7 +40,7 @@ func (cache *Cache) updateFile(path string, new_byte_progress int64, info os.Fil
     cache.listener.Files[path] = new_byte_progress
 }
 
-// removeFile deletes a file and it's progress from the cache.
+// removeFile deletes a file and its progress from the cache.
 // It should only be used when a file has been confirmed to have completely sent.
 func (cache *Cache) removeFile(path string) {
     delete(cache.listener.Files, getWholePath(path))
@@ -57,7 +57,7 @@ func (cache *Cache) freeSender() bool {
     return false
 }
 
-// allocate is called when a new file is detected.
+// allocate is called when a new file is detected and on startup.
 // While there are still any unallocated bytes in the cache, allocate continuously fills new Bins.
 // When a new non-empty Bin is filled, it is sent down the Bin channel.
 // Allocate stops when a Bin is filled, but is empty.
@@ -79,7 +79,7 @@ func (cache *Cache) allocate() {
 }
 
 // scan blocks until it receives a file addition from the cache listener.
-// When an addition is detected, it calls cache.allocate()
+// When an addition is detected, it creates a new entry in the cache for the file and calls cache.allocate()
 func (cache *Cache) scan() {
     update_channel := make(chan string, 1)
     go cache.listener.Listen(update_channel)

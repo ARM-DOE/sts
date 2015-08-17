@@ -1,9 +1,9 @@
 package util
 
 import (
-    "bytes"
     "encoding/json"
     "fmt"
+    "io"
     "io/ioutil"
     "os"
     "path/filepath"
@@ -34,18 +34,18 @@ func ListenerFactory(cache_file_name string, watch_dir string) *Listener {
 
 // LoadCache replaces the in-memory cache with the cache saved to disk.
 func (listener *Listener) LoadCache() {
-    _, err := os.Open(listener.file_name)
+    _, err := os.Stat(listener.file_name)
     if os.IsNotExist(err) {
         // Cache file does not exist, create new one
         os.Create(listener.file_name)
         listener.last_update = GetTimestamp()
         listener.WriteCache()
     }
-    raw_file_bytes, _ := ioutil.ReadFile(listener.file_name)
-    byte_buffer := bytes.NewBuffer(raw_file_bytes)
+    fi, _ := os.Open(listener.file_name)
     new_map := make(map[string]int64)
-    decode_err := json.Unmarshal(byte_buffer.Bytes(), &new_map)
-    if decode_err != nil {
+    json_decoder := json.NewDecoder(fi)
+    decode_err := json_decoder.Decode(&new_map)
+    if decode_err != nil && decode_err != io.EOF {
         listener.codingError(decode_err)
     }
     listener.Files = new_map

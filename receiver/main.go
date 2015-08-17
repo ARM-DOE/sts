@@ -26,16 +26,16 @@ func errorHandler(w http.ResponseWriter, r *http.Request) {
     fmt.Fprint(w, http.StatusNotFound)
 }
 
-// getChunkLocation parses the "location" file Header and returns the first and last byte from the chunk.
-func getChunkLocation(location string) (int64, int64) {
-    split_chunk := strings.Split(location, ":")
-    start, _ := strconv.ParseInt(split_chunk[0], 10, 64)
-    end, _ := strconv.ParseInt(split_chunk[1], 10, 64)
+// getPartLocation parses the "location" file Header and returns the first and last byte from the part.
+func getPartLocation(location string) (int64, int64) {
+    split_header := strings.Split(location, ":")
+    start, _ := strconv.ParseInt(split_header[0], 10, 64)
+    end, _ := strconv.ParseInt(split_header[1], 10, 64)
     return start, end
 }
 
 // sendHandler receives a multipart file from the sender via PUT request.
-// It is responsible for verifying the md5 of each chunk in the file, replicating it's directory structure as it was on the sender, and writing the file to disk.
+// It is responsible for verifying the md5 of each part in the file, replicating it's directory structure as it was on the sender, and writing the file to disk.
 func sendHandler(w http.ResponseWriter, r *http.Request) {
     compression := false
     if r.Header.Get("Content-Encoding") == "gzip" {
@@ -60,9 +60,9 @@ func handlePart(part *multipart.Part, boundary string, compressed bool) {
     // Gather data about part from headers
     part_path := part.Header.Get("name")
     write_path := part_path + ".tmp"
-    part_start, part_end := getChunkLocation(part.Header.Get("location"))
+    part_start, part_end := getPartLocation(part.Header.Get("location"))
     part_md5 := util.NewStreamMD5()
-    // If the file which this chunk belongs to does not already exist, create a new empty file and companion file.
+    // If the file which this part belongs to does not already exist, create a new empty file and companion file.
     _, err := os.Open(write_path)
     if os.IsNotExist(err) {
         total_size, _ := strconv.ParseInt(part.Header.Get("total_size"), 10, 64)
@@ -93,8 +93,8 @@ func handlePart(part *multipart.Part, boundary string, compressed bool) {
     part_fi.Close()
     // Validate part
     if part.Header.Get("md5") != part_md5.SumString() {
-        // Validation failed, request this specific chunk again using chunk size
-        fmt.Printf("Bad chunk of %s from bytes %s", part_path, part.Header.Get("location"))
+        // Validation failed, request this specific part again using part size
+        fmt.Printf("Bad part of %s from bytes %s", part_path, part.Header.Get("location"))
         new_stream := requestPart(part_path, part.Header, part_start, part_end, boundary)
         time.Sleep(5 * time.Second)
         handlePart(new_stream, boundary, compressed)
@@ -111,21 +111,25 @@ func handlePart(part *multipart.Part, boundary string, compressed bool) {
 }
 
 // removeFromCache removes the specified file from the cache on the Sender.
-// removeFromCache recursively calls itself until the Sender confirms that the file has been removed.
+// removeFromCache loops until the Sender confirms that the file has been removed.
 func removeFromCache(path string) {
+    request_complete := false
     client := http.Client{}
     post_url := fmt.Sprintf("http://localhost:8080/remove.go?name=%s", path)
-    request, _ := http.NewRequest("POST", post_url, nil)
-    _, err := client.Do(request)
-    if err != nil {
-        fmt.Println("Request to remove from cache failed")
-        time.Sleep(5 * time.Second)
-        removeFromCache(path)
+    for !request_complete {
+        request, _ := http.NewRequest("POST", post_url, nil)
+        _, err := client.Do(request)
+        if err != nil {
+            fmt.Println("Request to remove from cache failed")
+            time.Sleep(5 * time.Second)
+        } else {
+            request_complete = true
+        }
     }
 }
 
 // isFileComplete decodes the companion file of a given path and determines whether the file is complete.
-// isFileComplete sums the number of bytes in each chunk in the companion file. If the sum equals the total file size, the file is marked as complete.
+// isFileComplete sums the number of bytes in each part in the companion file. If the sum equals the total file size, the file is marked as complete.
 func isFileComplete(path string) bool {
     is_done := false
     decoded_companion := decodeCompanion(path)
@@ -160,14 +164,14 @@ func decodeCompanion(path string) *Companion {
 }
 
 // addPartToCompanion decodes a companion struct, adds the specified id to CurrentParts (must be unique) and writes the modified companion struct back to disk.
-// It implements a "companion lock" system, to prevent the same companion file being written to by two goroutines at the same time.
+// It uses a mutex lock to prevent the same companion file being written to by two goroutines at the same time.
 // addPartToCompanion takes the path of the "final file".
 func addPartToCompanion(path string, id string, location string) {
     companion_lock.Lock()
     companion := decodeCompanion(path)
-    chunk_addition := id + ";" + location
-    if !util.IsStringInArray(companion.CurrentParts, chunk_addition) {
-        companion.CurrentParts = append(companion.CurrentParts, chunk_addition)
+    companion_addition := id + ";" + location
+    if !util.IsStringInArray(companion.CurrentParts, companion_addition) {
+        companion.CurrentParts = append(companion.CurrentParts, companion_addition)
     }
     companion.encodeAndWrite()
     companion_lock.Unlock()
@@ -190,27 +194,34 @@ func newCompanion(path string, size int64) {
 }
 
 // requestPart sends an HTTP request to the sender which requests a file part.
-// After receiving a file part, requestPart will create a multipart file with only one chunk, and pass it back into handleFile for validation.
+// After receiving a file part with associated header data, requestPart will read out the first and only part, and pass it back into handleFile for validation.
 func requestPart(path string, part_header textproto.MIMEHeader, start int64, end int64, boundary string) *multipart.Part {
     post_url := fmt.Sprintf("http://localhost:8080/get_file.go?name=%s&start=%d&end=%d&boundary=%s", path, start, end, boundary)
     client := http.Client{}
-    request, _ := http.NewRequest("POST", post_url, nil)
-    resp, req_err := client.Do(request)
-    if req_err != nil {
-        fmt.Println("Failed to re-request part. Sender must be down.")
-        time.Sleep(5 * time.Second)
-        return requestPart(path, part_header, start, end, boundary) // If the sender is down for a really really long time, could cause a stack overflow
+    request_complete := false
+    var return_part *multipart.Part
+    for !request_complete {
+        request, _ := http.NewRequest("POST", post_url, nil)
+        resp, req_err := client.Do(request)
+        if req_err != nil {
+            fmt.Println("Failed to re-request part. Sender must be down.")
+            time.Sleep(5 * time.Second)
+            continue
+        }
+        reader := multipart.NewReader(resp.Body, boundary)
+        part, part_err := reader.NextPart()
+        if part_err != nil {
+            fmt.Println(part_err)
+            continue
+        }
+        return_part = part
+        request_complete = true
     }
-    reader := multipart.NewReader(resp.Body, boundary)
-    part, part_err := reader.NextPart()
-    if part_err != nil {
-        fmt.Println(part_err)
-    }
-    return part
+    return return_part
 }
 
-// createNewFile is called when a multipart chunk is encountered and the whole file hasn't been created on the reciever yet.
-// It fills a file with zero value bytes so that the created file is equal to the final size of multipart file.
+// createNewFile is called when a multipart part is encountered and the file doesn't exist on the receiver yet.
+// It fills a file with null bytes so that the created file is the same size as the complete file will be.
 func createEmptyFile(path string, size int64) {
     os.MkdirAll(filepath.Dir(path), os.ModePerm)
     newCompanion(path, size)
@@ -223,7 +234,7 @@ func createEmptyFile(path string, size int64) {
 // Given parameters full_path and watch_directory, it will remove watch directory from the full path.
 // This function differs from getStorePath() on the sender because the receiver watches its containing directory.
 func getStorePath(full_path string, watch_directory string) string {
-    store_path := strings.Replace(full_path, watch_directory+"/", "", 1)
+    store_path := strings.Replace(full_path, watch_directory+string(os.PathSeparator), "", 1)
     return store_path
 }
 
@@ -253,6 +264,7 @@ func main() {
     listener.LoadCache()
     go listener.Listen(addition_channel)
 
+    // Register request handling functions
     http.HandleFunc("/send.go", sendHandler)
     http.HandleFunc("/", errorHandler)
     http.ListenAndServe(":8081", nil)

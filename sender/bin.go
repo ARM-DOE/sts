@@ -13,12 +13,12 @@ import (
 // Part represents a part of a multipart file.
 // It contains the data necessary to create a part of a multipart file which can then be parsed on the receiving end.
 type Part struct {
-    Path      string
-    Progress  int64
-    Start     int64
-    End       int64
-    TotalSize int64
-    MD5       string
+    Path      string // Absolute path to the file that Part represents
+    Progress  int64  // For keeping track of how much of the Bin has been sent
+    Start     int64  // Beginning byte in the part
+    End       int64  // Ending byte in the part
+    TotalSize int64  // Total size of the file that the Part represents
+    MD5       string // MD5 of the data in the part file from Start:End
 }
 
 // PartFactory creates and returns a new instance of a Part.
@@ -66,12 +66,12 @@ func (part *Part) countReads(block_size int) int64 {
 // When new files are detected in the watch directory, new Bins are created and filled until all the new files have been allocated.
 // The filled Bins are passed down the bin channel to senders, which construct and send a multipart file from the list of Parts.
 type Bin struct {
-    Files     []Part
+    Files     []Part // All the instances of Part that the Bin contains
+    Size      int64  // Maximum amount of bytes that the Bin is able to store
+    BytesLeft int64  // Unallocated bytes in the Bin
+    Name      string // MD5 of Bin.Files creates unique Bin name for writing to disk
     WatchDir  string
-    Size      int64
-    BytesLeft int64
     Empty     bool
-    Name      string
 }
 
 // BinFactory creates a new empty Bin object.
@@ -108,7 +108,7 @@ func (cache *Cache) walkBin(path string, info os.FileInfo, err error) error {
 }
 
 // loadBin is called when a serialized bin file is found that needs to be loaded into memory.
-// loadBin takes an array of bytes, uses the gob deserializer, and returns the decoded Bin.
+// loadBin takes an array of bytes, uses the json decoder, and returns the decoded Bin.
 func (cache *Cache) loadBin(bin_bytes []byte) Bin {
     decoded_bin := Bin{}
     decode_err := json.Unmarshal(bin_bytes, &decoded_bin)
@@ -118,7 +118,7 @@ func (cache *Cache) loadBin(bin_bytes []byte) Bin {
     return decoded_bin
 }
 
-// save dumps an in-memory Bin to a local file in the directory "bins" with filename md5_of(bin.Files)+.bin
+// save dumps an in-memory Bin to a local file in the directory "bins" with filename Bin.Name+.bin
 func (bin *Bin) save() {
     bin_md5 := util.GenerateMD5([]byte(fmt.Sprintf("%v", bin.Files)))
     bin.Name = "bins/" + bin_md5 + ".bin"
@@ -132,7 +132,10 @@ func (bin *Bin) save() {
 
 // delete removes the local copy of the bin from disk.
 func (bin *Bin) delete() {
-    os.Remove(bin.Name)
+    err := os.Remove(bin.Name)
+    if err != nil {
+        fmt.Println("Failed to remove bin " + bin.Name)
+    }
 }
 
 // fill iterates through files in the cache until it finds one that is not completely allocated.
@@ -167,8 +170,8 @@ func (bin *Bin) fill(cache *Cache) {
     cache.listener.WriteCache()
 }
 
-// fitBytes checks a file to see how much of that file can fit inside a Bin.
-// fitBytes takes argument allocation, which specifies how many bytes of the file have already been allocated to a Bin.
+// fitBytes checks a file to see how much of a file can fit inside a Bin.
+// It takes argument allocation, which specifies how many bytes of the file have already been allocated to a Bin.
 // fitBytes returns either all the bytes in the file, or how many can fit into the Bin.
 func (bin *Bin) fitBytes(allocation int64, file_size int64) int64 {
     unallocated_bytes := file_size - allocation
@@ -176,13 +179,13 @@ func (bin *Bin) fitBytes(allocation int64, file_size int64) int64 {
         // Can't fit the whole file, return everything left in the bin.
         return bin.BytesLeft
     } else {
-        // The file does fit, return it's size
+        // The file does fit, return its size
         return unallocated_bytes
     }
 }
 
 // addPart calls PartFactory and appends the new part to the Bin.
-// See documentation for PartFactory for an indepth explanation of addParts' arguments.
+// See documentation for PartFactory for an indepth explanation of addParts arguments.
 func (bin *Bin) addPart(path string, start int64, end int64, info os.FileInfo) {
     new_part := PartFactory(path, start, end, info.Size())
     bin.Files = append(bin.Files, new_part)

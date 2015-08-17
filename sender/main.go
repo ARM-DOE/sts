@@ -11,7 +11,7 @@ import (
 )
 
 // main is the entry point for the sender program.
-// It parses config values that are necessary during runtime, and dispatches the listening and sending threads, after which it loops infinitely.
+// It parses config values that are necessary during runtime, dispatches the listening and sending threads, and loops infinitely.
 func main() {
     config_file := parseConfig()
     SENDER_COUNT := config_file.Sender_Threads
@@ -34,9 +34,9 @@ func main() {
         senders[dispatched_senders] = created_sender
     }
     file_cache.SetSenders(senders)
-    fmt.Println("Senders dispatched")
     file_cache.loadBins()
     go file_cache.scan() // Start the listener thread
+    fmt.Println("Ready to send")
     for {
         time.Sleep(1 * time.Second)
     }
@@ -72,7 +72,7 @@ func parseConfig() Config {
 // getStorePath returns the path that the receiver should use to store a file.
 // Given parameters full_path and watch_directory, it will remove watch directory from the full path.
 func getStorePath(full_path string, watch_directory string) string {
-    store_path := strings.Replace(full_path, filepath.Dir(watch_directory)+"/", "", 1)
+    store_path := strings.Replace(full_path, filepath.Dir(watch_directory)+string(os.PathSeparator), "", 1)
     return store_path
 }
 
@@ -88,11 +88,11 @@ func getWholePath(store_path string) string {
 // checkWatchDir is called on the directory to be watched.
 // It validates that the directory exists, and returns the absolute path.
 func checkWatchDir(watch_dir string) string {
-    _, err := os.Open(watch_dir)
-    if err != nil {
-        fmt.Println("Directory does not exist")
+    _, err := os.Stat(watch_dir)
+    if os.IsNotExist(err) {
+        fmt.Println("Watch directory does not exist")
         os.Exit(1)
     }
-    watch_dir, _ = filepath.Abs(watch_dir)
-    return watch_dir
+    abs_dir, _ := filepath.Abs(watch_dir)
+    return abs_dir
 }
