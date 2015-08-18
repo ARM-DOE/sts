@@ -7,6 +7,7 @@ import (
     "io/ioutil"
     "os"
     "path/filepath"
+    "regexp"
     "time"
 )
 
@@ -22,6 +23,7 @@ type Listener struct {
     update_channel chan string
     onFinish       FinishFunc // Function called when a scan that detects new files finishes.
     new_files      bool       // Set to true if there were new files found in the scan
+    ignored_files  []string
 }
 
 // Function called after a scan that detects new files
@@ -34,6 +36,8 @@ func ListenerFactory(cache_file_name string, watch_dir string) *Listener {
     new_listener.last_update = -1
     new_listener.watch_dir = watch_dir
     new_listener.Files = make(map[string]int64)
+    new_listener.ignored_files = make([]string, 0)
+    new_listener.AddIgnored(`\.DS_Store`)
     return new_listener
 }
 
@@ -91,10 +95,12 @@ func (listener *Listener) fileWalkHandler(path string, info os.FileInfo, err err
         modtime := info.ModTime()
         special_case := false
         if modtime == time.Unix(listener.last_update, 0) { // Special case: since ModTime doesn't offer resolution to a fraction of a second
-            special_case = true
-            modtime = time.Unix(listener.last_update-1, 0) // If modtime and the last cache update are equal, shift ModTime back by one second.
+            if info.Name() != "listener_cache.dat" {
+                fmt.Println(path, modtime.Unix(), listener.last_update)
+            }
+            special_case = true // If modtime and the last cache update are equal, set the special case flag
         }
-        if !in_map && info.Name() != ".DS_Store" && (modtime.After(time.Unix(listener.last_update, 0)) || special_case) {
+        if !in_map && !listener.checkIgnored(info.Name()) && (modtime.After(time.Unix(listener.last_update, 0)) || special_case) {
             listener.new_files = true
             listener.update_channel <- path
         }
@@ -112,6 +118,28 @@ func (listener *Listener) afterScan() {
 
 func (listener *Listener) SetOnFinish(onFinish FinishFunc) {
     listener.onFinish = onFinish
+}
+
+// checkIgnored is called every time a file is about to be sent to the addition channel.
+// The file name is checked against every registered ignore pattern, if a match is found, the file is ignored.
+func (listener *Listener) checkIgnored(path string) bool {
+    ignore := false
+    for _, pattern := range listener.ignored_files {
+        matched, match_err := regexp.MatchString(pattern, path)
+        if match_err != nil {
+            fmt.Println("Error matching pattern " + pattern + " against file " + path)
+        } else {
+            if matched {
+                ignore = true
+            }
+        }
+    }
+    return ignore
+}
+
+// AddIgnored can be called to add a regex pattern to the list of ignored files
+func (listener *Listener) AddIgnored(pattern string) {
+    listener.ignored_files = append(listener.ignored_files, pattern)
 }
 
 // Listen is a loop that operates on the watched directory, adding new files to update_channel.
