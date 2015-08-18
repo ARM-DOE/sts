@@ -23,6 +23,7 @@ type Listener struct {
     update_channel chan string
     onFinish       FinishFunc // Function called when a scan that detects new files finishes.
     new_files      bool       // Set to true if there were new files found in the scan
+    scan_delay     int
     ignored_files  []string
 }
 
@@ -32,6 +33,7 @@ type FinishFunc func()
 // ListenerFactory generates and returns a new Listener struct which operates on the provided watch_dir, and saves it's data to cache_file_name.
 func ListenerFactory(cache_file_name string, watch_dir string) *Listener {
     new_listener := &Listener{}
+    new_listener.scan_delay = 3
     new_listener.file_name = cache_file_name
     new_listener.last_update = -1
     new_listener.watch_dir = watch_dir
@@ -147,7 +149,7 @@ func (listener *Listener) Listen(new_file chan string) {
     listener.update_channel = new_file
     for {
         listener.scanDir()
-        time.Sleep(3 * time.Second)
+        time.Sleep(time.Duration(listener.scan_delay) * time.Second)
     }
 }
 
