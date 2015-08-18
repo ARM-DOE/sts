@@ -95,9 +95,6 @@ func (listener *Listener) fileWalkHandler(path string, info os.FileInfo, err err
         modtime := info.ModTime()
         special_case := false
         if modtime == time.Unix(listener.last_update, 0) { // Special case: since ModTime doesn't offer resolution to a fraction of a second
-            if info.Name() != "listener_cache.dat" {
-                fmt.Println(path, modtime.Unix(), listener.last_update)
-            }
             special_case = true // If modtime and the last cache update are equal, set the special case flag
         }
         if !in_map && !listener.checkIgnored(info.Name()) && (modtime.After(time.Unix(listener.last_update, 0)) || special_case) {
