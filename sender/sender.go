@@ -15,7 +15,7 @@ import (
 )
 
 // Sender is a struct that continually requests new Bins from a channel.
-// When an available Bin is found, Sender converts the Bin to a multipart file, which it then transmits to the reciever.
+// When an available Bin is found, Sender converts the Bin to a multipart file, which it then transmits to the receiver.
 type Sender struct {
     queue       chan Bin
     compression bool
@@ -31,7 +31,7 @@ func SenderFactory(file_queue chan Bin, compression bool) *Sender {
     return new_sender
 }
 
-// run is the mainloop of the sender struct. It blocks until it receives a Bin from the bin channel.
+// run is the main loop of the sender struct. It blocks until it receives a Bin from the bin channel.
 // Once the Sender receives a Bin, it creates the body of the file and sends it.
 // After sending is verified to be complete, the Bin is deleted.
 func (sender *Sender) run() {
@@ -134,9 +134,9 @@ func (body *BinBody) startNextPart() {
 func (body *BinBody) Read(file_buffer []byte) (int, error) {
     if body.eof_returned {
         // Files are done, return closing boundary and EOF.
-        ending_boundary := []byte(body.getClosingBoundary())
-        copy(file_buffer[0:len(ending_boundary)], ending_boundary)
-        return len(ending_boundary), io.EOF
+        closing_boundary := []byte(body.getClosingBoundary())
+        copy(file_buffer[0:len(closing_boundary)], closing_boundary)
+        return len(closing_boundary), io.EOF
     } else if body.unsent_header != nil {
         // A new part was started, send its header.
         copy(file_buffer[0:len(body.unsent_header)], body.unsent_header)
@@ -148,7 +148,7 @@ func (body *BinBody) Read(file_buffer []byte) (int, error) {
         bytes_left := (body.bin_part.End - body.bin_part.Start) - body.part_progress
         temp_buffer := file_buffer
         if bytes_left < int64(len(file_buffer)) {
-            temp_buffer = make([]byte, bytes_left)
+            temp_buffer = make([]byte, bytes_left) // If the amount that we want to read from the part is smaller than the buffer size, make a new buffer.
         }
         bytes_read, file_read_error := body.file_handle.Read(temp_buffer)
         // Do compression if enabled

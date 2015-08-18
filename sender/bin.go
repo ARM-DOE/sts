@@ -185,7 +185,7 @@ func (bin *Bin) fitBytes(allocation int64, file_size int64) int64 {
 }
 
 // addPart calls PartFactory and appends the new part to the Bin.
-// See documentation for PartFactory for an indepth explanation of addParts arguments.
+// See documentation for PartFactory for an in-depth explanation of addParts arguments.
 func (bin *Bin) addPart(path string, start int64, end int64, info os.FileInfo) {
     new_part := PartFactory(path, start, end, info.Size())
     bin.Files = append(bin.Files, new_part)

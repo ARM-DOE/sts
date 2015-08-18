@@ -55,7 +55,7 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 
 // handlePart is called for each part in the multipart file that is sent to sendHandler.
 // handlePart reads from the Part stream, and writes the part to a file while calculating the md5.
-// If the file is bad, it will be reaquired and passed back into sendHandler.
+// If the file is bad, it will be reacquired and passed back into sendHandler.
 func handlePart(part *multipart.Part, boundary string, compressed bool) {
     // Gather data about part from headers
     part_path := part.Header.Get("name")

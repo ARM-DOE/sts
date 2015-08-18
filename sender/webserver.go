@@ -9,6 +9,7 @@ import (
 )
 
 // Webserver acts as a layer of abstraction to separate webserver functions from the "main" functions in the rest of the package.
+// It also contains some config data that the webserver needs during runtime.
 type Webserver struct {
     cache     *Cache
     watch_dir string

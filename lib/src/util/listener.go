@@ -10,7 +10,7 @@ import (
     "time"
 )
 
-// Listener is a data struct that scans the filesystem for any additions to a directory.
+// Listener is a data struct that scans the file system for any additions to a directory.
 // When an addition is detected, it is passed to update_channel.
 // Listener maintains a local file that contains a timestamp for when it last checked a directory.
 // This local cache also has the capacity to store information about files.
@@ -67,12 +67,6 @@ func (listener *Listener) WriteCache() {
     // Create temporary cache file while writing.
     ioutil.WriteFile(listener.file_name+".tmp", json_bytes, 0644)
     os.Rename(listener.file_name+".tmp", listener.file_name)
-}
-
-// GetTimestamp returns an int64 containing the current time since the epoch in seconds.
-func GetTimestamp() int64 {
-    now_time := time.Now()
-    return now_time.Unix()
 }
 
 // scanDir recursively checks a directory for files that are newer than the current timestamp.
