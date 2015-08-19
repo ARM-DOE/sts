@@ -6,5 +6,6 @@ src/sender/watch_directory/*
 src/sender/file_cache.dat
 src/receiver/listener_cache.dat
 src/util/test_files/test_cache.dat
+src/util/test_files/test_cache.dat.tmp
 src/gopkg.in
 pkg
