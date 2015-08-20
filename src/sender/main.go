@@ -34,7 +34,6 @@ func main() {
         senders[dispatched_senders] = created_sender
     }
     file_cache.SetSenders(senders)
-    file_cache.loadBins()
     go file_cache.scan() // Start the listener thread
     fmt.Println("Ready to send")
     for {

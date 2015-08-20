@@ -11,7 +11,6 @@ import (
     "net/textproto"
     "os"
     "time"
-    "util"
 )
 
 // Sender is a struct that continually requests new Bins from a channel.
@@ -191,7 +190,7 @@ func (body *BinBody) getClosingBoundary() string {
 // getBinBody generates and returns a multipart file based on the Parts defined in the Bin.
 // getBinBody returns a byte array that contains the bytes of the multipart file, and a boundary string, which is needed to parse the multipart file.
 // Currently not used, but can be used as a reference for correctly generating a multipart file.
-func getBinBody(bin Bin) ([]byte, string) {
+/*func getBinBody(bin Bin) ([]byte, string) {
     body_buffer := bytes.Buffer{}
     multipart_writer := multipart.NewWriter(&body_buffer)
     multipart_writer.SetBoundary(multipart_writer.Boundary())
@@ -211,7 +210,7 @@ func getBinBody(bin Bin) ([]byte, string) {
     }
     multipart_writer.Close()
     return body_buffer.Bytes(), multipart_writer.Boundary()
-}
+}*/
 
 // getPartLocation formats a string for sending as a header in each part.
 // It takes two byte parameters. The first int64 represents the first byte of the part in the file, the second represents the size of the part.

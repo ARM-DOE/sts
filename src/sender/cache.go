@@ -81,6 +81,9 @@ func (cache *Cache) allocate() {
 // scan blocks until it receives a file addition from the cache listener.
 // When an addition is detected, it creates a new entry in the cache for the file and calls cache.allocate()
 func (cache *Cache) scan() {
+    // Load bins and allocate cache on startup
+    cache.loadBins()
+    cache.allocate()
     update_channel := make(chan string, 1)
     cache.listener.SetOnFinish(cache.allocate)
     go cache.listener.Listen(update_channel)

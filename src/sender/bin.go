@@ -92,7 +92,6 @@ func BinFactory(size int64, watch_dir string) Bin {
 // On startup, all Bin files are read, and any unfinished Bins are loaded into memory, after which the Senders may continue to process them.
 func (cache *Cache) loadBins() {
     filepath.Walk("bins", cache.walkBin)
-    cache.allocate()
 }
 
 // walkBin is called by loadBins for every file in the "bins" directory.
