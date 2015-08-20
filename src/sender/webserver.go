@@ -59,8 +59,7 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
         bin := BinFactory(server.bin_size, server.watch_dir)
         bin.addPart(name, start_byte, end_byte, file_info)
         bin.Files[0].getMD5()
-        bin_stream := CreateBinBody(bin)
-        bin_stream.SetBoundary(boundary)
+        bin_stream := CreateBinBody(bin, boundary)
         byte_buffer := make([]byte, util.DEFAULT_BLOCK_SIZE)
         for {
             bytes_read, eof := bin_stream.Read(byte_buffer)

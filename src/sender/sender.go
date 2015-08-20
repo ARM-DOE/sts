@@ -88,7 +88,8 @@ type BinBody struct {
 }
 
 // CreateBinBody creates a new instance of a BinBody from an instance of Bin.
-func CreateBinBody(bin Bin) *BinBody {
+// It takes the optional boundary argument, which sets the multipart writer boundary upon creation.
+func CreateBinBody(bin Bin, boundary ...string) *BinBody {
     if len(bin.Files) < 1 {
         panic("Tried to convert empty Bin to bytes")
     }
@@ -101,6 +102,9 @@ func CreateBinBody(bin Bin) *BinBody {
     new_body.writer_buffer = bytes.Buffer{}
     new_body.file_index = 0
     new_body.writer = multipart.NewWriter(&new_body.writer_buffer)
+    if len(boundary) > 0 {
+        new_body.SetBoundary(boundary[0])
+    }
     new_body.startNextPart()
     return new_body
 }
