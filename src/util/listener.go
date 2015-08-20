@@ -16,15 +16,16 @@ import (
 // Listener maintains a local file that contains a timestamp for when it last checked a directory.
 // This local cache also has the capacity to store information about files.
 type Listener struct {
-    file_name      string
-    last_update    int64
-    Files          map[string]int64
-    watch_dir      string // This is the directory that the cache holds data about
-    update_channel chan string
-    onFinish       FinishFunc // Function called when a scan that detects new files finishes.
-    new_files      bool       // Set to true if there were new files found in the scan
-    scan_delay     int
-    ignored_files  []string
+    file_name       string           // Name of the cache file that the listener uses to store timestamp and file data
+    last_update     int64            // Time of last update in seconds since the epoch
+    Files           map[string]int64 // Storage for timestamp and any additional file data. This data structure is written to the local cache.
+    watch_dir       string           // This is the directory that the cache holds data about
+    update_channel  chan string      // The channel that new and valid file paths will be sent to upon detection
+    onFinish        FinishFunc       // Function called when a scan that detects new files finishes.
+    new_files       bool             // Set to true if there were new files found in the scan
+    scan_delay      int              // Delay for how often the listener should scan the file system.
+    ignore_patterns []string         // A list of patterns that each new file name (NOT path) is tested against. If a match is found the file is ignored.
+    recent_files    []string         // A list of files that were found in the most recent string of updates.
 }
 
 // Function called after a scan that detects new files
@@ -33,12 +34,13 @@ type FinishFunc func()
 // ListenerFactory generates and returns a new Listener struct which operates on the provided watch_dir, and saves it's data to cache_file_name.
 func ListenerFactory(cache_file_name string, watch_dir string) *Listener {
     new_listener := &Listener{}
+    new_listener.recent_files = make([]string, 0)
     new_listener.scan_delay = 3
     new_listener.file_name = cache_file_name
     new_listener.last_update = -1
     new_listener.watch_dir = watch_dir
     new_listener.Files = make(map[string]int64)
-    new_listener.ignored_files = make([]string, 0)
+    new_listener.ignore_patterns = make([]string, 0)
     new_listener.AddIgnored(`\.DS_Store`)
     return new_listener
 }
@@ -79,6 +81,9 @@ func (listener *Listener) WriteCache() {
 // If new files are found, their paths are sent to update_channel.
 // When finished, it updates the local cache file.
 func (listener *Listener) scanDir() {
+    if (!listener.new_files || len(listener.recent_files) > 1000) && len(listener.recent_files) > 0 { // Clear recent files if files stop coming
+        listener.recent_files = make([]string, 0)
+    }
     listener.new_files = false
     filepath.Walk(listener.watch_dir, listener.fileWalkHandler)
     listener.last_update = GetTimestamp()
@@ -94,13 +99,15 @@ func (listener *Listener) fileWalkHandler(path string, info os.FileInfo, err err
     }
     if !info.IsDir() {
         _, in_map := listener.Files[path]
+        in_recent := IsStringInArray(listener.recent_files, path)
         modtime := info.ModTime()
         special_case := false
-        if modtime == time.Unix(listener.last_update, 0) { // Special case: since ModTime doesn't offer resolution to a fraction of a second
+        if modtime == time.Unix(listener.last_update, 0) && !in_map { // Special case: since ModTime doesn't offer resolution to a fraction of a second
             special_case = true // If modtime and the last cache update are equal, set the special case flag
         }
-        if !in_map && !listener.checkIgnored(info.Name()) && (modtime.After(time.Unix(listener.last_update, 0)) || special_case) {
+        if !in_recent && !in_map && !listener.checkIgnored(info.Name()) && (modtime.After(time.Unix(listener.last_update, 0)) || special_case) {
             listener.new_files = true
+            listener.recent_files = append(listener.recent_files, path)
             listener.update_channel <- path
         }
     }
@@ -123,7 +130,7 @@ func (listener *Listener) SetOnFinish(onFinish FinishFunc) {
 // The file name is checked against every registered ignore pattern, if a match is found, the file is ignored.
 func (listener *Listener) checkIgnored(path string) bool {
     ignore := false
-    for _, pattern := range listener.ignored_files {
+    for _, pattern := range listener.ignore_patterns {
         matched, match_err := regexp.MatchString(pattern, path)
         if match_err != nil {
             fmt.Println("Error matching pattern " + pattern + " against file " + path)
@@ -138,7 +145,7 @@ func (listener *Listener) checkIgnored(path string) bool {
 
 // AddIgnored can be called to add a regex pattern to the list of ignored files
 func (listener *Listener) AddIgnored(pattern string) {
-    listener.ignored_files = append(listener.ignored_files, pattern)
+    listener.ignore_patterns = append(listener.ignore_patterns, pattern)
 }
 
 // Listen is a loop that operates on the watched directory, adding new files to update_channel.

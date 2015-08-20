@@ -17,9 +17,9 @@ import (
 // Sender is a struct that continually requests new Bins from a channel.
 // When an available Bin is found, Sender converts the Bin to a multipart file, which it then transmits to the receiver.
 type Sender struct {
-    queue       chan Bin
-    compression bool
-    Busy        bool
+    queue       chan Bin // Channel that new bins are pulled from.
+    compression bool     // Bool that controls whether compression is turned on. Obtained from config file.
+    Busy        bool     // Set to true when the sender is currently sending a file.
 }
 
 // SenderFactory creates and returns a new instance of the Sender struct.

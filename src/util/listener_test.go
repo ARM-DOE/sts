@@ -7,6 +7,7 @@ import (
     "time"
 )
 
+// TestCacheReadWrite tests whether reads and writes to the cache will succeed.
 func TestCacheReadWrite(t *testing.T) {
     cache_file := "test_files" + string(os.PathSeparator) + "test_cache.dat"
     watch_dir := "test_files" + string(os.PathSeparator) + "watch_dir"
@@ -21,6 +22,7 @@ func TestCacheReadWrite(t *testing.T) {
     }
 }
 
+// TestScan tests whether the file watcher picks up a new file when its mtime is updated.
 func TestScan(t *testing.T) {
     cache_file := "test_files" + string(os.PathSeparator) + "test_cache.dat"
     watch_file := "test_files" + string(os.PathSeparator) + "watch_dir" + string(os.PathSeparator) + "large.txt"

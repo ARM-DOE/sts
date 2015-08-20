@@ -243,10 +243,9 @@ func getStorePath(full_path string, watch_directory string) string {
 func finishFile(addition_channel chan string, config_file string) {
     for {
         new_file := <-addition_channel
-        if !(strings.HasSuffix(new_file, ".comp") || strings.HasSuffix(new_file, ".tmp")) && new_file != config_file {
+        if new_file != config_file {
             cwd, _ := os.Getwd()
             removeFromCache(getStorePath(new_file, cwd))
-            fmt.Println("Removed ", new_file, " from cache")
         }
     }
 }
@@ -263,7 +262,8 @@ func main() {
     go finishFile(addition_channel, listener_cache_file)
     listener.LoadCache()
     go listener.Listen(addition_channel)
-
+    listener.AddIgnored(`\.tmp`)
+    listener.AddIgnored(`\.comp`)
     // Register request handling functions
     http.HandleFunc("/send.go", sendHandler)
     http.HandleFunc("/", errorHandler)

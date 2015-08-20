@@ -13,6 +13,8 @@ import (
 var error_status string
 var test_file string
 
+// receiveFileHandler is the HTTP request handler that is used to check the validity of the multipart request in
+// both the SingleBin and MultiBin tests.
 func receiveFileHandler(w http.ResponseWriter, r *http.Request) {
     boundary := r.Header.Get("Boundary")
     if len(boundary) < 1 {
@@ -42,6 +44,8 @@ func receiveFileHandler(w http.ResponseWriter, r *http.Request) {
     }
 }
 
+// TestSingleBin creates a bin with a single file, and asks the sender to send it.
+// It checks if the resulting sent request contains the same data that the sender was given.
 func TestSingleBin(t *testing.T) {
     // Create and pass new bin to sender
     error_status = ""
@@ -66,6 +70,8 @@ func TestSingleBin(t *testing.T) {
     }
 }
 
+// TestMultiBin creates a bin with multiple files, and asks the sender to send it.
+// If checks if the resulting sent request contains the same data that the sender was given.
 func TestMultiBin(t *testing.T) {
     error_status = ""
     wd, _ := os.Getwd()

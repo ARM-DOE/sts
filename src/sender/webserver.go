@@ -11,9 +11,9 @@ import (
 // Webserver acts as a layer of abstraction to separate webserver functions from the "main" functions in the rest of the package.
 // It also contains some config data that the webserver needs during runtime.
 type Webserver struct {
-    cache     *Cache
-    watch_dir string
-    bin_size  int64
+    cache     *Cache // Instance of the cache, used to remove entries from the cache
+    watch_dir string // Directory that is watched by sender. Obtained from config file.
+    bin_size  int64  // Default size of a newly created Bin. Obtained from config file.
 }
 
 // WebserverFactory creates and returns a new Webserver struct
