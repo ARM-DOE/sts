@@ -16,6 +16,7 @@ var test_file string
 // receiveFileHandler is the HTTP request handler that is used to check the validity of the multipart request in
 // both the SingleBin and MultiBin tests.
 func receiveFileHandler(w http.ResponseWriter, r *http.Request) {
+    error_status = "failed"
     boundary := r.Header.Get("Boundary")
     if len(boundary) < 1 {
         error_status = "Boundary header does not exist."
@@ -24,16 +25,17 @@ func receiveFileHandler(w http.ResponseWriter, r *http.Request) {
     reader := multipart.NewReader(r.Body, boundary)
     for {
         next_part, eof := reader.NextPart()
-        if eof != io.EOF {
+        if eof != nil && eof != io.EOF {
             error_status = eof.Error()
             return
         }
         if eof == io.EOF {
-            break
+            error_status = ""
+            return
         }
         part_contents, read_err := ioutil.ReadAll(next_part)
-        if read_err != nil {
-            error_status = "Failed to read sent part"
+        if read_err != nil && read_err != io.ErrUnexpectedEOF {
+            error_status = "Failed to read sent part " + read_err.Error()
             return
         }
         file_contents, _ := ioutil.ReadFile(next_part.Header.Get("name"))
@@ -49,8 +51,7 @@ func receiveFileHandler(w http.ResponseWriter, r *http.Request) {
 func TestSingleBin(t *testing.T) {
     // Create and pass new bin to sender
     error_status = ""
-    wd, _ := os.Getwd()
-    test_file = wd + string(os.PathSeparator) + "test_dir" + string(os.PathSeparator) + "send_test.txt"
+    test_file = "test_dir" + string(os.PathSeparator) + "send_test.txt"
     bin_queue := make(chan Bin, 1)
     sender := SenderFactory(bin_queue, false)
     go sender.run()
@@ -58,6 +59,7 @@ func TestSingleBin(t *testing.T) {
     info, err := os.Stat(test_file)
     if err != nil {
         t.Error(err.Error())
+        return
     }
     // Start webserver
     http.HandleFunc("/send.go", receiveFileHandler)
@@ -83,8 +85,9 @@ func TestMultiBin(t *testing.T) {
     new_bin := BinFactory(3000, "test_dir")
     stat1, _ := os.Stat(test_file1)
     stat2, _ := os.Stat(test_file2)
+
     new_bin.addPart(test_file1, 0, 60, stat1)
-    new_bin.addPart(test_file2, 0, 60, stat2)
+    new_bin.addPart(test_file2, 0, 65, stat2)
     bin_queue <- new_bin
     time.Sleep(200 * time.Millisecond) // Time the sender is allowed to use to get the file
     if len(error_status) > 1 {

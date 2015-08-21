@@ -61,10 +61,11 @@ func TestMultiAllocate(t *testing.T) {
     case sent_bin := <-bin_channel:
         if len(sent_bin.Files) == 2 {
             // Bin contains two files
-            if sent_bin.Files[0].TotalSize == 60 {
+            if sent_bin.Files[0].TotalSize == 60 || sent_bin.Files[0].TotalSize == 65 {
                 // Data in bin was correctly set
             } else {
-                t.Errorf("Bin data not set correctly. Expected total size 60, got ", sent_bin.Files[0].TotalSize)
+                t.Errorf("Bin data not set correctly. Expected total size 60, got %d", sent_bin.Files[0].TotalSize)
+                return
             }
         } else {
             t.Errorf("Expected bin with 2 files after allocation, got Bin with %d", len(sent_bin.Files))
