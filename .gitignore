@@ -9,3 +9,4 @@ src/util/test_files/test_cache.dat
 src/util/test_files/test_cache.dat.tmp
 src/gopkg.in
 pkg
+test_cache.dat
