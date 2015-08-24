@@ -31,7 +31,8 @@ type Listener struct {
 // Function called after a scan that detects new files
 type FinishFunc func()
 
-// ListenerFactory generates and returns a new Listener struct which operates on the provided watch_dir, and saves it's data to cache_file_name.
+// ListenerFactory generates and returns a new Listener struct which operates on the provided
+// watch_dir, and saves it's data to cache_file_name.
 func ListenerFactory(cache_file_name string, watch_dir string) *Listener {
     new_listener := &Listener{}
     new_listener.recent_files = make([]string, 0)
@@ -81,7 +82,8 @@ func (listener *Listener) WriteCache() {
 // If new files are found, their paths are sent to update_channel.
 // When finished, it updates the local cache file.
 func (listener *Listener) scanDir() {
-    if (!listener.new_files || len(listener.recent_files) > 1000) && len(listener.recent_files) > 0 { // Clear recent files if files stop coming
+    if (!listener.new_files || len(listener.recent_files) > 1000) && len(listener.recent_files) > 0 {
+        // Clear recent files if files stop coming
         listener.recent_files = make([]string, 0)
     }
     listener.new_files = false
@@ -92,7 +94,8 @@ func (listener *Listener) scanDir() {
 }
 
 // fileWalkHandler is called for every file and directory in the directory managed by the Listener instance.
-// It checks the managed directory for any files that have been modified since the last cache update, and sends them to update_channel.
+// It checks the managed directory for any files that have been modified since the last cache update,
+// and sends them to update_channel.
 func (listener *Listener) fileWalkHandler(path string, info os.FileInfo, err error) error {
     if info == nil { // Check to make sure the file still exists
         return nil
@@ -102,8 +105,10 @@ func (listener *Listener) fileWalkHandler(path string, info os.FileInfo, err err
         in_recent := IsStringInArray(listener.recent_files, path)
         modtime := info.ModTime()
         special_case := false
-        if modtime == time.Unix(listener.last_update, 0) && !in_map { // Special case: since ModTime doesn't offer resolution to a fraction of a second
+        if modtime == time.Unix(listener.last_update, 0) && !in_map {
+            // Special case: since ModTime doesn't offer resolution to a fraction of a second
             special_case = true // If modtime and the last cache update are equal, set the special case flag
+            // When the special case flag is active, the modtime check in the next conditional always passes.
         }
         if !in_recent && !in_map && !listener.checkIgnored(info.Name()) && (modtime.After(time.Unix(listener.last_update, 0)) || special_case) {
             listener.new_files = true

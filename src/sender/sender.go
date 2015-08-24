@@ -14,7 +14,8 @@ import (
 )
 
 // Sender is a struct that continually requests new Bins from a channel.
-// When an available Bin is found, Sender converts the Bin to a multipart file, which it then transmits to the receiver.
+// When an available Bin is found, Sender converts the Bin to a multipart file,
+// which it then transmits to the receiver.
 type Sender struct {
     queue       chan Bin // Channel that new bins are pulled from.
     compression bool     // Bool that controls whether compression is turned on. Obtained from config file.
@@ -69,7 +70,8 @@ func (sender *Sender) run() {
     }
 }
 
-// BinBody is a struct that, given a Bin, returns a portion of the contents in the Bin (and multipart headers) with every call to Read()
+// BinBody is a struct that, given a Bin, returns a portion of the contents in
+// the Bin (and multipart headers) with every call to Read()
 // BinBody implements io.Reader so that it can be passed to an HTTP request.
 type BinBody struct {
     bin           Bin
@@ -133,7 +135,9 @@ func (body *BinBody) startNextPart() {
 }
 
 // Read is BinBody's implementation of an io.Reader Read().
-// If the bin isn't already finished processing, and no new parts need to be started, it reads a portion of the Bin file into file_buffer until every part has been completed.
+// If the bin isn't already finished processing, and no new parts need to be
+// started, it reads a portion of the Bin file into file_buffer until every part has been completed.
+// If a new part needs to be started, it will copy the new part header to file_buffer.
 func (body *BinBody) Read(file_buffer []byte) (int, error) {
     if body.eof_returned {
         // Files are done, return closing boundary and EOF.
@@ -213,7 +217,8 @@ func (body *BinBody) getClosingBoundary() string {
 }*/
 
 // getPartLocation formats a string for sending as a header in each part.
-// It takes two byte parameters. The first int64 represents the first byte of the part in the file, the second represents the size of the part.
+// It takes two byte parameters. The first int64 represents the first byte
+// of the part in the file, the second represents the last byte of the part,
 func getPartLocation(start int64, end int64) string {
     return fmt.Sprintf("%d:%d", start, end)
 }

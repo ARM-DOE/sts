@@ -8,7 +8,8 @@ import (
     "util"
 )
 
-// Webserver acts as a layer of abstraction to separate webserver functions from the "main" functions in the rest of the package.
+// Webserver acts as a layer of abstraction to separate webserver functions
+// from the "main" functions in the rest of the package.
 // It also contains some config data that the webserver needs during runtime.
 type Webserver struct {
     cache     *Cache // Instance of the cache, used to remove entries from the cache
@@ -25,7 +26,8 @@ func WebserverFactory(cache *Cache, watch_dir string, bin_size int64) *Webserver
     return new_server
 }
 
-// startServer is the entry point of the webserver. It is responsible for registering handlers and beginning the request serving loop.
+// startServer is the entry point of the webserver. It is responsible for registering
+// handlers and beginning the request serving loop.
 func (server *Webserver) startServer() {
     http.HandleFunc("/get_file.go", server.getFile)
     http.HandleFunc("/remove.go", server.removeFromCache)
@@ -71,8 +73,9 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
     }
 }
 
-// removeFromCache is called when the receiver confirms that a file is totally sent, and wants the Sender to remove it from the list of files that are in line to be processed.
-// removeFromCache takes only a file name argument.
+// removeFromCache is called when the receiver confirms that a file is totally
+// sent, and wants the Sender to remove it from the list of files that are in line to be processed.
+// removeFromCache takes only a file name parameter via POST request.
 // Example request: /remove.go?name=watch_directory/test_file.txt
 func (server *Webserver) removeFromCache(w http.ResponseWriter, r *http.Request) {
     file_path := r.FormValue("name")

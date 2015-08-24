@@ -17,7 +17,8 @@ const TRANSFER_DISK = 3
 var config Config
 
 // main is the entry point for the sender program.
-// It parses config values that are necessary during runtime, dispatches the listening and sending threads, and loops infinitely.
+// It parses config values that are necessary during runtime,
+// dispatches the listening and sending threads, and loops infinitely.
 func main() {
     config = parseConfig("config.yaml")
     checkWatchDir(config.Directory)
