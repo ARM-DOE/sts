@@ -12,7 +12,8 @@ import (
 )
 
 // Part represents a part of a multipart file.
-// It contains the data necessary to create a part of a multipart file which can then be parsed on the receiving end.
+// It contains the data necessary to create a part of a
+// multipart file which can then be parsed on the receiving end.
 type Part struct {
     Path      string // Absolute path to the file that Part represents
     Progress  int64  // For keeping track of how much of the Bin has been sent
@@ -26,7 +27,8 @@ type Part struct {
 // PartFactory requires the following arguments:
 // A start position for the Part, relative to the whole file: [0, file.size - 1]
 // An end position for the Part, relative to the whole file: [1, file_size]
-// The total size of the file, so that a file full of empty bytes can be generated on the other end, no matter which part comes in first.
+// The total size of the file, so that a file full of empty bytes can be
+// generated on the other end, no matter which part comes in first.
 func PartFactory(path string, start int64, end int64, total_size int64) Part {
     new_part := Part{}
     new_part.TotalSize = total_size
@@ -37,7 +39,8 @@ func PartFactory(path string, start int64, end int64, total_size int64) Part {
     return new_part
 }
 
-// getMD5 uses StreamMD5 to digest the file part that the Part instance refers to, and update its Part.MD5 value.
+// getMD5 uses StreamMD5 to digest the file part that the
+// Part instance refers to, and update its Part.MD5 value.
 func (part *Part) getMD5() {
     fi, _ := os.Open(part.Path)
     fi.Seek(part.Start, 0)
@@ -54,7 +57,8 @@ func (part *Part) getMD5() {
     part.MD5 = md5_stream.SumString()
 }
 
-// countReads returns an int that represents the number of calls to Read() it will take to read in a Part given a block size.
+// countReads returns an int that represents the number of calls to Read()
+// it will take to read in a Part given a block size.
 func (part *Part) countReads(block_size int) int64 {
     part_size := part.End - part.Start
     if part_size%int64(block_size) == 0 {
@@ -64,8 +68,9 @@ func (part *Part) countReads(block_size int) int64 {
 }
 
 // Bin is a container for Part(s).
-// When new files are detected in the watch directory, new Bins are created and filled until all the new files have been allocated.
-// The filled Bins are passed down the bin channel to senders, which construct and send a multipart file from the list of Parts.
+// When new files are detected in the watch directory, new Bins are created and
+// filled until all the new files have been allocated. The filled Bins are passed down the bin channel
+// to senders, which construct and send a multipart file from the list of Parts.
 type Bin struct {
     Files     []Part // All the instances of Part that the Bin contains
     Size      int64  // Maximum amount of bytes that the Bin is able to store
@@ -76,8 +81,10 @@ type Bin struct {
 }
 
 // BinFactory creates a new empty Bin object.
-// BinFactory takes a size argument, which specifies how many bytes the Bin can hold before it is designated as full.
-// It also takes argument watch_dir, which allows the Bin to generate a path where the files will be stored on the receiving end.
+// BinFactory takes a size argument, which specifies
+// how many bytes the Bin can hold before it is designated as full.
+// It also takes argument watch_dir, which allows the Bin to generate a path
+// where the files will be stored on the receiving end.
 func BinFactory(size int64, watch_dir string) Bin {
     new_bin := Bin{}
     new_bin.Size = size
@@ -90,7 +97,8 @@ func BinFactory(size int64, watch_dir string) Bin {
 
 // loadBins allows unfinished Bins to continue sending after an unexpected shutdown.
 // After a Bin is finished sending, it is written to a file, so that file allocations are not lost.
-// On startup, all Bin files are read, and any unfinished Bins are loaded into memory, after which the Senders may continue to process them.
+// On startup, all Bin files are read, and any unfinished Bins are loaded into memory, after which
+// the Senders may continue to process them.
 func (cache *Cache) loadBins() {
     filepath.Walk("bins", cache.walkBin)
 }
@@ -186,32 +194,69 @@ func (bin *Bin) fill(cache *Cache) {
 }
 
 // shouldAllocate checks if the given file should be allowed to be saved to a Bin.
-// The file will not be allocated if its transfer type is not HTTP, or if there are higher priority files which haven't been allocated yet.
+// The file will not be allocated if its transfer type is not HTTP, if there are
+// higher priority files which haven't been allocated yet, or if it isn't the oldest
+// file in the cache with the same tag.
 func shouldAllocate(cache *Cache, path string) bool {
     tag_data := getTag(path)
     if tag_data.Transfer_Method != TRANSFER_HTTP {
         return false // Not using HTTP transfer method, do not send
     }
-    any_higher := anyHigherPriority(cache, tag_data)
-    return !any_higher
+    highest_priority := highestPriority(cache, tag_data)
+    oldest_file := oldestFileInTag(cache, path)
+    should_send := highest_priority && oldest_file
+    return should_send
 }
 
-// anyHigherPriority checks if there is any unallocated file in the cache that has a higher send priority than the given TagData.
-// For the higher priority file to be found, it must have Transfer_Method as HTTP.
-func anyHigherPriority(cache *Cache, tag_data TagData) bool {
-    for path, allocation := range cache.listener.Files {
-        tag := getTag(path)
-        if allocation != -1 && tag.Priority < tag_data.Priority && tag.Transfer_Method == TRANSFER_HTTP {
-            return true
+// oldestFileInTag checks the modtime of every file in the cache to see
+// if there are any older files of the same tag which have not yet been sent.
+// If there are no older files in the tag, it returns true.
+func oldestFileInTag(cache *Cache, path string) bool {
+    stat, _ := os.Stat(path)
+    modtime := stat.ModTime()
+    for cache_path, allocation := range cache.listener.Files {
+        if allocation != -1 && sameTag(path, cache_path) {
+            cache_stat, _ := os.Stat(cache_path)
+            cache_modtime := cache_stat.ModTime()
+            if modtime.Before(cache_modtime) {
+                return false
+            }
         }
+    }
+    return true
+}
+
+// sameTag returns true if two file paths have the same tag.
+func sameTag(path1 string, path2 string) bool {
+    tag1 := strings.Split(path1, ".")[0]
+    tag2 := strings.Split(path2, ".")[0]
+    if tag1 == tag2 {
+        return true
     }
     return false
 }
 
-// getTag returns a TagData instance for the first tag pattern that matches the file path (split before the first dot)
+// anyHigherPriority checks if there is any unallocated file in the cache that has a
+// higher send priority than the given TagData. For the higher priority file to be found,
+// it must have Transfer_Method set as HTTP.
+func highestPriority(cache *Cache, tag_data TagData) bool {
+    for path, allocation := range cache.listener.Files {
+        tag := getTag(path)
+        if allocation != -1 && tag.Priority < tag_data.Priority && tag.Transfer_Method == TRANSFER_HTTP {
+            return false
+        }
+    }
+    return true
+}
+
+// getTag returns a TagData instance for the first tag pattern that matches the file path.
+// If no tag pattern matches, it returns the default TagData.
 func getTag(path string) TagData {
     path_tag := strings.Split(path, ".")[0]
     for tag_pattern, tag_data := range config.Tags {
+        if tag_pattern == "DEFAULT" {
+            continue // Don't check default tag
+        }
         matched, _ := regexp.MatchString(tag_pattern, path_tag)
         if matched {
             return tag_data
@@ -220,7 +265,7 @@ func getTag(path string) TagData {
     return config.Tags["DEFAULT"]
 }
 
-// fitBytes checks a file to see how much of a file can fit inside a Bin.
+// fitBytes checks a file to see how much of that file can fit inside a Bin.
 // It takes argument allocation, which specifies how many bytes of the file have already been allocated to a Bin.
 // fitBytes returns either all the bytes in the file, or how many can fit into the Bin.
 func (bin *Bin) fitBytes(allocation int64, file_size int64) int64 {
