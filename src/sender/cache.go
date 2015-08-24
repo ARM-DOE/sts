@@ -17,7 +17,7 @@ type Cache struct {
 }
 
 // CacheFactory creates and returns a new Cache struct with default values.
-func CacheFactory(cache_file_name string, watch_dir string, bin_channel chan Bin, bin_size int64) *Cache {
+func CacheFactory(cache_file_name string, watch_dir string, bin_size int64, bin_channel chan Bin) *Cache {
     new_cache := &Cache{}
     new_cache.files_available = false
     new_cache.watch_dir = watch_dir

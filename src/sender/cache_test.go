@@ -11,10 +11,11 @@ var bin_channel chan Bin
 
 // TestLoadSaveBins tests whether a bin will save and load correctly.
 func TestLoadSaveBins(t *testing.T) {
+    // Make sure there are no bins in the bins directory when running this test, or it will fail.
     defer os.Remove("bins" + string(os.PathSeparator) + "d751713988987e9331980363e24189ce.bin")
     bin_channel = make(chan Bin, 5)
     timeout_channel := make(chan bool, 1)
-    cache = CacheFactory("cache_test.dat", "test_dir", bin_channel, 3000)
+    cache = CacheFactory("cache_test.dat", "test_dir", 3000, bin_channel)
     // Create and save new bin
     dummy_bin := BinFactory(3000, "test_dir")
     dummy_bin.BytesLeft = -66

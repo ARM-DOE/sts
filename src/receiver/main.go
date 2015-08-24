@@ -211,7 +211,7 @@ func requestPart(path string, part_header textproto.MIMEHeader, start int64, end
         reader := multipart.NewReader(resp.Body, boundary)
         part, part_err := reader.NextPart()
         if part_err != nil {
-            fmt.Println(part_err)
+            fmt.Println(part_err.Error())
             continue
         }
         return_part = part

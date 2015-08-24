@@ -8,3 +8,12 @@ tags:
   DEFAULT:
     priority: 5
     transfer_method: 1
+  radar:
+    priority: 3
+    transfer_method: 2
+  laser:
+    priority: 2
+    transfer_method: 1
+  log:
+    priority: 1
+    transfer_method: 1

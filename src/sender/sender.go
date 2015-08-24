@@ -51,7 +51,7 @@ func (sender *Sender) run() {
             request.Header.Add("Content-Encoding", "gzip")
         }
         if err != nil {
-            fmt.Println(err)
+            fmt.Println(err.Error())
         }
         client := http.Client{}
         response, sending_err := client.Do(request)

@@ -10,26 +10,30 @@ import (
     "time"
 )
 
+const TRANSFER_HTTP = 1
+const TRANSFER_GRIDFTP = 2
+const TRANSFER_DISK = 3
+
+var config Config
+
 // main is the entry point for the sender program.
 // It parses config values that are necessary during runtime, dispatches the listening and sending threads, and loops infinitely.
 func main() {
-    config_file := parseConfig()
-    SENDER_COUNT := config_file.Sender_Threads
-    CACHE_FILE_NAME := config_file.Cache_File_Name
-    WATCH_DIRECTORY := checkWatchDir(config_file.Directory)
+    config = parseConfig("config.yaml")
+    checkWatchDir(config.Directory)
 
     // Create the channel through which new bins will be sent from the sender to the receiver.
-    bin_channel := make(chan Bin, SENDER_COUNT+5) // Create a bin channel with buffer size large enough to accommodate all sender threads and a little wiggle room.
+    bin_channel := make(chan Bin, config.Sender_Threads+5) // Create a bin channel with buffer size large enough to accommodate all sender threads and a little wiggle room.
     // Create and start cache file handler and webserver
-    file_cache := CacheFactory(CACHE_FILE_NAME, WATCH_DIRECTORY, bin_channel, config_file.Bin_Size)
+    file_cache := CacheFactory(config.Cache_File_Name, config.Directory, config.Bin_Size, bin_channel)
     file_cache.listener.LoadCache()
-    server := WebserverFactory(file_cache, WATCH_DIRECTORY, config_file.Bin_Size)
+    server := WebserverFactory(file_cache, config.Directory, config.Bin_Size)
     go server.startServer()
 
     // Dispatch senders
-    senders := make([]*Sender, SENDER_COUNT)
-    for dispatched_senders := 0; dispatched_senders < SENDER_COUNT; dispatched_senders++ {
-        created_sender := SenderFactory(file_cache.bin_channel, config_file.Compression)
+    senders := make([]*Sender, config.Sender_Threads)
+    for dispatched_senders := 0; dispatched_senders < config.Sender_Threads; dispatched_senders++ {
+        created_sender := SenderFactory(file_cache.bin_channel, config.Compression)
         go created_sender.run()
         senders[dispatched_senders] = created_sender
     }
@@ -49,15 +53,22 @@ type Config struct {
     Cache_File_Name         string
     Bin_Size                int64
     Compression             bool
+    Tags                    map[string]TagData
+}
+
+// TagData contains the priority and transfer method for each tag, loaded from the config.
+type TagData struct {
+    Priority        int
+    Transfer_Method int
 }
 
 // parseConfig parses the config.yaml file and returns the parsed results as an instance of the Config struct.
-func parseConfig() Config {
+func parseConfig(file_name string) Config {
     var loaded_config Config
-    abs_path, _ := filepath.Abs("config.yaml")
+    abs_path, _ := filepath.Abs(file_name)
     config_fi, config_err := ioutil.ReadFile(abs_path)
     if config_err != nil {
-        fmt.Println("No config.yaml file found")
+        fmt.Println("config file", file_name, "not found")
         os.Exit(1)
     }
     err := yaml.Unmarshal(config_fi, &loaded_config)

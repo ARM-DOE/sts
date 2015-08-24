@@ -6,6 +6,7 @@ import (
     "io/ioutil"
     "os"
     "path/filepath"
+    "regexp"
     "strings"
     "util"
 )
@@ -138,35 +139,85 @@ func (bin *Bin) delete() {
 }
 
 // fill iterates through files in the cache until it finds one that is not completely allocated.
-// After finding a file, it tries to add as much of the file as possible to the Bin.
-// If the Bin has enough space for the whole file, it will continue looking for and adding unallocated files until it is full.
+// After finding a file, it uses shouldAllocate() to see if the data should be added to the Bin.
+// It repeats this process until either the Bin runs out of room, or there are no more valid & unallocated files.
+// A file is considered valid as long as its Transfer_Method is HTTP.
 // After a bin is filled, the local cache will be updated.
 func (bin *Bin) fill(cache *Cache) {
-    for path, allocation := range cache.listener.Files {
-        if bin.BytesLeft == 0 {
-            // Bin is full
-            break
-        }
-        if path == "__TIMESTAMP__" {
-            continue
-        }
-        info, info_err := os.Stat(path)
-        if info_err != nil {
-            panic(fmt.Sprintf("File: %s registered in cache, but does not exist", path))
-        }
-        file_size := info.Size()
-        if allocation < file_size && allocation != -1 {
-            // File has not already been allocated to another Bin
-            added_bytes := bin.fitBytes(allocation, file_size)
-            bin.BytesLeft = bin.BytesLeft - added_bytes
-            bin.addPart(path, allocation, allocation+added_bytes, info)
-            cache.updateFile(path, allocation+added_bytes, info)
+    keep_trying := true // There may still some files in the cache that have been passed over due to selecting of higher priority data
+    for keep_trying {   // This outer for loop keeps looping until no unallocated data that uses the HTTP transfer method can be found.
+        keep_trying = false // Set keep_trying to false until a file is found that will allow the loop to continue.
+        for path, allocation := range cache.listener.Files {
+            if bin.BytesLeft == 0 {
+                // Bin is full
+                break
+            }
+            if path == "__TIMESTAMP__" {
+                continue
+            }
+            if allocation != -1 {
+                tag_data := getTag(path)
+                if tag_data.Transfer_Method == TRANSFER_HTTP {
+                    keep_trying = true
+                }
+            }
+            info, info_err := os.Stat(path)
+            if info_err != nil {
+                panic(fmt.Sprintf("File: %s registered in cache, but does not exist", path))
+            }
+            file_size := info.Size()
+            if file_size == 0 {
+                // Empty file
+                cache.removeFile(path)
+            }
+            if allocation < file_size && allocation != -1 && shouldAllocate(cache, path) {
+                // File should be allocated, add to Bin
+                added_bytes := bin.fitBytes(allocation, file_size)
+                bin.BytesLeft = bin.BytesLeft - added_bytes
+                bin.addPart(path, allocation, allocation+added_bytes, info)
+                cache.updateFile(path, allocation+added_bytes, info)
+            }
         }
     }
     if !bin.Empty {
         bin.save()
     }
     cache.listener.WriteCache()
+}
+
+// shouldAllocate checks if the given file should be allowed to be saved to a Bin.
+// The file will not be allocated if its transfer type is not HTTP, or if there are higher priority files which haven't been allocated yet.
+func shouldAllocate(cache *Cache, path string) bool {
+    tag_data := getTag(path)
+    if tag_data.Transfer_Method != TRANSFER_HTTP {
+        return false // Not using HTTP transfer method, do not send
+    }
+    any_higher := anyHigherPriority(cache, tag_data)
+    return !any_higher
+}
+
+// anyHigherPriority checks if there is any unallocated file in the cache that has a higher send priority than the given TagData.
+// For the higher priority file to be found, it must have Transfer_Method as HTTP.
+func anyHigherPriority(cache *Cache, tag_data TagData) bool {
+    for path, allocation := range cache.listener.Files {
+        tag := getTag(path)
+        if allocation != -1 && tag.Priority < tag_data.Priority && tag.Transfer_Method == TRANSFER_HTTP {
+            return true
+        }
+    }
+    return false
+}
+
+// getTag returns a TagData instance for the first tag pattern that matches the file path (split before the first dot)
+func getTag(path string) TagData {
+    path_tag := strings.Split(path, ".")[0]
+    for tag_pattern, tag_data := range config.Tags {
+        matched, _ := regexp.MatchString(tag_pattern, path_tag)
+        if matched {
+            return tag_data
+        }
+    }
+    return config.Tags["DEFAULT"]
 }
 
 // fitBytes checks a file to see how much of a file can fit inside a Bin.
