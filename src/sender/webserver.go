@@ -12,17 +12,15 @@ import (
 // from the "main" functions in the rest of the package.
 // It also contains some config data that the webserver needs during runtime.
 type Webserver struct {
-    cache     *Cache // Instance of the cache, used to remove entries from the cache
-    watch_dir string // Directory that is watched by sender. Obtained from config file.
-    bin_size  int64  // Default size of a newly created Bin. Obtained from config file.
+    cache *Cache // Instance of the cache, used to remove entries from the cache and access config values.
 }
 
-// WebserverFactory creates and returns a new Webserver struct
-func WebserverFactory(cache *Cache, watch_dir string, bin_size int64) *Webserver {
+// NewWebserver creates and returns a new Webserver struct
+// cache is a pointer to the cache, used for cache entry
+// removals over HTTP and obtaining config values.
+func NewWebserver(cache *Cache) *Webserver {
     new_server := &Webserver{}
     new_server.cache = cache
-    new_server.watch_dir = watch_dir
-    new_server.bin_size = bin_size
     return new_server
 }
 
@@ -35,8 +33,8 @@ func (server *Webserver) startServer() {
     http.ListenAndServe(":8080", nil)
 }
 
-// getFile takes a file name, start, and end position in the file to return a whole or partial file.
-// This handler is called when "get_file.go" is requested.
+// getFile takes a file name, start, and end position in the file to return a whole or partial file
+// as a multipart request. This handler is called when "get_file.go" is requested.
 // Sample request: /get_file.go?name=watch_directory/test_file.txt&start=0&end=30&boundary=865876njgbhrnghu
 func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
     name := r.FormValue("name")
@@ -58,7 +56,7 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
         fmt.Fprint(w, http.StatusBadRequest)
         return
     } else {
-        bin := BinFactory(server.bin_size, server.watch_dir)
+        bin := NewBin(server.cache.BinSize(), server.cache.listener.WatchDir())
         bin.addPart(name, start_byte, end_byte, file_info)
         bin.Files[0].getMD5()
         bin_stream := CreateBinBody(bin, boundary)
@@ -75,7 +73,7 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
 
 // removeFromCache is called when the receiver confirms that a file is totally
 // sent, and wants the Sender to remove it from the list of files that are in line to be processed.
-// removeFromCache takes only a file name parameter via POST request.
+// It takes only a file name parameter via POST request.
 // Example request: /remove.go?name=watch_directory/test_file.txt
 func (server *Webserver) removeFromCache(w http.ResponseWriter, r *http.Request) {
     file_path := r.FormValue("name")

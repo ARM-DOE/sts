@@ -26,20 +26,20 @@ func main() {
     // Create the channel through which new bins will be sent from the sender to the receiver.
     bin_channel := make(chan Bin, config.Sender_Threads+5) // Create a bin channel with buffer size large enough to accommodate all sender threads and a little wiggle room.
     // Create and start cache file handler and webserver
-    file_cache := CacheFactory(config.Cache_File_Name, config.Directory, config.Bin_Size, bin_channel)
+    file_cache := NewCache(config.Cache_File_Name, config.Directory, config.Bin_Size, bin_channel)
     file_cache.listener.LoadCache()
-    server := WebserverFactory(file_cache, config.Directory, config.Bin_Size)
+    server := NewWebserver(file_cache)
     go server.startServer()
 
     // Dispatch senders
     senders := make([]*Sender, config.Sender_Threads)
     for dispatched_senders := 0; dispatched_senders < config.Sender_Threads; dispatched_senders++ {
-        created_sender := SenderFactory(file_cache.bin_channel, config.Compression)
+        created_sender := NewSender(file_cache.bin_channel, config.Compression)
         go created_sender.run()
         senders[dispatched_senders] = created_sender
     }
     file_cache.SetSenders(senders)
-    go file_cache.scan() // Start the listener thread
+    go file_cache.scan() // Start the file listener thread
     fmt.Println("Ready to send")
     for {
         time.Sleep(1 * time.Second)
@@ -99,10 +99,6 @@ func getWholePath(store_path string) string {
         fmt.Println(err.Error())
     }
     return abs_path
-}
-
-func PrintDebug(str string) {
-    fmt.Println(str)
 }
 
 // checkWatchDir is called on the directory to be watched.

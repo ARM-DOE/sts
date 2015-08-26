@@ -28,12 +28,14 @@ type Listener struct {
     recent_files    []string         // A list of files that were found in the most recent string of updates.
 }
 
-// Function called after a scan that detects new files
+// FinishFunc is the function called after a scan that detects new files
+// It can be used to address the whole group of files found during scan,
+// rather than processing them one at a time.
 type FinishFunc func()
 
-// ListenerFactory generates and returns a new Listener struct which operates on the provided
-// watch_dir, and saves it's data to cache_file_name.
-func ListenerFactory(cache_file_name string, watch_dir string) *Listener {
+// NewListener generates and returns a new Listener struct which operates on the provided
+// watch_dir and saves its data to cache_file_name.
+func NewListener(cache_file_name string, watch_dir string) *Listener {
     new_listener := &Listener{}
     new_listener.recent_files = make([]string, 0)
     new_listener.scan_delay = 3
@@ -83,7 +85,7 @@ func (listener *Listener) WriteCache() {
 // When finished, it updates the local cache file.
 func (listener *Listener) scanDir() {
     if (!listener.new_files || len(listener.recent_files) > 1000) && len(listener.recent_files) > 0 {
-        // Clear recent files if files stop coming
+        // Clear recent files if files stop coming or if the recent_files cache is huge.
         listener.recent_files = make([]string, 0)
     }
     listener.new_files = false
@@ -94,7 +96,7 @@ func (listener *Listener) scanDir() {
 }
 
 // fileWalkHandler is called for every file and directory in the directory managed by the Listener instance.
-// It checks the managed directory for any files that have been modified since the last cache update,
+// It checks the managed directory for any files that have been modified since the last cache update
 // and sends them to update_channel.
 func (listener *Listener) fileWalkHandler(path string, info os.FileInfo, err error) error {
     if info == nil { // Check to make sure the file still exists
@@ -148,7 +150,7 @@ func (listener *Listener) checkIgnored(path string) bool {
     return ignore
 }
 
-// AddIgnored can be called to add a regex pattern to the list of ignored files
+// AddIgnored can be called to add a regex pattern to the list of ignored files.
 func (listener *Listener) AddIgnored(pattern string) {
     listener.ignore_patterns = append(listener.ignore_patterns, pattern)
 }
@@ -163,6 +165,10 @@ func (listener *Listener) Listen(new_file chan string) {
         listener.scanDir()
         time.Sleep(time.Duration(listener.scan_delay) * time.Second)
     }
+}
+
+func (listener *Listener) WatchDir() string {
+    return listener.watch_dir
 }
 
 // codingError is called when there is an error encoding the in-memory cache, or decoding the local copy of the cache.

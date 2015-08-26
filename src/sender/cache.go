@@ -8,23 +8,21 @@ import (
 
 // Cache is a wrapper around Listener that provides extra Bin-filling functionality.
 type Cache struct {
-    files_available bool
-    bin_channel     chan Bin
-    bin_size        int64
-    watch_dir       string
-    listener        *util.Listener
-    senders         []*Sender
+    bin_channel chan Bin       // The channel that newly filled Bins should be passed into.
+    bin_size    int64          // Default Bin size. Obtained from config.
+    watch_dir   string         // Watch directory, used to create listener and new bins.
+    listener    *util.Listener // The instance of listener that the cache uses to store data and get new files.
+    senders     []*Sender      // A list of all the active senders that the cache can query when creating new Bins.
 }
 
-// CacheFactory creates and returns a new Cache struct with default values.
-func CacheFactory(cache_file_name string, watch_dir string, bin_size int64, bin_channel chan Bin) *Cache {
+// NewCache creates and returns a new Cache struct with default values.
+func NewCache(cache_file_name string, watch_dir string, bin_size int64, bin_channel chan Bin) *Cache {
     new_cache := &Cache{}
-    new_cache.files_available = false
     new_cache.watch_dir = watch_dir
     new_cache.bin_size = bin_size
     new_cache.bin_channel = bin_channel
     new_cache.senders = nil
-    new_cache.listener = util.ListenerFactory(cache_file_name, watch_dir)
+    new_cache.listener = util.NewListener(cache_file_name, watch_dir)
     return new_cache
 }
 
@@ -40,14 +38,14 @@ func (cache *Cache) updateFile(path string, new_byte_progress int64, info os.Fil
     cache.listener.Files[path] = new_byte_progress
 }
 
-// removeFile deletes a file and its progress from the cache.
+// removeFile deletes a file and its progress from both the in-memory and local cache.
 // It should only be used when a file has been confirmed to have completely sent.
 func (cache *Cache) removeFile(path string) {
     delete(cache.listener.Files, getWholePath(path))
     cache.listener.WriteCache()
 }
 
-// freeSender checks the Busy value of all senders, and returns true if there are any non-busy Senders.
+// freeSender checks the Busy value of all senders and returns true if there are any non-busy Senders.
 func (cache *Cache) freeSender() bool {
     for _, sender := range cache.senders {
         if !sender.Busy {
@@ -62,16 +60,16 @@ func (cache *Cache) freeSender() bool {
 // When a new non-empty Bin is filled, it is sent down the Bin channel.
 // Allocate stops when a Bin is filled, but is empty.
 func (cache *Cache) allocate() {
-    cache.files_available = true
-    for cache.files_available {
+    files_available := true
+    for files_available {
         if !cache.freeSender() { // There's no open sender to accept this bin
             time.Sleep(100 * time.Millisecond)
             continue
         }
-        new_bin := BinFactory(cache.bin_size, cache.watch_dir)
+        new_bin := NewBin(cache.bin_size, cache.watch_dir)
         new_bin.fill(cache)
         if new_bin.Empty {
-            cache.files_available = false
+            files_available = false
         } else {
             cache.bin_channel <- new_bin
         }
@@ -91,6 +89,10 @@ func (cache *Cache) scan() {
         new_path := <-update_channel
         cache.listener.Files[new_path] = 0
     }
+}
+
+func (cache *Cache) BinSize() int64 {
+    return cache.bin_size
 }
 
 func (cache *Cache) SetSenders(senders []*Sender) {

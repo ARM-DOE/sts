@@ -2,6 +2,7 @@
 package util
 
 import (
+    "fmt"
     "net"
     "os"
     "strings"
@@ -47,7 +48,13 @@ func JoinPath(params ...string) string {
     return strings.Join(params, string(os.PathSeparator))
 }
 
-// GetHostname does a lookup on an IP address, if the IP has already been successfully looked up,
+// PrintDebug is a wrapper over fmt.Println that can be used to write debug messages which can be
+// easily found and removed later.
+func PrintDebug(str string) {
+    fmt.Println(str)
+}
+
+// GetHostname does a lookup on an IP address. If the IP has already been successfully looked up,
 // a cached copy is returned. If the resulting hostname has a trailing dot, it is removed.
 func GetHostname(ip string) string {
     if host_names == nil {
@@ -56,6 +63,7 @@ func GetHostname(ip string) string {
     }
     memoized_name, ip_is_in := host_names[ip]
     if ip_is_in {
+        // Lookup has already been completed for this IP once, return the name we found before.
         return memoized_name
     }
     found_hosts, err := net.LookupAddr(ip)

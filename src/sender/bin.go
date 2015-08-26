@@ -23,13 +23,13 @@ type Part struct {
     MD5       string // MD5 of the data in the part file from Start:End
 }
 
-// PartFactory creates and returns a new instance of a Part.
-// PartFactory requires the following arguments:
+// NewPart creates and returns a new instance of a Part.
+// NewPart requires the following arguments:
 // A start position for the Part, relative to the whole file: [0, file.size - 1]
 // An end position for the Part, relative to the whole file: [1, file_size]
 // The total size of the file, so that a file full of empty bytes can be
 // generated on the other end, no matter which part comes in first.
-func PartFactory(path string, start int64, end int64, total_size int64) Part {
+func NewPart(path string, start int64, end int64, total_size int64) Part {
     new_part := Part{}
     new_part.TotalSize = total_size
     new_part.Path = path
@@ -40,7 +40,7 @@ func PartFactory(path string, start int64, end int64, total_size int64) Part {
 }
 
 // getMD5 uses StreamMD5 to digest the file part that the
-// Part instance refers to, and update its Part.MD5 value.
+// Part instance refers to and update its Part.MD5 value.
 func (part *Part) getMD5() {
     fi, _ := os.Open(part.Path)
     fi.Seek(part.Start, 0)
@@ -58,7 +58,8 @@ func (part *Part) getMD5() {
 }
 
 // countReads returns an int that represents the number of calls to Read()
-// it will take to read in a Part given a block size.
+// it will take to read in an entire Part, given the size of the byte
+// buffer being passed to Read()
 func (part *Part) countReads(block_size int) int64 {
     part_size := part.End - part.Start
     if part_size%int64(block_size) == 0 {
@@ -81,12 +82,12 @@ type Bin struct {
     Empty          bool
 }
 
-// BinFactory creates a new empty Bin object.
-// BinFactory takes a size argument, which specifies
+// NewBin creates a new empty Bin object.
+// NewBin takes a size argument, which specifies
 // how many bytes the Bin can hold before it is designated as full.
 // It also takes argument watch_dir, which allows the Bin to generate a path
 // where the files will be stored on the receiving end.
-func BinFactory(size int64, watch_dir string) Bin {
+func NewBin(size int64, watch_dir string) Bin {
     new_bin := Bin{}
     new_bin.TransferMethod = TRANSFER_HTTP
     new_bin.Size = size
@@ -151,11 +152,10 @@ func (bin *Bin) delete() {
 // fill iterates through files in the cache until it finds one that is not completely allocated.
 // After finding a file, it uses shouldAllocate() to see if the data should be added to the Bin.
 // It repeats this process until either the Bin runs out of room, or there are no more valid & unallocated files.
-// A file is considered valid as long as its Transfer_Method is HTTP.
 // After a bin is filled, the local cache will be updated.
 func (bin *Bin) fill(cache *Cache) {
     keep_trying := true // There may still some files in the cache that have been passed over due to selecting of higher priority data
-    for keep_trying {   // This outer for loop keeps looping until no unallocated data that uses the HTTP transfer method can be found.
+    for keep_trying {   // This outer for loop keeps looping until no unallocated data can be found.
         keep_trying = false // Set keep_trying to false until a file is found that will allow the loop to continue.
         for path, allocation := range cache.listener.Files {
             if bin.BytesLeft == 0 {
@@ -198,9 +198,8 @@ func (bin *Bin) fill(cache *Cache) {
 }
 
 // shouldAllocate checks if the given file should be allowed to be saved to a Bin.
-// The file will not be allocated if its transfer type is not HTTP, if there are
-// higher priority files which haven't been allocated yet, or if it isn't the oldest
-// file in the cache with the same tag.
+// The file will not be allocated if there are higher priority files which haven't
+// been allocated yet, or if it isn't the oldest file in the cache with the same tag.
 func shouldAllocate(cache *Cache, path string) bool {
     tag_data := getTag(path)
     highest_priority := highestPriority(cache, tag_data)
@@ -316,10 +315,10 @@ func (bin *Bin) fitBytes(allocation int64, file_size int64) int64 {
     }
 }
 
-// addPart calls PartFactory and appends the new part to the Bin.
-// See documentation for PartFactory for an in-depth explanation of addParts arguments.
+// addPart calls NewPart and appends the new part to the Bin.
+// See documentation for NewPart for an in-depth explanation of addParts arguments.
 func (bin *Bin) addPart(path string, start int64, end int64, info os.FileInfo) {
-    new_part := PartFactory(path, start, end, info.Size())
+    new_part := NewPart(path, start, end, info.Size())
     bin.Files = append(bin.Files, new_part)
     bin.Empty = false
 }

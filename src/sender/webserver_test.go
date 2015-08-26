@@ -14,8 +14,9 @@ var client http.Client
 // TestServer starts a new instance of Webserver and checks to see that the error page is serving correctly.
 func TestServer(t *testing.T) {
     client = http.Client{}
-    dummy_cache := &Cache{}
-    server := WebserverFactory(dummy_cache, "test_dir", 30000)
+    dummy_bin_chan := make(chan Bin)
+    dummy_cache := NewCache("/dev/null", "test_dir", 3000, dummy_bin_chan)
+    server := NewWebserver(dummy_cache)
     go server.startServer()
     request, err := http.NewRequest("GET", "http://localhost:8080/not_a_real_page.go", nil)
     if err != nil {

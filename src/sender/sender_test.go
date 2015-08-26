@@ -53,9 +53,9 @@ func TestSingleBin(t *testing.T) {
     error_status = ""
     test_file = "test_dir" + string(os.PathSeparator) + "send_test.txt"
     bin_queue := make(chan Bin, 1)
-    sender := SenderFactory(bin_queue, false)
+    sender := NewSender(bin_queue, false)
     go sender.run()
-    new_bin := BinFactory(3000, "test_dir")
+    new_bin := NewBin(3000, "test_dir")
     info, err := os.Stat(test_file)
     if err != nil {
         t.Error(err.Error())
@@ -78,11 +78,11 @@ func TestMultiBin(t *testing.T) {
     error_status = ""
     wd, _ := os.Getwd()
     bin_queue := make(chan Bin, 1)
-    sender := SenderFactory(bin_queue, false)
+    sender := NewSender(bin_queue, false)
     go sender.run()
     test_file1 := wd + string(os.PathSeparator) + "test_dir" + string(os.PathSeparator) + "send_test.txt"
     test_file2 := wd + string(os.PathSeparator) + "test_dir" + string(os.PathSeparator) + "send_test2.txt"
-    new_bin := BinFactory(3000, "test_dir")
+    new_bin := NewBin(3000, "test_dir")
     stat1, _ := os.Stat(test_file1)
     stat2, _ := os.Stat(test_file2)
 

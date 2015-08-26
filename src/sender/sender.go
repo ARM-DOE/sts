@@ -24,9 +24,9 @@ type Sender struct {
     Busy        bool     // Set to true when the sender is currently sending a file.
 }
 
-// SenderFactory creates and returns a new instance of the Sender struct.
+// NewSender creates and returns a new instance of the Sender struct.
 // It takes a Bin channel as an argument, which the Sender uses to receiver newly filled or loaded Bins.
-func SenderFactory(file_queue chan Bin, compression bool) *Sender {
+func NewSender(file_queue chan Bin, compression bool) *Sender {
     new_sender := &Sender{}
     new_sender.queue = file_queue
     new_sender.compression = compression
@@ -161,7 +161,7 @@ func CreateBinBody(bin Bin, boundary ...string) *BinBody {
     new_body.file_index = 0
     new_body.writer = multipart.NewWriter(&new_body.writer_buffer)
     if len(boundary) > 0 {
-        new_body.SetBoundary(boundary[0])
+        new_body.writer.SetBoundary(boundary[0])
     }
     new_body.startNextPart()
     return new_body
@@ -238,11 +238,6 @@ func (body *BinBody) Boundary() string {
     return body.writer.Boundary()
 }
 
-// SetBoundary sets the boundary string in the BinBody instance of multipart writer.
-func (body *BinBody) SetBoundary(boundary string) {
-    body.writer.SetBoundary(boundary)
-}
-
 // getClosingBoundary returns the string that signifies the end of a multipart file.
 func (body *BinBody) getClosingBoundary() string {
     return fmt.Sprintf("--%s--", body.Boundary())
@@ -250,7 +245,7 @@ func (body *BinBody) getClosingBoundary() string {
 
 // getPartLocation formats a string for sending as a header in each part.
 // It takes two byte parameters. The first int64 represents the first byte
-// of the part in the file, the second represents the last byte of the part,
+// of the part in the file, the second represents the last byte of the part.
 func getPartLocation(start int64, end int64) string {
     return fmt.Sprintf("%d:%d", start, end)
 }

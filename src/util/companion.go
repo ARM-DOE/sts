@@ -12,14 +12,16 @@ import (
 var CompanionLock sync.Mutex
 
 // Companion is a struct that represents the data of a JSON companion file.
+// The methods related to companion files usually operate independently from
+// an object instance since companions are generally stored on disk.
 type Companion struct {
-    Path         string
-    TotalSize    int64
-    CurrentParts []string
+    Path         string   // The path to the file that the companion is describing.
+    TotalSize    int64    // The sum of part bytes received so far.
+    CurrentParts []string // A listing of parts received so far. Format for each string: md5;first_byte:last_byte
 }
 
-// decodeCompanion takes the path of the "final file", decodes, and
-// returns the companion struct that can be found at that path.
+// decodeCompanion takes the path of the file that the companion represents, decodes,
+// and returns the companion struct that can be found at that path.
 func DecodeCompanion(path string) *Companion {
     path = path + ".comp"
     new_companion := &Companion{}
@@ -31,16 +33,18 @@ func DecodeCompanion(path string) *Companion {
 // addPartToCompanion decodes a companion struct, adds the specified id to CurrentParts
 // (id must be unique, or it will be ignored) and writes the modified companion struct back to disk.
 // It uses a mutex lock to prevent the same companion file being written to by two goroutines at the same time.
-// addPartToCompanion takes an argument "path" that represents where the file that the companion is representing is stored.
+// path points to the file the companion represents.
+// id is the ID that will be added to the JSON data.
+// location is the location header that contains both the start and end bytes of the part.
 func AddPartToCompanion(path string, id string, location string) {
     CompanionLock.Lock()
+    defer CompanionLock.Unlock()
     companion := DecodeCompanion(path)
     companion_addition := id + ";" + location
     if !IsStringInArray(companion.CurrentParts, companion_addition) {
         companion.CurrentParts = append(companion.CurrentParts, companion_addition)
     }
     companion.EncodeAndWrite()
-    CompanionLock.Unlock()
 }
 
 // encodeAndWrite takes the in-memory representation of a companion file,
@@ -54,7 +58,7 @@ func (comp *Companion) EncodeAndWrite() {
 }
 
 // newCompanion creates a new companion file initialized
-// with specified parameters, and writes it to disk.
+// with specified parameters and writes it to disk.
 func NewCompanion(path string, size int64) Companion {
     if &CompanionLock == nil {
         CompanionLock = sync.Mutex{}

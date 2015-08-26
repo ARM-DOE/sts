@@ -8,6 +8,7 @@ import (
     "net/textproto"
     "os"
     "path/filepath"
+    "regexp"
     "strconv"
     "strings"
     "sync"
@@ -31,7 +32,7 @@ func getPartLocation(location string) (int64, int64) {
 
 // sendHandler receives a multipart file from the sender via PUT request.
 // It is responsible for verifying the md5 of each part in the file, replicating
-// it's directory structure as it was on the sender, and writing the file to disk.
+// its directory structure as it was on the sender, and writing the file to disk.
 func sendHandler(w http.ResponseWriter, r *http.Request) {
     compression := false
     if r.Header.Get("Content-Encoding") == "gzip" {
@@ -50,7 +51,7 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // handlePart is called for each part in the multipart file that is sent to sendHandler.
-// handlePart reads from the Part stream, and writes the part to a file while calculating the md5.
+// It reads from the Part stream and writes the part to a file while calculating the md5.
 // If the file is bad, it will be reacquired and passed back into sendHandler.
 func handlePart(part *multipart.Part, boundary string, compressed bool) {
     // Gather data about part from headers
@@ -64,7 +65,7 @@ func handlePart(part *multipart.Part, boundary string, compressed bool) {
         total_size, _ := strconv.ParseInt(part.Header.Get("total_size"), 10, 64)
         createEmptyFile(part_path, total_size)
     }
-    // Start reading and iterating over part
+    // Start reading and iterating over the part
     part_fi, _ := os.OpenFile(write_path, os.O_WRONLY, 0600)
     part_fi.Seek(part_start, 0)
     part_bytes := make([]byte, part_md5.BlockSize)
@@ -75,10 +76,11 @@ func handlePart(part *multipart.Part, boundary string, compressed bool) {
     for {
         var err error
         var bytes_read int
+        // The number of bytes read can often be less than the size of the passed buffer.
         if compressed {
             bytes_read, err = gzip_reader.Read(part_bytes)
         } else {
-            bytes_read, err = part.Read(part_bytes) // This doesn't always return BlockSize
+            bytes_read, err = part.Read(part_bytes)
         }
         part_md5.Update(part_bytes[0:bytes_read])
         part_fi.Write(part_bytes[0:bytes_read])
@@ -126,7 +128,7 @@ func removeFromCache(path string) {
 
 // isFileComplete decodes the companion file of a given path and determines whether the file is complete.
 // It sums the number of bytes in each part in the companion file. If the sum equals the total file size,
-// the file is marked as complete.
+// the function returns true.
 func isFileComplete(path string) bool {
     is_done := false
     decoded_companion := util.DecodeCompanion(path)
@@ -144,9 +146,10 @@ func isFileComplete(path string) bool {
     return is_done
 }
 
-// requestPart sends an HTTP request to the sender which requests a file part.
-// After receiving a file part with associated header data, requestPart will read
-// out the first and only part, and pass it back into handleFile for validation.
+// requestPart sends an HTTP request to the sender's get_file API. The sender will
+// reply with the body of a multipart file with the path, start, end, and boundary that
+// is specified. After receiving a file part with associated header data, requestPart will
+// read out the first and only part, and pass it back into handleFile for validation.
 func requestPart(path string, part_header textproto.MIMEHeader, start int64, end int64, boundary string) *multipart.Part {
     post_url := fmt.Sprintf("http://localhost:8080/get_file.go?name=%s&start=%d&end=%d&boundary=%s", path, start, end, boundary)
     client := http.Client{}
@@ -191,14 +194,12 @@ func getStorePath(full_path string, watch_directory string) string {
 }
 
 // finishFile blocks while listening for any additions on addition_channel.
-// Once a file that isn't a temp file is found, it removes it from the senders cache.
-func finishFile(addition_channel chan string, config_file string) {
+// Once a file that isn't a temp file is found, it removes the file from the sender's cache.
+func finishFile(addition_channel chan string) {
     for {
         new_file := <-addition_channel
-        if new_file != config_file {
-            cwd, _ := os.Getwd()
-            removeFromCache(getStorePath(new_file, cwd))
-        }
+        cwd, _ := os.Getwd()
+        removeFromCache(getStorePath(new_file, cwd))
     }
 }
 
@@ -208,15 +209,16 @@ func main() {
     util.CompanionLock = sync.Mutex{}
     // Create and start listener
     cwd, _ := os.Getwd()
+    // Setup listener and add ignore patterns.
     addition_channel := make(chan string, 1)
     listener_cache_file := "listener_cache.dat"
-    listener_cache_file, _ = filepath.Abs(listener_cache_file)
-    listener := util.ListenerFactory("listener_cache.dat", cwd)
-    go finishFile(addition_channel, listener_cache_file)
-    listener.LoadCache()
-    go listener.Listen(addition_channel)
+    listener := util.NewListener(listener_cache_file, cwd)
     listener.AddIgnored(`\.tmp`)
     listener.AddIgnored(`\.comp`)
+    listener.AddIgnored(regexp.QuoteMeta(listener_cache_file))
+    go finishFile(addition_channel)
+    listener.LoadCache()
+    go listener.Listen(addition_channel)
     // Register request handling functions
     http.HandleFunc("/send.go", sendHandler)
     http.HandleFunc("/", errorHandler)

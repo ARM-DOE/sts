@@ -15,9 +15,9 @@ func TestLoadSaveBins(t *testing.T) {
     defer os.Remove("bins" + string(os.PathSeparator) + "d751713988987e9331980363e24189ce.bin")
     bin_channel = make(chan Bin, 5)
     timeout_channel := make(chan bool, 1)
-    cache = CacheFactory("cache_test.dat", "test_dir", 3000, bin_channel)
+    cache = NewCache("cache_test.dat", "test_dir", 3000, bin_channel)
     // Create and save new bin
-    dummy_bin := BinFactory(3000, "test_dir")
+    dummy_bin := NewBin(3000, "test_dir")
     dummy_bin.BytesLeft = -66
     dummy_bin.save()
     cache.loadBins()
@@ -43,7 +43,7 @@ func TestMultiAllocate(t *testing.T) {
     defer os.Remove("bins" + string(os.PathSeparator) + "82f9219e048a5caf3f268dae105b151d.bin")
     fake_queue := make(chan Bin, 5)
     timeout_channel := make(chan bool, 1)
-    fake_sender := SenderFactory(fake_queue, false)
+    fake_sender := NewSender(fake_queue, false)
     senders := make([]*Sender, 1)
     senders[0] = fake_sender
     cache.SetSenders(senders)
