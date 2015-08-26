@@ -93,22 +93,31 @@ func (sender *Sender) sendDisk(send_bin Bin) {
     mkdir_err := os.MkdirAll(filepath.Dir(dest_path), os.ModePerm)
     if mkdir_err != nil {
         fmt.Println(mkdir_err.Error())
+        return
     }
     dest_fi, dest_err := os.Create(dest_path)
-    defer dest_fi.Close()
     if dest_err != nil {
         fmt.Println(dest_err.Error())
+        return
     }
     src_fi, src_err := os.Open(send_bin.Files[0].Path)
     if src_err != nil {
         fmt.Println(src_err.Error())
+        return
     }
-    _, copy_err := io.Copy(dest_fi, src_fi)
-    if copy_err != nil {
-        fmt.Println(copy_err.Error())
-    } else {
-        send_bin.delete()
+    stream_md5 := util.NewStreamMD5()
+    read_buffer := make([]byte, stream_md5.BlockSize)
+    for {
+        bytes_read, eof := src_fi.Read(read_buffer)
+        stream_md5.Update(read_buffer[0:bytes_read])
+        dest_fi.Write(read_buffer[0:bytes_read])
+        if eof == io.EOF {
+            break
+        }
     }
+    dest_fi.Close()
+    send_bin.Files[0].MD5 = stream_md5.SumString()
+    send_bin.delete() // Write finished, delete bin.
 }
 
 // sendGridFTP accepts Bins with transfer type GridFTP, and does nothing with them.

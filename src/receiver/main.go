@@ -2,9 +2,7 @@ package main
 
 import (
     "compress/gzip"
-    "encoding/json"
     "fmt"
-    "io/ioutil"
     "mime/multipart"
     "net/http"
     "net/textproto"
@@ -17,16 +15,12 @@ import (
     "util"
 )
 
-// companion_lock prevents the same companion file from being written to by multiple threads.
-// This is done in order to avoid overwriting newly added part data in companion files.
-var companion_lock sync.Mutex
-
 // errorHandler is called when any page that is not a registered API method is requested.
 func errorHandler(w http.ResponseWriter, r *http.Request) {
     fmt.Fprint(w, http.StatusNotFound)
 }
 
-// getPartLocation parses the "location" file Header and returns the first and last byte from the part.
+// getPartLocation parses the "location" part Header and returns the first and last byte from the part.
 // Location format: "start_byte:end_byte"
 func getPartLocation(location string) (int64, int64) {
     split_header := strings.Split(location, ":")
@@ -103,7 +97,7 @@ func handlePart(part *multipart.Part, boundary string, compressed bool) {
         return
     }
     // Update the companion file of the part, and check if the whole file is done
-    addPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"))
+    util.AddPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"))
     if isFileComplete(part_path) {
         fmt.Println("Fully assembled ", part_path)
         os.Rename(write_path, part_path)
@@ -135,7 +129,7 @@ func removeFromCache(path string) {
 // the file is marked as complete.
 func isFileComplete(path string) bool {
     is_done := false
-    decoded_companion := decodeCompanion(path)
+    decoded_companion := util.DecodeCompanion(path)
     companion_size := int64(0)
     for _, element := range decoded_companion.CurrentParts {
         part_locations := strings.Split(strings.Split(element, ";")[1], ":")
@@ -148,56 +142,6 @@ func isFileComplete(path string) bool {
         is_done = true
     }
     return is_done
-}
-
-// Companion is a struct that represents the data of a JSON companion file.
-type Companion struct {
-    Path         string
-    TotalSize    int64
-    CurrentParts []string
-}
-
-// decodeCompanion takes the path of the "final file", decodes, and
-// returns the companion struct that can be found at that path.
-func decodeCompanion(path string) *Companion {
-    path = path + ".comp"
-    new_companion := &Companion{}
-    companion_bytes, _ := ioutil.ReadFile(path)
-    json.Unmarshal(companion_bytes, new_companion)
-    return new_companion
-}
-
-// addPartToCompanion decodes a companion struct, adds the specified id to CurrentParts
-// (id must be unique, or it will be ignored) and writes the modified companion struct back to disk.
-// It uses a mutex lock to prevent the same companion file being written to by two goroutines at the same time.
-// addPartToCompanion takes an argument "path" that represents where the file will be stored after it is complete.
-func addPartToCompanion(path string, id string, location string) {
-    companion_lock.Lock()
-    companion := decodeCompanion(path)
-    companion_addition := id + ";" + location
-    if !util.IsStringInArray(companion.CurrentParts, companion_addition) {
-        companion.CurrentParts = append(companion.CurrentParts, companion_addition)
-    }
-    companion.encodeAndWrite()
-    companion_lock.Unlock()
-}
-
-// encodeAndWrite takes the in-memory representation of a companion file,
-// creates a JSON representation, and writes it to disk.
-func (comp *Companion) encodeAndWrite() {
-    companion_bytes, _ := json.Marshal(comp)
-    comp_file, _ := os.OpenFile(comp.Path+".comp.tmp", os.O_RDWR|os.O_CREATE, 0700)
-    comp_file.Write(companion_bytes)
-    comp_file.Close()
-    os.Rename(comp.Path+".comp.tmp", comp.Path+".comp")
-}
-
-// newCompanion creates a new companion file initialized
-// with specified parameters, and writes it to disk.
-func newCompanion(path string, size int64) {
-    current_parts := make([]string, 0)
-    new_companion := Companion{path, size, current_parts}
-    new_companion.encodeAndWrite()
 }
 
 // requestPart sends an HTTP request to the sender which requests a file part.
@@ -232,7 +176,7 @@ func requestPart(path string, part_header textproto.MIMEHeader, start int64, end
 // It fills a file with null bytes so that the created file is the same size as the complete file will be.
 func createEmptyFile(path string, size int64) {
     os.MkdirAll(filepath.Dir(path), os.ModePerm)
-    newCompanion(path, size)
+    util.NewCompanion(path, size)
     fi, _ := os.Create(path + ".tmp")
     fi.Truncate(size)
     fi.Close()
@@ -261,7 +205,7 @@ func finishFile(addition_channel chan string, config_file string) {
 // main is the entry point of the webserver. It is responsible for registering
 // handlers and beginning the request serving loop. It also creates and starts the file listener.
 func main() {
-    companion_lock = sync.Mutex{}
+    util.CompanionLock = sync.Mutex{}
     // Create and start listener
     cwd, _ := os.Getwd()
     addition_channel := make(chan string, 1)
