@@ -31,7 +31,7 @@ func DecodeCompanion(path string) *Companion {
 // addPartToCompanion decodes a companion struct, adds the specified id to CurrentParts
 // (id must be unique, or it will be ignored) and writes the modified companion struct back to disk.
 // It uses a mutex lock to prevent the same companion file being written to by two goroutines at the same time.
-// addPartToCompanion takes an argument "path" that represents where the file will be stored after it is complete.
+// addPartToCompanion takes an argument "path" that represents where the file that the companion is representing is stored.
 func AddPartToCompanion(path string, id string, location string) {
     CompanionLock.Lock()
     companion := DecodeCompanion(path)
@@ -55,8 +55,12 @@ func (comp *Companion) EncodeAndWrite() {
 
 // newCompanion creates a new companion file initialized
 // with specified parameters, and writes it to disk.
-func NewCompanion(path string, size int64) {
+func NewCompanion(path string, size int64) Companion {
+    if &CompanionLock == nil {
+        CompanionLock = sync.Mutex{}
+    }
     current_parts := make([]string, 0)
     new_companion := Companion{path, size, current_parts}
     new_companion.EncodeAndWrite()
+    return new_companion
 }

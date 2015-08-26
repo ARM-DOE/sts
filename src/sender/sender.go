@@ -89,7 +89,8 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
 
 // sendDisk accepts Bins with transfer type Disk, and copies them to a location on the system.
 func (sender *Sender) sendDisk(send_bin Bin) {
-    dest_path := util.JoinPath(config.Disk_Path, getStorePath(send_bin.Files[0].Path, config.Directory))
+    bin_part := send_bin.Files[0] // Bin will have only one part
+    dest_path := util.JoinPath(config.Disk_Path, getStorePath(bin_part.Path, config.Directory))
     mkdir_err := os.MkdirAll(filepath.Dir(dest_path), os.ModePerm)
     if mkdir_err != nil {
         fmt.Println(mkdir_err.Error())
@@ -100,7 +101,7 @@ func (sender *Sender) sendDisk(send_bin Bin) {
         fmt.Println(dest_err.Error())
         return
     }
-    src_fi, src_err := os.Open(send_bin.Files[0].Path)
+    src_fi, src_err := os.Open(bin_part.Path)
     if src_err != nil {
         fmt.Println(src_err.Error())
         return
@@ -116,7 +117,8 @@ func (sender *Sender) sendDisk(send_bin Bin) {
         }
     }
     dest_fi.Close()
-    send_bin.Files[0].MD5 = stream_md5.SumString()
+    util.NewCompanion(dest_path, bin_part.TotalSize)
+    util.AddPartToCompanion(dest_path, stream_md5.SumString(), getPartLocation(0, bin_part.TotalSize))
     send_bin.delete() // Write finished, delete bin.
 }
 
@@ -245,31 +247,6 @@ func (body *BinBody) SetBoundary(boundary string) {
 func (body *BinBody) getClosingBoundary() string {
     return fmt.Sprintf("--%s--", body.Boundary())
 }
-
-// getBinBody generates and returns a multipart file based on the Parts defined in the Bin.
-// getBinBody returns a byte array that contains the bytes of the multipart file, and a boundary string, which is needed to parse the multipart file.
-// Currently not used, but can be used as a reference for correctly generating a multipart file.
-/*func getBinBody(bin Bin) ([]byte, string) {
-    body_buffer := bytes.Buffer{}
-    multipart_writer := multipart.NewWriter(&body_buffer)
-    multipart_writer.SetBoundary(multipart_writer.Boundary())
-    for _, part := range bin.Files {
-        fi, _ := os.Open(part.Path)
-        part_bytes := make([]byte, part.End-part.Start)
-        fi.Seek(part.Start, 0)
-        fi.Read(part_bytes)
-        part_header := textproto.MIMEHeader{}
-        md5 := util.GenerateMD5(part_bytes)
-        part_header.Add("md5", md5)
-        part_header.Add("name", getStorePath(part.Path, bin.WatchDir))
-        part_header.Add("total_size", fmt.Sprintf("%d", part.TotalSize))
-        part_header.Add("location", getPartLocation(part.Start, part.End))
-        new_part, _ := multipart_writer.CreatePart(part_header)
-        new_part.Write(part_bytes)
-    }
-    multipart_writer.Close()
-    return body_buffer.Bytes(), multipart_writer.Boundary()
-}*/
 
 // getPartLocation formats a string for sending as a header in each part.
 // It takes two byte parameters. The first int64 represents the first byte

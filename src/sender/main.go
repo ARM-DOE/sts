@@ -21,7 +21,7 @@ var config Config
 // dispatches the listening and sending threads, and loops infinitely.
 func main() {
     config = parseConfig("config.yaml")
-    checkWatchDir(config.Directory)
+    checkWatchDir(config.Directory) // Exits if watch dir is not valid
 
     // Create the channel through which new bins will be sent from the sender to the receiver.
     bin_channel := make(chan Bin, config.Sender_Threads+5) // Create a bin channel with buffer size large enough to accommodate all sender threads and a little wiggle room.
