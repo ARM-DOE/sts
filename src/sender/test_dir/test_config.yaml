@@ -8,13 +8,13 @@ disk_path: external_disk
 tags:
   DEFAULT:
     priority: 5
-    transfer_method: 1
+    transfer_method: HTTP
   radar:
     priority: 3
-    transfer_method: 2
+    transfer_method: Disk
   laser:
     priority: 2
-    transfer_method: 1
+    transfer_method: HTTP
   log:
     priority: 1
-    transfer_method: 1
+    transfer_method: HTTP

@@ -5,14 +5,11 @@ cache_file_name: file_cache.dat
 bin_size: 3000000
 compression: false
 disk_path: disk
-# Transfer methods:
-# 1 - HTTP
-# 2 - Disk
-# 3 - GridFTP
+
 tags:
   DEFAULT:
     priority: 5
-    transfer_method: 1
+    transfer_method: HTTP # transfer methods: HTTP, Disk, GridFTP
   disk_test:
     priority: 5
-    transfer_method: 2
+    transfer_method: Disk

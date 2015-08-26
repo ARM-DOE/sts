@@ -76,7 +76,7 @@ type Bin struct {
     Size           int64  // Maximum amount of bytes that the Bin is able to store
     BytesLeft      int64  // Unallocated bytes in the Bin
     Name           string // MD5 of Bin.Files creates unique Bin name for writing to disk
-    TransferMethod int
+    TransferMethod string
     WatchDir       string
     Empty          bool
 }
@@ -176,7 +176,7 @@ func (bin *Bin) fill(cache *Cache) {
             }
             if allocation < file_size && allocation != -1 && shouldAllocate(cache, path) {
                 // File should be allocated, add to Bin
-                if tag_data.Transfer_Method != TRANSFER_HTTP && bin.Empty {
+                if tag_data.TransferMethod() != TRANSFER_HTTP && bin.Empty {
                     // If the Bin is empty, add any non-standard transfer method files.
                     bin.handleExternalTransferMethod(cache, path, tag_data)
                     break
@@ -243,7 +243,7 @@ func sameTag(path1 string, path2 string) bool {
 func highestPriority(cache *Cache, tag_data TagData) bool {
     for path, allocation := range cache.listener.Files {
         cache_tag := getTag(path)
-        if allocation != -1 && cache_tag.Priority < tag_data.Priority && cache_tag.Transfer_Method == tag_data.Transfer_Method {
+        if allocation != -1 && cache_tag.Priority < tag_data.Priority && cache_tag.TransferMethod() == tag_data.TransferMethod() {
             return false
         }
     }
@@ -271,7 +271,7 @@ func getTag(path string) TagData {
 // on the transfer method of the file.
 func (bin *Bin) handleExternalTransferMethod(cache *Cache, path string, tag_data TagData) {
     info, _ := os.Stat(path)
-    switch tag_data.Transfer_Method {
+    switch tag_data.TransferMethod() {
     case TRANSFER_HTTP:
         panic("handleExternalTransferMethod called, but method is not external")
     case TRANSFER_DISK:
@@ -279,7 +279,7 @@ func (bin *Bin) handleExternalTransferMethod(cache *Cache, path string, tag_data
     case TRANSFER_GRIDFTP:
         bin.handleGridFTP(path, tag_data)
     default:
-        panic(fmt.Sprintf("Transfer method %d not recognized", tag_data.Transfer_Method))
+        panic(fmt.Sprintf("Transfer method %s not recognized", tag_data.TransferMethod()))
     }
     cache.updateFile(path, -1, info)
 }

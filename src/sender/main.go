@@ -10,9 +10,9 @@ import (
     "time"
 )
 
-const TRANSFER_HTTP = 1
-const TRANSFER_DISK = 2
-const TRANSFER_GRIDFTP = 3
+const TRANSFER_HTTP = "http"
+const TRANSFER_DISK = "disk"
+const TRANSFER_GRIDFTP = "gridftp"
 
 var config Config
 
@@ -61,7 +61,11 @@ type Config struct {
 // TagData contains the priority and transfer method for each tag, loaded from the config.
 type TagData struct {
     Priority        int
-    Transfer_Method int
+    Transfer_Method string
+}
+
+func (tag *TagData) TransferMethod() string {
+    return strings.ToLower(tag.Transfer_Method)
 }
 
 // parseConfig parses the config.yaml file and returns the parsed results as an instance of the Config struct.
