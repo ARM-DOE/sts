@@ -51,3 +51,10 @@ func TestIsIntInArray(t *testing.T) {
         }
     }
 }
+
+func TestGetHostname(t *testing.T) {
+    host_name := GetHostname("127.0.0.1")
+    if host_name != "localhost" {
+        t.Errorf("Expected localhost for ip lookup 127.0.0.1, got %s.", host_name)
+    }
+}

@@ -10,7 +10,9 @@ import (
     "net/http"
     "net/textproto"
     "os"
+    "path/filepath"
     "time"
+    "util"
 )
 
 // Sender is a struct that continually requests new Bins from a channel.
@@ -32,42 +34,86 @@ func SenderFactory(file_queue chan Bin, compression bool) *Sender {
 }
 
 // run is the main loop of the sender struct. It blocks until it receives a Bin from the bin channel.
-// Once the Sender receives a Bin, it creates the body of the file and sends it.
-// After sending is verified to be complete, the Bin is deleted.
+// Once the Sender receives a Bin, it dispatches the function that corresponds to the transfer method
+// of the Bin.
 func (sender *Sender) run() {
     for {
         send_bin := <-sender.queue
         sender.Busy = true
         fmt.Println("Sending bin of size ", send_bin.Size)
-        for index, _ := range send_bin.Files {
-            send_bin.Files[index].getMD5()
-        }
-        bin_body := CreateBinBody(send_bin)
-        bin_body.compression = sender.compression
-        request, err := http.NewRequest("PUT", "http://localhost:8081/send.go", bin_body)
-        request.Header.Add("Transfer-Encoding", "chunked")
-        request.Header.Add("Boundary", bin_body.Boundary())
-        request.ContentLength = -1
-        if bin_body.compression {
-            request.Header.Add("Content-Encoding", "gzip")
-        }
-        if err != nil {
-            fmt.Println(err.Error())
-        }
-        client := http.Client{}
-        response, sending_err := client.Do(request)
-        if sending_err != nil {
-            fmt.Println(sending_err.Error())
-            time.Sleep(5 * time.Second) // Wait so you don't choke the Bin queue if it keeps failing in quick succession.
-            sender.queue <- send_bin    // Pass the bin back into the Bin queue.
-        } else {
-            response_code, _ := ioutil.ReadAll(response.Body)
-            if string(response_code) == "200" {
-                send_bin.delete() // Sending is complete, so remove the bin file
-            }
+        switch send_bin.TransferMethod {
+        case TRANSFER_HTTP:
+            sender.sendHTTP(send_bin)
+        case TRANSFER_DISK:
+            sender.sendDisk(send_bin)
+        case TRANSFER_GRIDFTP:
+            sender.sendGridFTP(send_bin)
+        default:
+            panic(fmt.Sprintf("Unknown Bin.TransferMethod %d in %s", send_bin.TransferMethod, send_bin.Name))
         }
         sender.Busy = false
     }
+}
+
+// sendHTTP accepts Bins with transfer type HTTP, creates a BinBody stream for the Bin, and streams
+// the Bin body in an HTTP request to the receiver.
+func (sender *Sender) sendHTTP(send_bin Bin) {
+    for index, _ := range send_bin.Files {
+        send_bin.Files[index].getMD5()
+    }
+    bin_body := CreateBinBody(send_bin)
+    bin_body.compression = sender.compression
+    request, err := http.NewRequest("PUT", "http://localhost:8081/send.go", bin_body)
+    request.Header.Add("Transfer-Encoding", "chunked")
+    request.Header.Add("Boundary", bin_body.Boundary())
+    request.ContentLength = -1
+    if bin_body.compression {
+        request.Header.Add("Content-Encoding", "gzip")
+    }
+    if err != nil {
+        fmt.Println(err.Error())
+    }
+    client := http.Client{}
+    response, sending_err := client.Do(request)
+    if sending_err != nil {
+        fmt.Println(sending_err.Error())
+        time.Sleep(5 * time.Second) // Wait so you don't choke the Bin queue if it keeps failing in quick succession.
+        sender.queue <- send_bin    // Pass the bin back into the Bin queue.
+    } else {
+        response_code, _ := ioutil.ReadAll(response.Body)
+        if string(response_code) == "200" {
+            send_bin.delete() // Sending is complete, so remove the bin file
+        }
+    }
+}
+
+// sendDisk accepts Bins with transfer type Disk, and copies them to a location on the system.
+func (sender *Sender) sendDisk(send_bin Bin) {
+    dest_path := util.JoinPath(config.Disk_Path, getStorePath(send_bin.Files[0].Path, config.Directory))
+    mkdir_err := os.MkdirAll(filepath.Dir(dest_path), os.ModePerm)
+    if mkdir_err != nil {
+        fmt.Println(mkdir_err.Error())
+    }
+    dest_fi, dest_err := os.Create(dest_path)
+    defer dest_fi.Close()
+    if dest_err != nil {
+        fmt.Println(dest_err.Error())
+    }
+    src_fi, src_err := os.Open(send_bin.Files[0].Path)
+    if src_err != nil {
+        fmt.Println(src_err.Error())
+    }
+    _, copy_err := io.Copy(dest_fi, src_fi)
+    if copy_err != nil {
+        fmt.Println(copy_err.Error())
+    } else {
+        send_bin.delete()
+    }
+}
+
+// sendGridFTP accepts Bins with transfer type GridFTP, and does nothing with them.
+func (sender *Sender) sendGridFTP(send_bin Bin) {
+
 }
 
 // BinBody is a struct that, given a Bin, returns a portion of the contents in

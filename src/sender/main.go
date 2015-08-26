@@ -11,8 +11,8 @@ import (
 )
 
 const TRANSFER_HTTP = 1
-const TRANSFER_GRIDFTP = 2
-const TRANSFER_DISK = 3
+const TRANSFER_DISK = 2
+const TRANSFER_GRIDFTP = 3
 
 var config Config
 
@@ -54,6 +54,7 @@ type Config struct {
     Cache_File_Name         string
     Bin_Size                int64
     Compression             bool
+    Disk_Path               string
     Tags                    map[string]TagData
 }
 
@@ -94,6 +95,10 @@ func getWholePath(store_path string) string {
         fmt.Println(err.Error())
     }
     return abs_path
+}
+
+func PrintDebug(str string) {
+    fmt.Println(str)
 }
 
 // checkWatchDir is called on the directory to be watched.

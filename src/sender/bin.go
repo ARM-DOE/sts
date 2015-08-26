@@ -72,12 +72,13 @@ func (part *Part) countReads(block_size int) int64 {
 // filled until all the new files have been allocated. The filled Bins are passed down the bin channel
 // to senders, which construct and send a multipart file from the list of Parts.
 type Bin struct {
-    Files     []Part // All the instances of Part that the Bin contains
-    Size      int64  // Maximum amount of bytes that the Bin is able to store
-    BytesLeft int64  // Unallocated bytes in the Bin
-    Name      string // MD5 of Bin.Files creates unique Bin name for writing to disk
-    WatchDir  string
-    Empty     bool
+    Files          []Part // All the instances of Part that the Bin contains
+    Size           int64  // Maximum amount of bytes that the Bin is able to store
+    BytesLeft      int64  // Unallocated bytes in the Bin
+    Name           string // MD5 of Bin.Files creates unique Bin name for writing to disk
+    TransferMethod int
+    WatchDir       string
+    Empty          bool
 }
 
 // BinFactory creates a new empty Bin object.
@@ -87,6 +88,7 @@ type Bin struct {
 // where the files will be stored on the receiving end.
 func BinFactory(size int64, watch_dir string) Bin {
     new_bin := Bin{}
+    new_bin.TransferMethod = TRANSFER_HTTP
     new_bin.Size = size
     new_bin.BytesLeft = size
     new_bin.Files = make([]Part, 0)
@@ -157,18 +159,12 @@ func (bin *Bin) fill(cache *Cache) {
         keep_trying = false // Set keep_trying to false until a file is found that will allow the loop to continue.
         for path, allocation := range cache.listener.Files {
             if bin.BytesLeft == 0 {
-                // Bin is full
-                break
+                break // Bin is full
             }
             if path == "__TIMESTAMP__" {
-                continue
+                continue // Don't try to allocate the timestamp data
             }
-            if allocation != -1 {
-                tag_data := getTag(path)
-                if tag_data.Transfer_Method == TRANSFER_HTTP {
-                    keep_trying = true
-                }
-            }
+            tag_data := getTag(path)
             info, info_err := os.Stat(path)
             if info_err != nil {
                 panic(fmt.Sprintf("File: %s registered in cache, but does not exist", path))
@@ -180,10 +176,18 @@ func (bin *Bin) fill(cache *Cache) {
             }
             if allocation < file_size && allocation != -1 && shouldAllocate(cache, path) {
                 // File should be allocated, add to Bin
+                if tag_data.Transfer_Method != TRANSFER_HTTP && bin.Empty {
+                    // If the Bin is empty, add any non-standard transfer method files.
+                    bin.handleExternalTransferMethod(cache, path, tag_data)
+                    break
+                }
                 added_bytes := bin.fitBytes(allocation, file_size)
                 bin.BytesLeft = bin.BytesLeft - added_bytes
                 bin.addPart(path, allocation, allocation+added_bytes, info)
                 cache.updateFile(path, allocation+added_bytes, info)
+            }
+            if allocation != -1 {
+                keep_trying = true
             }
         }
     }
@@ -199,9 +203,6 @@ func (bin *Bin) fill(cache *Cache) {
 // file in the cache with the same tag.
 func shouldAllocate(cache *Cache, path string) bool {
     tag_data := getTag(path)
-    if tag_data.Transfer_Method != TRANSFER_HTTP {
-        return false // Not using HTTP transfer method, do not send
-    }
     highest_priority := highestPriority(cache, tag_data)
     oldest_file := oldestFileInTag(cache, path)
     should_send := highest_priority && oldest_file
@@ -237,12 +238,12 @@ func sameTag(path1 string, path2 string) bool {
 }
 
 // anyHigherPriority checks if there is any unallocated file in the cache that has a
-// higher send priority than the given TagData. For the higher priority file to be found,
-// it must have Transfer_Method set as HTTP.
+// higher send priority than the given TagData. For the higher priority file to be registered,
+// it must have the same transfer method as the passed in TagData
 func highestPriority(cache *Cache, tag_data TagData) bool {
     for path, allocation := range cache.listener.Files {
-        tag := getTag(path)
-        if allocation != -1 && tag.Priority < tag_data.Priority && tag.Transfer_Method == TRANSFER_HTTP {
+        cache_tag := getTag(path)
+        if allocation != -1 && cache_tag.Priority < tag_data.Priority && cache_tag.Transfer_Method == tag_data.Transfer_Method {
             return false
         }
     }
@@ -263,6 +264,42 @@ func getTag(path string) TagData {
         }
     }
     return config.Tags["DEFAULT"]
+}
+
+// handleExternalTranferMethod is called when a non-HTTP, unallocated file is found, and the
+// currently allocating Bin is empty. It calls either handleDisk or handleGridFTP depending
+// on the transfer method of the file.
+func (bin *Bin) handleExternalTransferMethod(cache *Cache, path string, tag_data TagData) {
+    info, _ := os.Stat(path)
+    switch tag_data.Transfer_Method {
+    case TRANSFER_HTTP:
+        panic("handleExternalTransferMethod called, but method is not external")
+    case TRANSFER_DISK:
+        bin.handleDisk(path, tag_data)
+    case TRANSFER_GRIDFTP:
+        bin.handleGridFTP(path, tag_data)
+    default:
+        panic(fmt.Sprintf("Transfer method %d not recognized", tag_data.Transfer_Method))
+    }
+    cache.updateFile(path, -1, info)
+}
+
+// handleDisk is called to prep bins for files with transfer method disk.
+func (bin *Bin) handleDisk(path string, tag_data TagData) {
+    bin.TransferMethod = TRANSFER_DISK
+    info, _ := os.Stat(path)
+    bin.Size = info.Size()
+    bin.BytesLeft = 0
+    bin.addPart(path, 0, info.Size(), info)
+}
+
+// handleGridFTP is called to prep bins for files with transfer method GridFTP.
+func (bin *Bin) handleGridFTP(path string, tag_data TagData) {
+    bin.TransferMethod = TRANSFER_GRIDFTP
+    info, _ := os.Stat(path)
+    bin.Size = info.Size()
+    bin.BytesLeft = 0
+    bin.addPart(path, 0, info.Size(), info)
 }
 
 // fitBytes checks a file to see how much of that file can fit inside a Bin.

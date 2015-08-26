@@ -4,6 +4,7 @@ log_file_duration_hours: 3000
 cache_file_name: file_cache.dat
 bin_size: 3000000
 compression: false
+disk_path: external_disk
 tags:
   DEFAULT:
     priority: 5
