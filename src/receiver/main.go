@@ -17,11 +17,11 @@ import (
     "util"
 )
 
-const FINAL_DIRECTORY = "final"
-
 // finalize_mutex prevents the cache from updating its timestamp while files
 // from its addition channel are being processed.
 var finalize_mutex sync.Mutex
+
+var config util.Config
 
 // errorHandler is called when any page that is not a registered API method is requested.
 func errorHandler(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +111,7 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
     util.AddPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"))
     if isFileComplete(part_path) {
         // Finish file by moving it to the final directory and removing the .tmp extension.
-        final_path := util.JoinPath(FINAL_DIRECTORY, host_name, part_path)
+        final_path := util.JoinPath(config.Output_Directory, host_name, part_path)
         os.MkdirAll(filepath.Dir(final_path), os.ModePerm) // Make containing directories for the file.
         rename_err := os.Rename(write_path, final_path)
         if rename_err != nil {
@@ -231,20 +231,21 @@ func onFinish() {
     finalize_mutex.Unlock()
 }
 
-// main is the entry point of the webserver. It is responsible for registering
-// handlers and beginning the request serving loop. It also creates and starts the file listener.
+// main is the entry point of the webserver. It is responsible for registering HTTP
+// handlers, parsing the config file, starting the file listener, and beginning the request serving loop.
 func main() {
     finalize_mutex = sync.Mutex{}
     util.CompanionLock = sync.Mutex{}
+    config = util.ParseConfig("config.yaml") // Load config file
     // Setup listener and add ignore patterns.
     cwd, _ := os.Getwd()
     addition_channel := make(chan string, 1)
-    listener_cache_file := "listener_cache.dat"
-    listener := util.NewListener(listener_cache_file, cwd)
+    listener := util.NewListener(config.Cache_File_Name, cwd)
     listener.SetOnFinish(onFinish)
     listener.AddIgnored(`\.tmp`)
     listener.AddIgnored(`\.comp`)
-    listener.AddIgnored(regexp.QuoteMeta(listener_cache_file))
+    listener.AddIgnored(regexp.QuoteMeta(config.Cache_File_Name))
+    // Start listening threads
     go finishFile(addition_channel)
     listener.LoadCache()
     go listener.Listen(addition_channel)

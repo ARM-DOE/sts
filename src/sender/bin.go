@@ -239,7 +239,7 @@ func sameTag(path1 string, path2 string) bool {
 // anyHigherPriority checks if there is any unallocated file in the cache that has a
 // higher send priority than the given TagData. For the higher priority file to be registered,
 // it must have the same transfer method as the passed in TagData
-func highestPriority(cache *Cache, tag_data TagData) bool {
+func highestPriority(cache *Cache, tag_data util.TagData) bool {
     for path, allocation := range cache.listener.Files {
         cache_tag := getTag(path)
         if allocation != -1 && cache_tag.Priority < tag_data.Priority && cache_tag.TransferMethod() == tag_data.TransferMethod() {
@@ -251,7 +251,7 @@ func highestPriority(cache *Cache, tag_data TagData) bool {
 
 // getTag returns a TagData instance for the first tag pattern that matches the file path.
 // If no tag pattern matches, it returns the default TagData.
-func getTag(path string) TagData {
+func getTag(path string) util.TagData {
     path_tag := strings.Split(path, ".")[0]
     for tag_pattern, tag_data := range config.Tags {
         if tag_pattern == "DEFAULT" {
@@ -268,7 +268,7 @@ func getTag(path string) TagData {
 // handleExternalTranferMethod is called when a non-HTTP, unallocated file is found, and the
 // currently allocating Bin is empty. It calls either handleDisk or handleGridFTP depending
 // on the transfer method of the file.
-func (bin *Bin) handleExternalTransferMethod(cache *Cache, path string, tag_data TagData) {
+func (bin *Bin) handleExternalTransferMethod(cache *Cache, path string, tag_data util.TagData) {
     info, _ := os.Stat(path)
     switch tag_data.TransferMethod() {
     case TRANSFER_HTTP:
@@ -284,7 +284,7 @@ func (bin *Bin) handleExternalTransferMethod(cache *Cache, path string, tag_data
 }
 
 // handleDisk is called to prep bins for files with transfer method disk.
-func (bin *Bin) handleDisk(path string, tag_data TagData) {
+func (bin *Bin) handleDisk(path string, tag_data util.TagData) {
     bin.TransferMethod = TRANSFER_DISK
     info, _ := os.Stat(path)
     bin.Size = info.Size()
@@ -293,7 +293,7 @@ func (bin *Bin) handleDisk(path string, tag_data TagData) {
 }
 
 // handleGridFTP is called to prep bins for files with transfer method GridFTP.
-func (bin *Bin) handleGridFTP(path string, tag_data TagData) {
+func (bin *Bin) handleGridFTP(path string, tag_data util.TagData) {
     bin.TransferMethod = TRANSFER_GRIDFTP
     info, _ := os.Stat(path)
     bin.Size = info.Size()

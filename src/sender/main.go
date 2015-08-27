@@ -2,25 +2,24 @@ package main
 
 import (
     "fmt"
-    "gopkg.in/yaml.v2"
-    "io/ioutil"
     "os"
     "path/filepath"
     "strings"
     "time"
+    "util"
 )
 
 const TRANSFER_HTTP = "http"
 const TRANSFER_DISK = "disk"
 const TRANSFER_GRIDFTP = "gridftp"
 
-var config Config
+var config util.Config
 
 // main is the entry point for the sender program.
 // It parses config values that are necessary during runtime,
 // dispatches the listening and sending threads, and loops infinitely.
 func main() {
-    config = parseConfig("config.yaml")
+    config = util.ParseConfig("config.yaml")
     checkWatchDir(config.Directory) // Exits if watch dir is not valid
 
     // Create the channel through which new bins will be sent from the sender to the receiver.
@@ -44,45 +43,6 @@ func main() {
     for {
         time.Sleep(1 * time.Second)
     }
-}
-
-// Config is the struct that all values from the configuration file are loaded into when it is parsed.
-type Config struct {
-    Directory               string
-    Sender_Threads          int
-    Log_File_Duration_Hours int
-    Cache_File_Name         string
-    Bin_Size                int64
-    Compression             bool
-    Disk_Path               string
-    Tags                    map[string]TagData
-}
-
-// TagData contains the priority and transfer method for each tag, loaded from the config.
-type TagData struct {
-    Priority        int
-    Transfer_Method string
-}
-
-func (tag *TagData) TransferMethod() string {
-    return strings.ToLower(tag.Transfer_Method)
-}
-
-// parseConfig parses the config.yaml file and returns the parsed results as an instance of the Config struct.
-func parseConfig(file_name string) Config {
-    var loaded_config Config
-    abs_path, _ := filepath.Abs(file_name)
-    config_fi, config_err := ioutil.ReadFile(abs_path)
-    if config_err != nil {
-        fmt.Println("config file", file_name, "not found")
-        os.Exit(1)
-    }
-    err := yaml.Unmarshal(config_fi, &loaded_config)
-    if err != nil {
-        fmt.Println(err.Error())
-        os.Exit(1)
-    }
-    return loaded_config
 }
 
 // getStorePath returns the path that the receiver should use to store a file.
