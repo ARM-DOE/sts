@@ -8,6 +8,7 @@ import (
     "os"
     "testing"
     "time"
+    "util"
 )
 
 var error_status string
@@ -51,7 +52,7 @@ func receiveFileHandler(w http.ResponseWriter, r *http.Request) {
 func TestSingleBin(t *testing.T) {
     // Create and pass new bin to sender
     error_status = ""
-    test_file = "test_dir" + string(os.PathSeparator) + "send_test.txt"
+    test_file = util.JoinPath("test_dir", "send_test.txt")
     bin_queue := make(chan Bin, 1)
     sender := NewSender(bin_queue, false)
     go sender.run()
@@ -80,8 +81,8 @@ func TestMultiBin(t *testing.T) {
     bin_queue := make(chan Bin, 1)
     sender := NewSender(bin_queue, false)
     go sender.run()
-    test_file1 := wd + string(os.PathSeparator) + "test_dir" + string(os.PathSeparator) + "send_test.txt"
-    test_file2 := wd + string(os.PathSeparator) + "test_dir" + string(os.PathSeparator) + "send_test2.txt"
+    test_file1 := util.JoinPath(wd, "test_dir", "send_test.txt")
+    test_file2 := util.JoinPath(wd, "test_dir", "send_test2.txt")
     new_bin := NewBin(3000, "test_dir")
     stat1, _ := os.Stat(test_file1)
     stat2, _ := os.Stat(test_file2)

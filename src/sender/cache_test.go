@@ -4,6 +4,7 @@ import (
     "os"
     "testing"
     "time"
+    "util"
 )
 
 var cache *Cache
@@ -12,7 +13,7 @@ var bin_channel chan Bin
 // TestLoadSaveBins tests whether a bin will save and load correctly.
 func TestLoadSaveBins(t *testing.T) {
     // Make sure there are no bins in the bins directory when running this test, or it will fail.
-    defer os.Remove("bins" + string(os.PathSeparator) + "d751713988987e9331980363e24189ce.bin")
+    defer os.Remove(util.JoinPath("bins", "d751713988987e9331980363e24189ce.bin"))
     bin_channel = make(chan Bin, 5)
     timeout_channel := make(chan bool, 1)
     cache = NewCache("cache_test.dat", "test_dir", 3000, bin_channel)
@@ -39,8 +40,8 @@ func TestLoadSaveBins(t *testing.T) {
 // TestMultiAllocate tests whether the cache will allocate multiple files to one bin.
 func TestMultiAllocate(t *testing.T) {
     defer os.Remove("cache_test.dat")
-    defer os.Remove("bins" + string(os.PathSeparator) + "b5c3a78acc1c336479430636f676746e.bin")
-    defer os.Remove("bins" + string(os.PathSeparator) + "82f9219e048a5caf3f268dae105b151d.bin")
+    defer os.Remove(util.JoinPath("bins", "b5c3a78acc1c336479430636f676746e.bin"))
+    defer os.Remove(util.JoinPath("bins", "82f9219e048a5caf3f268dae105b151d.bin"))
     fake_queue := make(chan Bin, 5)
     timeout_channel := make(chan bool, 1)
     fake_sender := NewSender(fake_queue, false)

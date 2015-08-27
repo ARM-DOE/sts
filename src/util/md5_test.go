@@ -47,7 +47,7 @@ func TestReadAll(t *testing.T) {
     }
     for _, v := range test_files {
         md5_stream := NewStreamMD5()
-        fi, _ := os.Open("test_files" + string(os.PathSeparator) + v.name)
+        fi, _ := os.Open(JoinPath("test_files", v.name))
         result := md5_stream.ReadAll(fi)
         if result != v.result {
             t.Errorf("StreamMD5.ReadAll(%s) expected %s got %s", v.name, v.result, result)

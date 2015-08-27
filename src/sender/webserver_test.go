@@ -7,6 +7,7 @@ import (
     "net/http"
     "os"
     "testing"
+    "util"
 )
 
 var client http.Client
@@ -40,7 +41,7 @@ func TestServer(t *testing.T) {
 
 // TestGetFile checks to see whether the webserver will return a valid multipart request from get_file.go
 func TestGetFile(t *testing.T) {
-    fi, _ := os.Open("test_dir" + string(os.PathSeparator) + "send_test.txt")
+    fi, _ := os.Open(util.JoinPath("test_dir", "send_test.txt"))
     file_content, _ := ioutil.ReadAll(fi)
     url := fmt.Sprintf("http://localhost:8080/get_file.go?name=test_dir/send_test.txt&start=0&end=%d&boundary=12254eb56f10eb966eb96d6e108e9a98e1a16949aca7f4939666ada18c40", len(file_content))
     request, _ := http.NewRequest("POST", url, nil)

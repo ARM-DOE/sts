@@ -9,8 +9,8 @@ import (
 
 // TestCacheReadWrite tests whether reads and writes to the cache will succeed.
 func TestCacheReadWrite(t *testing.T) {
-    cache_file := "test_files" + string(os.PathSeparator) + "test_cache.dat"
-    watch_dir := "test_files" + string(os.PathSeparator) + "watch_dir"
+    cache_file := JoinPath("test_files", "test_cache.dat")
+    watch_dir := JoinPath("test_files", "watch_dir")
     listener := NewListener(cache_file, watch_dir)
     listener.LoadCache()
     listener.last_update = -55
@@ -24,9 +24,9 @@ func TestCacheReadWrite(t *testing.T) {
 
 // TestScan tests whether the file watcher picks up a new file when its mtime is updated.
 func TestScan(t *testing.T) {
-    cache_file := "test_files" + string(os.PathSeparator) + "test_cache.dat"
-    watch_file := "test_files" + string(os.PathSeparator) + "watch_dir" + string(os.PathSeparator) + "large.txt"
-    watch_dir := "test_files" + string(os.PathSeparator) + "watch_dir"
+    cache_file := JoinPath("test_files", "test_cache.dat")
+    watch_file := JoinPath("test_files", "watch_dir", "large.txt")
+    watch_dir := JoinPath("test_files", "watch_dir")
     listener := NewListener(cache_file, watch_dir)
     listener.LoadCache()
     listener.AddIgnored("ignore_me")
@@ -34,7 +34,7 @@ func TestScan(t *testing.T) {
     timeout := make(chan bool, 1)
     go listener.Listen(addition_chan)
     os.Chtimes(watch_file, time.Now(), time.Now())
-    os.Chtimes(watch_dir+string(os.PathSeparator)+"ignore_me", time.Now(), time.Now())
+    os.Chtimes(JoinPath(watch_dir, "ignore_me"), time.Now(), time.Now())
     go func() {
         time.Sleep(5 * time.Second)
         timeout <- true
