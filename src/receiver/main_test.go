@@ -9,6 +9,7 @@ import (
     "net/textproto"
     "os"
     "testing"
+    "util"
 )
 
 // Send a multipart file with multiple parts to the receiver
@@ -16,8 +17,8 @@ func TestMultiPartReceive(t *testing.T) {
     // Start webserver
     go main()
     // Create multipart file
-    defer os.Remove("test_dir/small_file.txt")
-    defer os.Remove("test_dir/other_file.txt")
+    defer os.Remove(util.JoinPath("final", "localhost", "test_dir", "small_file.txt"))
+    defer os.Remove(util.JoinPath("final", "localhost", "test_dir", "other_file.txt"))
     buff := bytes.Buffer{}
     small_file := []byte("a small file of only one chunk")
     writer := multipart.NewWriter(&buff)
@@ -40,7 +41,7 @@ func TestMultiPartReceive(t *testing.T) {
     client := http.Client{}
     client.Do(request)
     // Check that files exist
-    fi, open_err := os.Open("test_dir/small_file.txt")
+    fi, open_err := os.Open(util.JoinPath("final", "localhost", "test_dir", "small_file.txt"))
     if open_err != nil {
         t.Error("Sent file not created")
     }
@@ -48,7 +49,7 @@ func TestMultiPartReceive(t *testing.T) {
     if string(read_bytes) != string(small_file) {
         t.Error("Contents of first file not the same as sent data")
     }
-    fi2, open_err2 := os.Open("test_dir/other_file.txt")
+    fi2, open_err2 := os.Open(util.JoinPath("final", "localhost", "test_dir", "other_file.txt"))
     if open_err2 != nil {
         t.Error("Sent file not created")
     }
@@ -61,7 +62,7 @@ func TestMultiPartReceive(t *testing.T) {
 // Send a multipart file with only one part to the receiver
 func TestSinglePartReceive(t *testing.T) {
     // Create multipart file
-    defer os.Remove("test_dir/small_file.txt")
+    defer os.Remove(util.JoinPath("final", "localhost", "test_dir", "small_file.txt"))
     buff := bytes.Buffer{}
     small_file := []byte("a small file of only one chunk")
     writer := multipart.NewWriter(&buff)
@@ -81,7 +82,7 @@ func TestSinglePartReceive(t *testing.T) {
     client := http.Client{}
     client.Do(request)
     // Check that file exists
-    fi, open_err := os.Open("test_dir/small_file.txt")
+    fi, open_err := os.Open(util.JoinPath("final", "localhost", "test_dir", "small_file.txt"))
     if open_err != nil {
         t.Error("Sent file not created")
     }

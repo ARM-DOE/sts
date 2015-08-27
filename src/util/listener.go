@@ -91,8 +91,8 @@ func (listener *Listener) scanDir() {
     listener.new_files = false
     filepath.Walk(listener.watch_dir, listener.fileWalkHandler)
     listener.last_update = GetTimestamp()
-    listener.WriteCache()
     listener.afterScan()
+    listener.WriteCache()
 }
 
 // fileWalkHandler is called for every file and directory in the directory managed by the Listener instance.

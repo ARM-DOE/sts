@@ -4,6 +4,7 @@ import (
     "compress/gzip"
     "fmt"
     "mime/multipart"
+    "net"
     "net/http"
     "net/textproto"
     "os"
@@ -15,6 +16,12 @@ import (
     "time"
     "util"
 )
+
+const FINAL_DIRECTORY = "final"
+
+// finalize_mutex prevents the cache from updating its timestamp while files
+// from its addition channel are being processed.
+var finalize_mutex sync.Mutex
 
 // errorHandler is called when any page that is not a registered API method is requested.
 func errorHandler(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +41,8 @@ func getPartLocation(location string) (int64, int64) {
 // It is responsible for verifying the md5 of each part in the file, replicating
 // its directory structure as it was on the sender, and writing the file to disk.
 func sendHandler(w http.ResponseWriter, r *http.Request) {
+    ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+    host_name := util.GetHostname(ip)
     compression := false
     if r.Header.Get("Content-Encoding") == "gzip" {
         compression = true
@@ -45,7 +54,7 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
         if end_of_file != nil { // Reached end of multipart file
             break
         }
-        handlePart(next_part, boundary, compression)
+        handlePart(next_part, boundary, host_name, compression)
     }
     fmt.Fprint(w, http.StatusOK)
 }
@@ -53,7 +62,7 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 // handlePart is called for each part in the multipart file that is sent to sendHandler.
 // It reads from the Part stream and writes the part to a file while calculating the md5.
 // If the file is bad, it will be reacquired and passed back into sendHandler.
-func handlePart(part *multipart.Part, boundary string, compressed bool) {
+func handlePart(part *multipart.Part, boundary string, host_name string, compressed bool) {
     // Gather data about part from headers
     part_path := part.Header.Get("name")
     write_path := part_path + ".tmp"
@@ -95,16 +104,22 @@ func handlePart(part *multipart.Part, boundary string, compressed bool) {
         fmt.Printf("Bad part of %s from bytes %s", part_path, part.Header.Get("location"))
         new_stream := requestPart(part_path, part.Header, part_start, part_end, boundary)
         time.Sleep(5 * time.Second)
-        handlePart(new_stream, boundary, compressed)
+        handlePart(new_stream, boundary, host_name, compressed)
         return
     }
     // Update the companion file of the part, and check if the whole file is done
     util.AddPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"))
     if isFileComplete(part_path) {
-        fmt.Println("Fully assembled ", part_path)
-        os.Rename(write_path, part_path)
+        // Finish file by moving it to the final directory and removing the .tmp extension.
+        final_path := util.JoinPath(FINAL_DIRECTORY, host_name, part_path)
+        os.MkdirAll(filepath.Dir(final_path), os.ModePerm) // Make containing directories for the file.
+        rename_err := os.Rename(write_path, final_path)
+        if rename_err != nil {
+            panic(rename_err.Error())
+        }
         os.Chtimes(part_path, time.Now(), time.Now()) // Update mtime so that listener will pick up the file
-        os.Remove(part_path + ".comp")
+        os.Remove(part_path + ".comp")                // Delete the companion file.
+        fmt.Println("Fully assembled ", part_path)
     }
 }
 
@@ -198,21 +213,35 @@ func getStorePath(full_path string, watch_directory string) string {
 func finishFile(addition_channel chan string) {
     for {
         new_file := <-addition_channel
-        cwd, _ := os.Getwd()
-        removeFromCache(getStorePath(new_file, cwd))
+        // Acquire the mutex while working with new files so that the cache will re-detect unprocessed files in the event of a crash.
+        finalize_mutex.Lock()
+        func() {
+            defer finalize_mutex.Unlock()
+            cwd, _ := os.Getwd()
+            removeFromCache(getStorePath(new_file, cwd))
+        }()
     }
+}
+
+// onFinish will prevent the cache from writing newer timestamps to disk while
+// files from the addition channel are still being processed by finishFile.
+// In the event of a crash, the listener will pick up unfinished files again.
+func onFinish() {
+    finalize_mutex.Lock()
+    finalize_mutex.Unlock()
 }
 
 // main is the entry point of the webserver. It is responsible for registering
 // handlers and beginning the request serving loop. It also creates and starts the file listener.
 func main() {
+    finalize_mutex = sync.Mutex{}
     util.CompanionLock = sync.Mutex{}
-    // Create and start listener
-    cwd, _ := os.Getwd()
     // Setup listener and add ignore patterns.
+    cwd, _ := os.Getwd()
     addition_channel := make(chan string, 1)
     listener_cache_file := "listener_cache.dat"
     listener := util.NewListener(listener_cache_file, cwd)
+    listener.SetOnFinish(onFinish)
     listener.AddIgnored(`\.tmp`)
     listener.AddIgnored(`\.comp`)
     listener.AddIgnored(regexp.QuoteMeta(listener_cache_file))
