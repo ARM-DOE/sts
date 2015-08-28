@@ -17,8 +17,8 @@ func TestMultiPartReceive(t *testing.T) {
     // Start webserver
     go Main("../../conf/receiver_config.yaml")
     // Create multipart file
-    defer os.Remove(util.JoinPath("final", "localhost", "test_dir", "small_file.txt"))
-    defer os.Remove(util.JoinPath("final", "localhost", "test_dir", "other_file.txt"))
+    defer os.Remove(util.JoinPath("out", "receiver", "final", "localhost", "test_dir", "small_file.txt"))
+    defer os.Remove(util.JoinPath("out", "receiver", "final", "localhost", "test_dir", "other_file.txt"))
     defer os.Remove(util.JoinPath("stage", "test_dir", "small_file.txt.comp"))
     defer os.Remove(util.JoinPath("stage", "test_dir", "other_file.txt.comp"))
     buff := bytes.Buffer{}

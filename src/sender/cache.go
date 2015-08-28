@@ -2,17 +2,19 @@ package sender
 
 import (
     "os"
+    "sync"
     "time"
     "util"
 )
 
 // Cache is a wrapper around Listener that provides extra Bin-filling functionality.
 type Cache struct {
-    bin_channel chan Bin       // The channel that newly filled Bins should be passed into.
-    bin_size    int64          // Default Bin size. Obtained from config.
-    watch_dir   string         // Watch directory, used to create listener and new bins.
-    listener    *util.Listener // The instance of listener that the cache uses to store data and get new files.
-    senders     []*Sender      // A list of all the active senders that the cache can query when creating new Bins.
+    bin_channel  chan Bin       // The channel that newly filled Bins should be passed into.
+    bin_size     int64          // Default Bin size. Obtained from config.
+    watch_dir    string         // Watch directory, used to create listener and new bins.
+    listener     *util.Listener // The instance of listener that the cache uses to store data and get new files.
+    senders      []*Sender      // A list of all the active senders that the cache can query when creating new Bins.
+    channel_lock sync.Mutex     // As soon as a new file is obtained from the listener, this lock is applied. It stops calls to cache.allocate coming too early.
 }
 
 // NewCache creates and returns a new Cache struct with default values.
@@ -23,6 +25,7 @@ func NewCache(cache_file_name string, watch_dir string, bin_size int64, bin_chan
     new_cache.bin_channel = bin_channel
     new_cache.senders = nil
     new_cache.listener = util.NewListener(cache_file_name, watch_dir)
+    new_cache.channel_lock = sync.Mutex{}
     return new_cache
 }
 
@@ -60,6 +63,9 @@ func (cache *Cache) freeSender() bool {
 // When a new non-empty Bin is filled, it is sent down the Bin channel.
 // Allocate stops when a Bin is filled, but is empty.
 func (cache *Cache) allocate() {
+    time.Sleep(5 * time.Millisecond) // Give enough time for the cache adder to pick up the lock.
+    cache.channel_lock.Lock()
+    defer cache.channel_lock.Unlock()
     files_available := true
     for files_available {
         if !cache.freeSender() { // There's no open sender to accept this bin
@@ -87,7 +93,9 @@ func (cache *Cache) scan() {
     go cache.listener.Listen(update_channel)
     for {
         new_path := <-update_channel
+        cache.channel_lock.Lock()
         cache.listener.Files[new_path] = 0
+        cache.channel_lock.Unlock()
     }
 }
 

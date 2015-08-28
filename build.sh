@@ -18,12 +18,11 @@ echo "--Building sender"
 go get sender
 echo "--Building receiver"
 go get receiver
-echo "--Generating binary"
+# generate binary
 go build -o out/sender/sts src/sts/sts.go
 cp out/sender/sts out/receiver/sts
-sender_alive="$(pgrep sender)"
-receiver_alive="$(pgrep receiver)"
-if [[ $sender_alive || $receiver_alive ]] # do not run tests if either the sender or receiver are currently running
+sts_alive="$(pgrep sts)"
+if [[ $sts_alive ]] # do not run tests if either the sender or receiver are currently running
   then
     echo "--Sender/receiver running, skipping tests"
   else
