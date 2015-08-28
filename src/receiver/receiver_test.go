@@ -1,4 +1,4 @@
-package main
+package receiver
 
 import (
     "bytes"
@@ -15,8 +15,7 @@ import (
 // Send a multipart file with multiple parts to the receiver
 func TestMultiPartReceive(t *testing.T) {
     // Start webserver
-    os.Chdir("../../out/receiver")
-    go main()
+    go Main("../../conf/receiver_config.yaml")
     // Create multipart file
     defer os.Remove(util.JoinPath("final", "localhost", "test_dir", "small_file.txt"))
     defer os.Remove(util.JoinPath("final", "localhost", "test_dir", "other_file.txt"))

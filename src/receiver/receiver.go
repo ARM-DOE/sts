@@ -1,4 +1,4 @@
-package main
+package receiver
 
 import (
     "compress/gzip"
@@ -239,10 +239,10 @@ func onFinish() {
 
 // main is the entry point of the webserver. It is responsible for registering HTTP
 // handlers, parsing the config file, starting the file listener, and beginning the request serving loop.
-func main() {
+func Main(config_file string) {
     finalize_mutex = sync.Mutex{}
     util.CompanionLock = sync.Mutex{}
-    config = util.ParseConfig("receiver_config.yaml") // Load config file
+    config = util.ParseConfig(config_file) // Load config file
     // Setup listener and add ignore patterns.
     addition_channel := make(chan string, 1)
     listener := util.NewListener(config.Cache_File_Name, config.Staging_Directory, config.Output_Directory)
