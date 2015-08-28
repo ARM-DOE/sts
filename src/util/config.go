@@ -30,6 +30,8 @@ type Config struct {
 type TagData struct {
     Priority        int
     Transfer_Method string
+    Sort            string
+    Delete_On_Send  bool
 }
 
 func (tag *TagData) TransferMethod() string {

@@ -229,6 +229,13 @@ func finishFile(addition_channel chan string) {
     }
 }
 
+// diskWriteHandler is called by the sender to let the receiver know when it has written a file to disk.
+func diskWriteHandler(w http.ResponseWriter, r *http.Request) {
+    file_path := r.FormValue("name")
+    fmt.Println("Wrote", file_path, "to disk on sender")
+    fmt.Fprint(w, http.StatusOK)
+}
+
 // onFinish will prevent the cache from writing newer timestamps to disk while
 // files from the addition channel are still being processed by finishFile.
 // In the event of a crash, the listener will pick up unfinished files again.
@@ -256,6 +263,7 @@ func Main(config_file string) {
     go listener.Listen(addition_channel)
     // Register request handling functions
     http.HandleFunc("/send.go", sendHandler)
+    http.HandleFunc("/disk_add.go", diskWriteHandler)
     http.HandleFunc("/", errorHandler)
     http.ListenAndServe(fmt.Sprintf(":%s", config.Server_Port), nil)
 }

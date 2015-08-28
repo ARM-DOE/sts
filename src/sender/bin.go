@@ -203,7 +203,7 @@ func (bin *Bin) fill(cache *Cache) {
 func shouldAllocate(cache *Cache, path string) bool {
     tag_data := getTag(path)
     highest_priority := highestPriority(cache, tag_data)
-    oldest_file := oldestFileInTag(cache, path)
+    oldest_file := tag_data.Sort != "modtime" || oldestFileInTag(cache, path)
     should_send := highest_priority && oldest_file
     return should_send
 }

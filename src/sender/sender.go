@@ -120,7 +120,22 @@ func (sender *Sender) sendDisk(send_bin Bin) {
     dest_fi.Close()
     util.NewCompanion(dest_path, bin_part.TotalSize)
     util.AddPartToCompanion(dest_path, stream_md5.SumString(), getPartLocation(0, bin_part.TotalSize))
-    send_bin.delete() // Write finished, delete bin.
+    // Tell receiver that we wrote a file to disk
+    post_url := fmt.Sprintf("http://%s/disk_add.go?name=%s", config.Receiver_Address, dest_path)
+    request, _ := http.NewRequest("POST", post_url, nil)
+    client := http.Client{}
+    resp, req_err := client.Do(request)
+    if req_err != nil {
+        fmt.Println("Encountered", req_err.Error(), "while trying to send", dest_path, "confirmation request")
+    }
+    resp_bytes, _ := ioutil.ReadAll(resp.Body)
+    if string(resp_bytes) == "200" {
+        send_bin.delete() // Write finished, delete bin.
+    } else {
+        fmt.Println("Unexpected response in disk confirmation request:", string(resp_bytes))
+        time.Sleep(5 * time.Second)
+        sender.queue <- send_bin
+    }
 }
 
 // sendGridFTP accepts Bins with transfer type GridFTP, and does nothing with them.

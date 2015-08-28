@@ -78,7 +78,11 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
 func (server *Webserver) removeFromCache(w http.ResponseWriter, r *http.Request) {
     file_path := r.FormValue("name")
     file_path = getWholePath(file_path)
+    file_tag := getTag(file_path)
     server.cache.removeFile(file_path)
+    if file_tag.Delete_On_Send {
+        os.Remove(file_path)
+    }
     fmt.Fprint(w, http.StatusOK)
 }
 

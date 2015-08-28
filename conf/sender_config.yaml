@@ -11,6 +11,8 @@ server_port: 8080
 tags:
   DEFAULT:
     priority: 5
+    sort: modtime # none, modtime
+    delete_on_send: false
     transfer_method: HTTP # transfer methods: HTTP, Disk, GridFTP
   disk_test:
     priority: 5
