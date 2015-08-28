@@ -17,7 +17,25 @@ var CompanionLock sync.Mutex
 type Companion struct {
     Path         string   // The path to the file that the companion is describing.
     TotalSize    int64    // The sum of part bytes received so far.
+    SenderName   string   // The hostname and port of the sender that sent the first part of the file.
     CurrentParts []string // A listing of parts received so far. Format for each string: md5;first_byte:last_byte
+}
+
+// newCompanion creates a new companion file initialized
+// with specified parameters and writes it to disk.
+func NewCompanion(path string, size int64, host_name ...string) Companion {
+    if &CompanionLock == nil {
+        CompanionLock = sync.Mutex{}
+    }
+    new_companion := Companion{}
+    new_companion.Path = path
+    new_companion.TotalSize = size
+    new_companion.CurrentParts = make([]string, 0)
+    if len(host_name) > 0 {
+        new_companion.SenderName = host_name[0]
+    }
+    new_companion.EncodeAndWrite()
+    return new_companion
 }
 
 // decodeCompanion takes the path of the file that the companion represents, decodes,
@@ -55,16 +73,4 @@ func (comp *Companion) EncodeAndWrite() {
     comp_file.Write(companion_bytes)
     comp_file.Close()
     os.Rename(comp.Path+".comp.tmp", comp.Path+".comp")
-}
-
-// newCompanion creates a new companion file initialized
-// with specified parameters and writes it to disk.
-func NewCompanion(path string, size int64) Companion {
-    if &CompanionLock == nil {
-        CompanionLock = sync.Mutex{}
-    }
-    current_parts := make([]string, 0)
-    new_companion := Companion{path, size, current_parts}
-    new_companion.EncodeAndWrite()
-    return new_companion
 }

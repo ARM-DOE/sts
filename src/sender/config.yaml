@@ -5,6 +5,8 @@ cache_file_name: file_cache.dat
 bin_size: 3000000
 compression: false
 disk_path: disk
+receiver_address: localhost:8081
+server_port: 8080
 
 tags:
   DEFAULT:

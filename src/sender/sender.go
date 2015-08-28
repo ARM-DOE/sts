@@ -63,7 +63,8 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
     }
     bin_body := CreateBinBody(send_bin)
     bin_body.compression = sender.compression
-    request, err := http.NewRequest("PUT", "http://localhost:8081/send.go", bin_body)
+    request_url := fmt.Sprintf("http://%s/send.go", config.Receiver_Address)
+    request, err := http.NewRequest("PUT", request_url, bin_body)
     request.Header.Add("Transfer-Encoding", "chunked")
     request.Header.Add("Boundary", bin_body.Boundary())
     request.ContentLength = -1

@@ -19,7 +19,7 @@ type Listener struct {
     file_name       string           // Name of the cache file that the listener uses to store timestamp and file data
     last_update     int64            // Time of last update in seconds since the epoch
     Files           map[string]int64 // Storage for timestamp and any additional file data. This data structure is written to the local cache.
-    watch_dir       string           // This is the directory that the cache holds data about
+    watch_dirs      []string         // This is the directory that the cache holds data about
     update_channel  chan string      // The channel that new and valid file paths will be sent to upon detection
     onFinish        FinishFunc       // Function called when a scan that detects new files finishes.
     new_files       bool             // Set to true if there were new files found in the scan
@@ -35,13 +35,13 @@ type FinishFunc func()
 
 // NewListener generates and returns a new Listener struct which operates on the provided
 // watch_dir and saves its data to cache_file_name.
-func NewListener(cache_file_name string, watch_dir string) *Listener {
+func NewListener(cache_file_name string, watch_dirs ...string) *Listener {
     new_listener := &Listener{}
     new_listener.recent_files = make([]string, 0)
     new_listener.scan_delay = 3
     new_listener.file_name = cache_file_name
     new_listener.last_update = -1
-    new_listener.watch_dir = watch_dir
+    new_listener.watch_dirs = watch_dirs
     new_listener.Files = make(map[string]int64)
     new_listener.ignore_patterns = make([]string, 0)
     new_listener.AddIgnored(`\.DS_Store`)
@@ -84,12 +84,14 @@ func (listener *Listener) WriteCache() {
 // If new files are found, their paths are sent to update_channel.
 // When finished, it updates the local cache file.
 func (listener *Listener) scanDir() {
-    if (!listener.new_files || len(listener.recent_files) > 1000) && len(listener.recent_files) > 0 {
-        // Clear recent files if files stop coming or if the recent_files cache is huge.
-        listener.recent_files = make([]string, 0)
+    for _, watch_dir := range listener.watch_dirs {
+        if (!listener.new_files || len(listener.recent_files) > 1000) && len(listener.recent_files) > 0 {
+            // Clear recent files if files stop coming or if the recent_files cache is huge.
+            listener.recent_files = make([]string, 0)
+        }
+        listener.new_files = false
+        filepath.Walk(watch_dir, listener.fileWalkHandler)
     }
-    listener.new_files = false
-    filepath.Walk(listener.watch_dir, listener.fileWalkHandler)
     listener.last_update = GetTimestamp()
     listener.afterScan()
     listener.WriteCache()
@@ -167,8 +169,8 @@ func (listener *Listener) Listen(new_file chan string) {
     }
 }
 
-func (listener *Listener) WatchDir() string {
-    return listener.watch_dir
+func (listener *Listener) WatchDir(dir_slice int) string {
+    return listener.watch_dirs[dir_slice]
 }
 
 // codingError is called when there is an error encoding the in-memory cache, or decoding the local copy of the cache.

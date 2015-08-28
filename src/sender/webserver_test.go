@@ -15,6 +15,10 @@ var client http.Client
 // TestServer starts a new instance of Webserver and checks to see that the error page is serving correctly.
 func TestServer(t *testing.T) {
     client = http.Client{}
+    config = util.Config{}
+    config.Server_Port = "8080"
+    config.Sender_Server_Port = "8080"
+    config.Receiver_Address = "localhost"
     dummy_bin_chan := make(chan Bin)
     dummy_cache := NewCache("/dev/null", "test_dir", 3000, dummy_bin_chan)
     server := NewWebserver(dummy_cache)
@@ -48,7 +52,6 @@ func TestGetFile(t *testing.T) {
     response, err := client.Do(request)
     if err != nil {
         t.Error(err.Error())
-        return
     }
     reader := multipart.NewReader(response.Body, "12254eb56f10eb966eb96d6e108e9a98e1a16949aca7f4939666ada18c40")
     first_part, err := reader.NextPart()

@@ -64,7 +64,7 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 // If the file is bad, it will be reacquired and passed back into sendHandler.
 func handlePart(part *multipart.Part, boundary string, host_name string, compressed bool) {
     // Gather data about part from headers
-    part_path := part.Header.Get("name")
+    part_path := util.JoinPath(config.Staging_Directory, part.Header.Get("name"))
     write_path := part_path + ".tmp"
     part_start, part_end := getPartLocation(part.Header.Get("location"))
     part_md5 := util.NewStreamMD5()
@@ -72,7 +72,7 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
     _, err := os.Open(write_path)
     if os.IsNotExist(err) {
         total_size, _ := strconv.ParseInt(part.Header.Get("total_size"), 10, 64)
-        createEmptyFile(part_path, total_size)
+        createEmptyFile(part_path, total_size, host_name)
     }
     // Start reading and iterating over the part
     part_fi, _ := os.OpenFile(write_path, os.O_WRONLY, 0600)
@@ -111,33 +111,15 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
     util.AddPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"))
     if isFileComplete(part_path) {
         // Finish file by moving it to the final directory and removing the .tmp extension.
-        final_path := util.JoinPath(config.Output_Directory, host_name, part_path)
-        os.MkdirAll(filepath.Dir(final_path), os.ModePerm) // Make containing directories for the file.
-        rename_err := os.Rename(write_path, final_path)
+        tmp := util.JoinPath(config.Output_Directory, host_name, part_path)
+        rename_path := getStorePath(tmp, config.Staging_Directory)
+        os.MkdirAll(filepath.Dir(rename_path), os.ModePerm) // Make containing directories for the file.
+        rename_err := os.Rename(write_path, rename_path)
         if rename_err != nil {
             panic(rename_err.Error())
         }
-        os.Chtimes(part_path, time.Now(), time.Now()) // Update mtime so that listener will pick up the file
-        os.Remove(part_path + ".comp")                // Delete the companion file.
+        os.Chtimes(rename_path, time.Now(), time.Now()) // Update mtime so that listener will pick up the file
         fmt.Println("Fully assembled ", part_path)
-    }
-}
-
-// removeFromCache removes the specified file from the cache on the Sender.
-// It loops until the Sender confirms that the file has been removed.
-func removeFromCache(path string) {
-    request_complete := false
-    client := http.Client{}
-    post_url := fmt.Sprintf("http://localhost:8080/remove.go?name=%s", path)
-    for !request_complete {
-        request, _ := http.NewRequest("POST", post_url, nil)
-        _, err := client.Do(request)
-        if err != nil {
-            fmt.Println("Request to remove from cache failed")
-            time.Sleep(5 * time.Second)
-        } else {
-            request_complete = true
-        }
     }
 }
 
@@ -166,7 +148,8 @@ func isFileComplete(path string) bool {
 // is specified. After receiving a file part with associated header data, requestPart will
 // read out the first and only part, and pass it back into handleFile for validation.
 func requestPart(path string, part_header textproto.MIMEHeader, start int64, end int64, boundary string) *multipart.Part {
-    post_url := fmt.Sprintf("http://localhost:8080/get_file.go?name=%s&start=%d&end=%d&boundary=%s", path, start, end, boundary)
+    host_name := util.DecodeCompanion(path).SenderName
+    post_url := fmt.Sprintf("http://%s:%s/get_file.go?name=%s&start=%d&end=%d&boundary=%s", host_name, config.Server_Port, path, start, end, boundary)
     client := http.Client{}
     request_complete := false
     var return_part *multipart.Part
@@ -192,9 +175,10 @@ func requestPart(path string, part_header textproto.MIMEHeader, start int64, end
 
 // createNewFile is called when a multipart part is encountered and the file doesn't exist on the receiver yet.
 // It fills a file with null bytes so that the created file is the same size as the complete file will be.
-func createEmptyFile(path string, size int64) {
+// It requires the hostname to create the companion file
+func createEmptyFile(path string, size int64, host_name string) {
     os.MkdirAll(filepath.Dir(path), os.ModePerm)
-    util.NewCompanion(path, size)
+    util.NewCompanion(path, size, host_name)
     fi, _ := os.Create(path + ".tmp")
     fi.Truncate(size)
     fi.Close()
@@ -208,6 +192,25 @@ func getStorePath(full_path string, watch_directory string) string {
     return store_path
 }
 
+// removeFromCache removes the specified file from the cache on the Sender.
+// It loops until the Sender confirms that the file has been removed.
+func removeFromCache(path string) {
+    request_complete := false
+    client := http.Client{}
+    host_name := util.DecodeCompanion(path).SenderName
+    post_url := fmt.Sprintf("http://%s:%s/remove.go?name=%s", host_name, config.Sender_Server_Port, getStorePath(path, config.Staging_Directory))
+    for !request_complete {
+        request, _ := http.NewRequest("POST", post_url, nil)
+        _, err := client.Do(request)
+        if err != nil {
+            fmt.Println("Request to remove from cache failed")
+            time.Sleep(5 * time.Second)
+        } else {
+            request_complete = true
+        }
+    }
+}
+
 // finishFile blocks while listening for any additions on addition_channel.
 // Once a file that isn't a temp file is found, it removes the file from the sender's cache.
 func finishFile(addition_channel chan string) {
@@ -217,8 +220,11 @@ func finishFile(addition_channel chan string) {
         finalize_mutex.Lock()
         func() {
             defer finalize_mutex.Unlock()
-            cwd, _ := os.Getwd()
-            removeFromCache(getStorePath(new_file, cwd))
+            // Recreate the staging directory path so the companion can be taken care of.
+            host_name := strings.Split(getStorePath(new_file, config.Output_Directory), string(os.PathSeparator))[0]
+            staged_dir := util.JoinPath(config.Staging_Directory, getStorePath(new_file, util.JoinPath(config.Output_Directory, host_name)))
+            removeFromCache(staged_dir)
+            os.Remove(staged_dir + ".comp")
         }()
     }
 }
@@ -238,9 +244,8 @@ func main() {
     util.CompanionLock = sync.Mutex{}
     config = util.ParseConfig("config.yaml") // Load config file
     // Setup listener and add ignore patterns.
-    cwd, _ := os.Getwd()
     addition_channel := make(chan string, 1)
-    listener := util.NewListener(config.Cache_File_Name, cwd)
+    listener := util.NewListener(config.Cache_File_Name, config.Staging_Directory, config.Output_Directory)
     listener.SetOnFinish(onFinish)
     listener.AddIgnored(`\.tmp`)
     listener.AddIgnored(`\.comp`)
@@ -252,5 +257,5 @@ func main() {
     // Register request handling functions
     http.HandleFunc("/send.go", sendHandler)
     http.HandleFunc("/", errorHandler)
-    http.ListenAndServe(":8081", nil)
+    http.ListenAndServe(fmt.Sprintf(":%s", config.Server_Port), nil)
 }

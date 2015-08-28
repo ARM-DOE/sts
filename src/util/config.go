@@ -19,6 +19,10 @@ type Config struct {
     Compression             bool
     Disk_Path               string
     Output_Directory        string
+    Server_Port             string
+    Sender_Server_Port      string
+    Receiver_Address        string
+    Staging_Directory       string
     Tags                    map[string]TagData
 }
 

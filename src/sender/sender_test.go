@@ -50,6 +50,10 @@ func receiveFileHandler(w http.ResponseWriter, r *http.Request) {
 // TestSingleBin creates a bin with a single file, and asks the sender to send it.
 // It checks if the resulting sent request contains the same data that the sender was given.
 func TestSingleBin(t *testing.T) {
+    config = util.Config{}
+    config.Server_Port = "8080"
+    config.Sender_Server_Port = "8080"
+    config.Receiver_Address = "localhost:8081"
     // Create and pass new bin to sender
     error_status = ""
     test_file = util.JoinPath("test_dir", "send_test.txt")

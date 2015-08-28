@@ -30,7 +30,7 @@ func (server *Webserver) startServer() {
     http.HandleFunc("/get_file.go", server.getFile)
     http.HandleFunc("/remove.go", server.removeFromCache)
     http.HandleFunc("/", server.errorHandler)
-    http.ListenAndServe(":8080", nil)
+    http.ListenAndServe(fmt.Sprintf(":%s", config.Server_Port), nil)
 }
 
 // getFile takes a file name, start, and end position in the file to return a whole or partial file
@@ -56,7 +56,7 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
         fmt.Fprint(w, http.StatusBadRequest)
         return
     } else {
-        bin := NewBin(server.cache.BinSize(), server.cache.listener.WatchDir())
+        bin := NewBin(server.cache.BinSize(), server.cache.listener.WatchDir(0))
         bin.addPart(name, start_byte, end_byte, file_info)
         bin.Files[0].getMD5()
         bin_stream := CreateBinBody(bin, boundary)
