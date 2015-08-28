@@ -56,11 +56,11 @@ func TestSingleBin(t *testing.T) {
     config.Receiver_Address = "localhost:8081"
     // Create and pass new bin to sender
     error_status = ""
-    test_file = util.JoinPath("test_dir", "send_test.txt")
+    test_file = "send_test.txt"
     bin_queue := make(chan Bin, 1)
     sender := NewSender(bin_queue, false)
     go sender.run()
-    new_bin := NewBin(3000, "test_dir")
+    new_bin := NewBin(3000, "test")
     info, err := os.Stat(test_file)
     if err != nil {
         t.Error(err.Error())
@@ -81,13 +81,12 @@ func TestSingleBin(t *testing.T) {
 // If checks if the resulting sent request contains the same data that the sender was given.
 func TestMultiBin(t *testing.T) {
     error_status = ""
-    wd, _ := os.Getwd()
     bin_queue := make(chan Bin, 1)
     sender := NewSender(bin_queue, false)
     go sender.run()
-    test_file1 := util.JoinPath(wd, "test_dir", "send_test.txt")
-    test_file2 := util.JoinPath(wd, "test_dir", "send_test2.txt")
-    new_bin := NewBin(3000, "test_dir")
+    test_file1 := "send_test.txt"
+    test_file2 := "send_test2.txt"
+    new_bin := NewBin(3000, "test")
     stat1, _ := os.Stat(test_file1)
     stat2, _ := os.Stat(test_file2)
 

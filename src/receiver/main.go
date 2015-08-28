@@ -242,7 +242,7 @@ func onFinish() {
 func main() {
     finalize_mutex = sync.Mutex{}
     util.CompanionLock = sync.Mutex{}
-    config = util.ParseConfig("config.yaml") // Load config file
+    config = util.ParseConfig("receiver_config.yaml") // Load config file
     // Setup listener and add ignore patterns.
     addition_channel := make(chan string, 1)
     listener := util.NewListener(config.Cache_File_Name, config.Staging_Directory, config.Output_Directory)

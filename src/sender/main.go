@@ -19,7 +19,7 @@ var config util.Config
 // It parses config values that are necessary during runtime,
 // dispatches the listening and sending threads, and loops infinitely.
 func main() {
-    config = util.ParseConfig("config.yaml")
+    config = util.ParseConfig("sender_config.yaml")
     config.Directory = checkWatchDir(config.Directory) // Exits if watch dir is not valid
 
     // Create the channel through which new bins will be sent from the sender to the receiver.

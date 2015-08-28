@@ -12,3 +12,4 @@ src/gopkg.in
 pkg
 test_cache.dat
 .DS_Store
+out

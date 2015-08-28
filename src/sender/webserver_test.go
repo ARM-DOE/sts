@@ -20,7 +20,8 @@ func TestServer(t *testing.T) {
     config.Sender_Server_Port = "8080"
     config.Receiver_Address = "localhost"
     dummy_bin_chan := make(chan Bin)
-    dummy_cache := NewCache("/dev/null", "test_dir", 3000, dummy_bin_chan)
+    cwd, _ := os.Getwd()
+    dummy_cache := NewCache("/dev/null", cwd, 3000, dummy_bin_chan)
     server := NewWebserver(dummy_cache)
     go server.startServer()
     request, err := http.NewRequest("GET", "http://localhost:8080/not_a_real_page.go", nil)
@@ -45,9 +46,9 @@ func TestServer(t *testing.T) {
 
 // TestGetFile checks to see whether the webserver will return a valid multipart request from get_file.go
 func TestGetFile(t *testing.T) {
-    fi, _ := os.Open(util.JoinPath("test_dir", "send_test.txt"))
+    fi, _ := os.Open("send_test.txt")
     file_content, _ := ioutil.ReadAll(fi)
-    url := fmt.Sprintf("http://localhost:8080/get_file.go?name=test_dir/send_test.txt&start=0&end=%d&boundary=12254eb56f10eb966eb96d6e108e9a98e1a16949aca7f4939666ada18c40", len(file_content))
+    url := fmt.Sprintf("http://localhost:8080/get_file.go?name=send_test.txt&start=0&end=%d&boundary=12254eb56f10eb966eb96d6e108e9a98e1a16949aca7f4939666ada18c40", len(file_content))
     request, _ := http.NewRequest("POST", url, nil)
     response, err := client.Do(request)
     if err != nil {
