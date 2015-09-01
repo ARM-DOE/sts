@@ -13,4 +13,4 @@ STS - Golang
 - More error handling
 
 ### Flowchart:
-![Flowchart](https://googledrive.com/host/0B-dFWLqeu-Z_V3hMVDlCMVd1dTA/sts.png)
+![Flowchart](conf/sts.png?raw=true)
