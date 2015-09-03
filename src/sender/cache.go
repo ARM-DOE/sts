@@ -24,7 +24,7 @@ func NewCache(cache_file_name string, watch_dir string, bin_size int64, bin_chan
     new_cache.bin_size = bin_size
     new_cache.bin_channel = bin_channel
     new_cache.senders = nil
-    new_cache.listener = util.NewListener(cache_file_name, watch_dir)
+    new_cache.listener = util.NewListener(cache_file_name, error_log, watch_dir)
     new_cache.channel_lock = sync.Mutex{}
     return new_cache
 }
@@ -36,7 +36,7 @@ func (cache *Cache) updateFile(path string, new_byte_progress int64, info os.Fil
         new_byte_progress = -1
     }
     if new_byte_progress > info.Size() {
-        panic("Bin stored too many bytes")
+        error_log.LogError("Bin tried to store too many bytes of", path)
     }
     cache.listener.Files[path] = new_byte_progress
 }

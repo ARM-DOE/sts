@@ -2,7 +2,6 @@ package util
 
 import (
     "encoding/json"
-    "fmt"
     "io"
     "io/ioutil"
     "os"
@@ -28,6 +27,7 @@ type Listener struct {
     ignore_patterns []string         // A list of patterns that each new file name (NOT path) is tested against. If a match is found the file is ignored.
     recent_files    []string         // A list of files that were found in the most recent string of updates.
     write_lock      sync.Mutex       // Prevents the cache from being written to or modified simultaneously
+    error_log       Logger
 }
 
 // FinishFunc is the function called after a scan that detects new files
@@ -37,8 +37,9 @@ type FinishFunc func()
 
 // NewListener generates and returns a new Listener struct which operates on the provided
 // watch_dir and saves its data to cache_file_name.
-func NewListener(cache_file_name string, watch_dirs ...string) *Listener {
+func NewListener(cache_file_name string, error_log Logger, watch_dirs ...string) *Listener {
     new_listener := &Listener{}
+    new_listener.error_log = error_log
     new_listener.recent_files = make([]string, 0)
     new_listener.scan_delay = 3
     new_listener.file_name = cache_file_name
@@ -146,7 +147,7 @@ func (listener *Listener) checkIgnored(path string) bool {
     for _, pattern := range listener.ignore_patterns {
         matched, match_err := regexp.MatchString(pattern, path)
         if match_err != nil {
-            fmt.Println("Error matching pattern " + pattern + " against file " + path)
+            listener.error_log.LogError("Error matching pattern", pattern, "against file", path)
         } else {
             if matched {
                 ignore = true
@@ -181,7 +182,8 @@ func (listener *Listener) WatchDir(dir_slice int) string {
 // This would probably only be called if the local copy of the cache has been corrupted.
 // Because of this, codingError tries to provide a meaningful dump of data in regards to the status of the cache.
 func (listener *Listener) codingError(err error) {
-    fmt.Println("Cache corruption in " + listener.file_name)
-    fmt.Println("Cache contents dump: ", listener.Files)
-    panic(err)
+    listener.error_log.LogError("Cache corruption in " + listener.file_name)
+    listener.error_log.LogError("Cache contents dump:", listener.Files)
+    listener.error_log.LogError(err)
+    panic("")
 }

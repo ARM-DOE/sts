@@ -1,0 +1,159 @@
+package util
+
+import (
+    "fmt"
+    "log"
+    "os"
+    "path/filepath"
+    "strconv"
+    "sync"
+    "time"
+)
+
+const LOGGING_SEND = 1
+const LOGGING_RECEIVE = 2
+const LOGGING_DISK = 3
+const LOGGING_ERROR = 4
+
+// Logger contains data necessary to create the logging directory structure and write
+// logs to files
+type Logger struct {
+    internal_logger *log.Logger
+    file_handle     *os.File
+    log_lock        sync.Mutex
+    log_path        string
+    base_path       string
+    mode            int
+}
+
+// NewLogger creates a file with the specified mode and base path from the config.
+// The mode changes the behavior of Logger.Log() - List of modes:
+// 1 = send, 2 = receive, 3 = disk, 4 = error
+func NewLogger(base_path string, mode int) Logger {
+    new_logger := Logger{}
+    new_logger.log_lock = sync.Mutex{}
+    new_logger.mode = mode
+    new_logger.base_path = base_path
+    if mode == LOGGING_ERROR {
+        new_logger.internal_logger = log.New(nil, "", log.Ldate|log.Ltime|log.Lshortfile)
+    } else {
+        new_logger.internal_logger = log.New(nil, "", 0)
+    }
+    return new_logger
+}
+
+// updateFileHandle is called before each call to a Log() function. If the day has changed,
+// or the file handler is nil (on startup), a new log file will be opened for appending.
+// It takes an optional parameter host_names, which specifies whether or not to open a file with a
+// host name in its path
+func (logger *Logger) updateFileHandle(host_names ...string) {
+    host_flag := false
+    if len(host_names) > 0 {
+        host_flag = true
+    }
+    var current_path string
+    if host_flag {
+        current_path = getCurrentLogPath(logger.base_path, logger.mode, host_names[0])
+    } else {
+        current_path = getCurrentLogPath(logger.base_path, logger.mode)
+    }
+    _, stat_err := os.Stat(current_path)
+    if logger.log_path != current_path || os.IsNotExist(stat_err) || logger.file_handle == nil {
+        logger.log_path = current_path
+        logger.file_handle.Close()
+        os.MkdirAll(filepath.Dir(current_path), os.ModePerm)
+        logger.file_handle, _ = os.OpenFile(current_path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0700)
+        logger.internal_logger.SetOutput(logger.file_handle)
+    }
+}
+
+// LogError writes to the "messages" log file if the logger has mode LOGGING_ERROR.
+func (logger *Logger) LogError(params ...interface{}) {
+    if logger.mode != LOGGING_ERROR {
+        panic(fmt.Sprintf("Can't call LogError with log of mode %d", logger.mode))
+    }
+    logger.log_lock.Lock()
+    defer logger.log_lock.Unlock()
+    logger.updateFileHandle()
+    fmt.Println(params...)
+    logger.internal_logger.Println(params...)
+}
+
+// LogDisk writes to the "to_disk" log file if the logger has mode LOGGING_DISK.
+func (logger *Logger) LogDisk(s string, md5 string, size int64) {
+    if logger.mode != LOGGING_DISK {
+        panic(fmt.Sprintf("Can't call LogDisk with log of mode %d", logger.mode))
+    }
+    logger.log_lock.Lock()
+    defer logger.log_lock.Unlock()
+    logger.updateFileHandle()
+    logger.internal_logger.Printf("%s:%s:%d:%d", s, md5, size, time.Now().Unix())
+}
+
+// LogSend writes to the "outgoing_to" log file if the logger has mode LOGGING_SEND.
+func (logger *Logger) LogSend(s string, md5 string, size int64, hostname string) {
+    if logger.mode != LOGGING_SEND {
+        panic(fmt.Sprintf("Can't call LogSend with log of mode %d", logger.mode))
+    }
+    logger.log_lock.Lock()
+    defer logger.log_lock.Unlock()
+    logger.updateFileHandle(hostname)
+    log_string := fmt.Sprintf("%s:%s:%d:%d: %d wallclock secs", s, md5, size, time.Now().Unix(), 0)
+    logger.internal_logger.Printf(log_string)
+}
+
+// LogReceive writes to the "incoming_from" log file if the logger has mode LOGGING_RECEIVE.
+func (logger *Logger) LogReceive(s string, md5 string, size int64, hostname string) {
+    if logger.mode != LOGGING_RECEIVE {
+        panic(fmt.Sprintf("Can't call LogReceive with log of mode %d", logger.mode))
+    }
+    logger.log_lock.Lock()
+    defer logger.log_lock.Unlock()
+    logger.updateFileHandle(hostname)
+    logger.internal_logger.Printf("%s:%s:%d:%d:", s, md5, size, time.Now().Unix())
+}
+
+// getCurrentLogPath returns the path of the current log file. It takes optional argument host_names
+// which must be of length 1 or not supplied. The given hostname will be appended to the log path.
+func getCurrentLogPath(base_path string, mode int, host_names ...string) string {
+    if len(host_names) > 0 {
+        return JoinPath(base_path, getDirectory(mode), host_names[0], getMonth(), getDay())
+    }
+    return JoinPath(base_path, getDirectory(mode), getMonth(), getDay())
+}
+
+// getDirectory returns the preset directory name for a type of log.
+func getDirectory(mode int) string {
+    switch mode {
+    case LOGGING_SEND:
+        return "outgoing_to"
+    case LOGGING_RECEIVE:
+        return "incoming_from"
+    case LOGGING_DISK:
+        return "to_disk"
+    case LOGGING_ERROR:
+        return "messages"
+    }
+    panic(fmt.Sprintf("Unrecognized logging mode %d", mode))
+    return "fail"
+}
+
+// getDay gets the current day (1-31) and pads it with a leading 0 if it less than 2 characters long.
+// Ex. 9 becomes 09.
+func getDay() string {
+    day_string := strconv.Itoa(time.Now().Day())
+    if len(day_string) == 1 {
+        return "0" + day_string
+    }
+    return day_string
+}
+
+// getDay gets the current month (1-12) and pads it with a leading 0 if it less than 2 characters long.
+// Ex. 9 becomes 09.
+func getMonth() string {
+    month_string := strconv.Itoa(int((time.Now().Month())))
+    if len(month_string) == 1 {
+        return "0" + month_string
+    }
+    return month_string
+}

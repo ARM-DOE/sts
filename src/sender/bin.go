@@ -124,7 +124,7 @@ func (cache *Cache) loadBin(bin_bytes []byte) Bin {
     decoded_bin := Bin{}
     decode_err := json.Unmarshal(bin_bytes, &decoded_bin)
     if decode_err != nil {
-        fmt.Println(decode_err.Error())
+        error_log.LogError(decode_err.Error())
     }
     return decoded_bin
 }
@@ -135,7 +135,7 @@ func (bin *Bin) save() {
     bin.Name = "bins/" + bin_md5 + ".bin"
     json_bytes, encode_err := json.Marshal(bin)
     if encode_err != nil {
-        println(encode_err.Error())
+        error_log.LogError(encode_err.Error())
     }
     ioutil.WriteFile(bin.Name+".tmp", json_bytes, 0700)
     os.Rename(bin.Name+".tmp", bin.Name)
@@ -145,7 +145,7 @@ func (bin *Bin) save() {
 func (bin *Bin) delete() {
     err := os.Remove(bin.Name)
     if err != nil {
-        fmt.Println("Failed to remove bin " + bin.Name)
+        error_log.LogError("Failed to remove bin", bin.Name)
     }
 }
 
@@ -167,7 +167,8 @@ func (bin *Bin) fill(cache *Cache) {
             tag_data := getTag(path)
             info, info_err := os.Stat(path)
             if info_err != nil {
-                panic(fmt.Sprintf("File: %s registered in cache, but does not exist", path))
+                error_log.LogError("File:", path, "registered in cache, but does not exist")
+                panic("")
             }
             file_size := info.Size()
             if file_size == 0 {
@@ -272,13 +273,15 @@ func (bin *Bin) handleExternalTransferMethod(cache *Cache, path string, tag_data
     info, _ := os.Stat(path)
     switch tag_data.TransferMethod() {
     case TRANSFER_HTTP:
-        panic("handleExternalTransferMethod called, but method is not external")
+        error_log.LogError("handleExternalTransferMethod called, but method is not external")
+        panic("")
     case TRANSFER_DISK:
         bin.handleDisk(path, tag_data)
     case TRANSFER_GRIDFTP:
         bin.handleGridFTP(path, tag_data)
     default:
-        panic(fmt.Sprintf("Transfer method %s not recognized", tag_data.TransferMethod()))
+        error_log.LogError("Transfer method", tag_data.TransferMethod(), "not recognized")
+        panic("")
     }
     cache.updateFile(path, -1, info)
 }

@@ -14,6 +14,8 @@ const TRANSFER_DISK = "disk"
 const TRANSFER_GRIDFTP = "gridftp"
 
 var config util.Config
+var error_log util.Logger
+var send_log util.Logger
 
 // main is the entry point for the sender program.
 // It parses config values that are necessary during runtime,
@@ -21,7 +23,9 @@ var config util.Config
 func Main(config_file string) {
     config = util.ParseConfig(config_file)
     config.Directory = checkWatchDir(config.Directory) // Exits if watch dir is not valid
-
+    // Create loggers
+    send_log = util.NewLogger(config.Logs_Directory, 1)
+    error_log = util.NewLogger(config.Logs_Directory, 4)
     // Create the channel through which new bins will be sent from the sender to the receiver.
     bin_channel := make(chan Bin, config.Sender_Threads+5) // Create a bin channel with buffer size large enough to accommodate all sender threads and a little wiggle room.
     // Create and start cache file handler and webserver
@@ -56,7 +60,7 @@ func getStorePath(full_path string, watch_directory string) string {
 func getWholePath(store_path string) string {
     abs_path, err := filepath.Abs(store_path)
     if err != nil {
-        fmt.Println(err.Error())
+        error_log.LogError(err.Error())
     }
     return abs_path
 }
@@ -66,7 +70,7 @@ func getWholePath(store_path string) string {
 func checkWatchDir(watch_dir string) string {
     _, err := os.Stat(watch_dir)
     if os.IsNotExist(err) {
-        fmt.Println("Watch directory does not exist")
+        error_log.LogError("Watch directory does not exist")
         os.Exit(1)
     }
     abs_dir, _ := filepath.Abs(watch_dir)

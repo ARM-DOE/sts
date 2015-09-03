@@ -49,7 +49,8 @@ func (sender *Sender) run() {
         case TRANSFER_GRIDFTP:
             sender.sendGridFTP(send_bin)
         default:
-            panic(fmt.Sprintf("Unknown Bin.TransferMethod %d in %s", send_bin.TransferMethod, send_bin.Name))
+            error_log.LogError("Unknown Bin.TransferMethod", send_bin.TransferMethod, "in", send_bin.Name)
+            panic("")
         }
         sender.Busy = false
     }
@@ -72,12 +73,12 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
         request.Header.Add("Content-Encoding", "gzip")
     }
     if err != nil {
-        fmt.Println(err.Error())
+        error_log.LogError(err.Error())
     }
     client := http.Client{}
     response, sending_err := client.Do(request)
     if sending_err != nil {
-        fmt.Println(sending_err.Error())
+        error_log.LogError(sending_err.Error())
         time.Sleep(5 * time.Second) // Wait so you don't choke the Bin queue if it keeps failing in quick succession.
         sender.queue <- send_bin    // Pass the bin back into the Bin queue.
     } else {
@@ -94,17 +95,17 @@ func (sender *Sender) sendDisk(send_bin Bin) {
     dest_path := util.JoinPath(config.Disk_Path, getStorePath(bin_part.Path, config.Directory))
     mkdir_err := os.MkdirAll(filepath.Dir(dest_path), os.ModePerm)
     if mkdir_err != nil {
-        fmt.Println(mkdir_err.Error())
+        error_log.LogError(mkdir_err.Error())
         return
     }
     dest_fi, dest_err := os.Create(dest_path)
     if dest_err != nil {
-        fmt.Println(dest_err.Error())
+        error_log.LogError(dest_err.Error())
         return
     }
     src_fi, src_err := os.Open(bin_part.Path)
     if src_err != nil {
-        fmt.Println(src_err.Error())
+        error_log.LogError(src_err.Error())
         return
     }
     stream_md5 := util.NewStreamMD5()
@@ -121,18 +122,18 @@ func (sender *Sender) sendDisk(send_bin Bin) {
     util.NewCompanion(dest_path, bin_part.TotalSize)
     util.AddPartToCompanion(dest_path, stream_md5.SumString(), getPartLocation(0, bin_part.TotalSize))
     // Tell receiver that we wrote a file to disk
-    post_url := fmt.Sprintf("http://%s/disk_add.go?name=%s", config.Receiver_Address, dest_path)
+    post_url := fmt.Sprintf("http://%s/disk_add.go?name=%s&md5=%s&size=%d", config.Receiver_Address, dest_path, stream_md5.SumString(), bin_part.TotalSize)
     request, _ := http.NewRequest("POST", post_url, nil)
     client := http.Client{}
     resp, req_err := client.Do(request)
     if req_err != nil {
-        fmt.Println("Encountered", req_err.Error(), "while trying to send", dest_path, "confirmation request")
+        error_log.LogError("Encountered", req_err.Error(), "while trying to send", dest_path, "confirmation request")
     }
     resp_bytes, _ := ioutil.ReadAll(resp.Body)
     if string(resp_bytes) == "200" {
         send_bin.delete() // Write finished, delete bin.
     } else {
-        fmt.Println("Unexpected response in disk confirmation request:", string(resp_bytes))
+        error_log.LogError("Unexpected response in disk confirmation request:", string(resp_bytes))
         time.Sleep(5 * time.Second)
         sender.queue <- send_bin
     }
@@ -165,7 +166,8 @@ type BinBody struct {
 // It takes the optional boundary argument, which sets the multipart writer boundary upon creation.
 func CreateBinBody(bin Bin, boundary ...string) *BinBody {
     if len(bin.Files) < 1 {
-        panic("Tried to convert empty Bin to bytes")
+        error_log.LogError("Tried to convert empty Bin to bytes")
+        panic("")
     }
     new_body := &BinBody{}
     new_body.eof_returned = false

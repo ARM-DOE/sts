@@ -23,6 +23,7 @@ type Config struct {
     Sender_Server_Port      string
     Receiver_Address        string
     Staging_Directory       string
+    Logs_Directory          string
     Tags                    map[string]TagData
 }
 

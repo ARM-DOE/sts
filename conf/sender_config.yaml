@@ -2,6 +2,7 @@ directory: watch_directory
 sender_threads: 10
 log_file_duration_hours: 3000
 cache_file_name: file_cache.dat
+logs_directory: logs
 bin_size: 3000000
 compression: false
 disk_path: disk

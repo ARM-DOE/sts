@@ -9,9 +9,10 @@ import (
 
 // TestCacheReadWrite tests whether reads and writes to the cache will succeed.
 func TestCacheReadWrite(t *testing.T) {
+    dummy_error_log := NewLogger("logs", LOGGING_ERROR)
     cache_file := JoinPath("test_files", "test_cache.dat")
     watch_dir := JoinPath("test_files", "watch_dir")
-    listener := NewListener(cache_file, watch_dir)
+    listener := NewListener(cache_file, dummy_error_log, watch_dir)
     listener.LoadCache()
     listener.last_update = -55
     listener.WriteCache()
@@ -24,10 +25,11 @@ func TestCacheReadWrite(t *testing.T) {
 
 // TestScan tests whether the file watcher picks up a new file when its mtime is updated.
 func TestScan(t *testing.T) {
+    dummy_error_log := NewLogger("logs", LOGGING_ERROR)
     cache_file := JoinPath("test_files", "test_cache.dat")
     watch_file := JoinPath("test_files", "watch_dir", "large.txt")
     watch_dir := JoinPath("test_files", "watch_dir")
-    listener := NewListener(cache_file, watch_dir)
+    listener := NewListener(cache_file, dummy_error_log, watch_dir)
     listener.LoadCache()
     listener.AddIgnored("ignore_me")
     addition_chan := make(chan string, 1)

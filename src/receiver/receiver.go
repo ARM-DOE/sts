@@ -23,6 +23,10 @@ var finalize_mutex sync.Mutex
 
 var config util.Config
 
+var error_log util.Logger
+var receiver_log util.Logger
+var disk_log util.Logger
+
 // errorHandler is called when any page that is not a registered API method is requested.
 func errorHandler(w http.ResponseWriter, r *http.Request) {
     fmt.Fprint(w, http.StatusNotFound)
@@ -101,7 +105,7 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
     // Validate part
     if part.Header.Get("md5") != part_md5.SumString() {
         // Validation failed, request this specific part again using part size
-        fmt.Printf("Bad part of %s from bytes %s", part_path, part.Header.Get("location"))
+        error_log.LogError("Bad part of %s from bytes %s", part_path, part.Header.Get("location"))
         new_stream := requestPart(part_path, part.Header, part_start, part_end, boundary)
         time.Sleep(5 * time.Second)
         handlePart(new_stream, boundary, host_name, compressed)
@@ -116,7 +120,8 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
         os.MkdirAll(filepath.Dir(rename_path), os.ModePerm) // Make containing directories for the file.
         rename_err := os.Rename(write_path, rename_path)
         if rename_err != nil {
-            panic(rename_err.Error())
+            error_log.LogError(rename_err.Error())
+            panic("")
         }
         os.Chtimes(rename_path, time.Now(), time.Now()) // Update mtime so that listener will pick up the file
         fmt.Println("Fully assembled ", part_path)
@@ -157,14 +162,14 @@ func requestPart(path string, part_header textproto.MIMEHeader, start int64, end
         request, _ := http.NewRequest("POST", post_url, nil)
         resp, req_err := client.Do(request)
         if req_err != nil {
-            fmt.Println("Failed to re-request part. Sender must be down.")
-            time.Sleep(5 * time.Second)
+            error_log.LogError("Failed to re-request part. Sender is probably down.")
+            time.Sleep(10 * time.Second)
             continue
         }
         reader := multipart.NewReader(resp.Body, boundary)
         part, part_err := reader.NextPart()
         if part_err != nil {
-            fmt.Println(part_err.Error())
+            error_log.LogError(part_err.Error())
             continue
         }
         return_part = part
@@ -203,7 +208,7 @@ func removeFromCache(path string) {
         request, _ := http.NewRequest("POST", post_url, nil)
         _, err := client.Do(request)
         if err != nil {
-            fmt.Println("Request to remove from cache failed")
+            error_log.LogError("Request to remove from cache failed")
             time.Sleep(5 * time.Second)
         } else {
             request_complete = true
@@ -232,7 +237,9 @@ func finishFile(addition_channel chan string) {
 // diskWriteHandler is called by the sender to let the receiver know when it has written a file to disk.
 func diskWriteHandler(w http.ResponseWriter, r *http.Request) {
     file_path := r.FormValue("name")
-    fmt.Println("Wrote", file_path, "to disk on sender")
+    md5 := r.FormValue("md5")
+    size, _ := strconv.ParseInt(r.FormValue("size"), 10, 64)
+    disk_log.LogDisk(file_path, md5, size)
     fmt.Fprint(w, http.StatusOK)
 }
 
@@ -247,12 +254,16 @@ func onFinish() {
 // main is the entry point of the webserver. It is responsible for registering HTTP
 // handlers, parsing the config file, starting the file listener, and beginning the request serving loop.
 func Main(config_file string) {
+    // Setup loggers
+    receiver_log = util.NewLogger(config.Logs_Directory, util.LOGGING_RECEIVE)
+    error_log = util.NewLogger(config.Logs_Directory, util.LOGGING_ERROR)
+    disk_log = util.NewLogger(config.Logs_Directory, util.LOGGING_DISK)
     finalize_mutex = sync.Mutex{}
     util.CompanionLock = sync.Mutex{}
     config = util.ParseConfig(config_file) // Load config file
     // Setup listener and add ignore patterns.
     addition_channel := make(chan string, 1)
-    listener := util.NewListener(config.Cache_File_Name, config.Staging_Directory, config.Output_Directory)
+    listener := util.NewListener(config.Cache_File_Name, error_log, config.Staging_Directory, config.Output_Directory)
     listener.SetOnFinish(onFinish)
     listener.AddIgnored(`\.tmp`)
     listener.AddIgnored(`\.comp`)
