@@ -9,17 +9,19 @@ import (
 
 // Cache is a wrapper around Listener that provides extra Bin-filling functionality.
 type Cache struct {
-    bin_channel  chan Bin       // The channel that newly filled Bins should be passed into.
-    bin_size     int64          // Default Bin size. Obtained from config.
-    watch_dir    string         // Watch directory, used to create listener and new bins.
-    listener     *util.Listener // The instance of listener that the cache uses to store data and get new files.
-    senders      []*Sender      // A list of all the active senders that the cache can query when creating new Bins.
-    channel_lock sync.Mutex     // As soon as a new file is obtained from the listener, this lock is applied. It stops calls to cache.allocate coming too early.
+    bin_channel  chan Bin          // The channel that newly filled Bins should be passed into.
+    bin_size     int64             // Default Bin size. Obtained from config.
+    watch_dir    string            // Watch directory, used to create listener and new bins.
+    listener     *util.Listener    // The instance of listener that the cache uses to store data and get new files.
+    senders      []*Sender         // A list of all the active senders that the cache can query when creating new Bins.
+    md5s         map[string]string // A list of all the pre-calculated md5s
+    channel_lock sync.Mutex        // As soon as a new file is obtained from the listener, this lock is applied. It stops calls to cache.allocate coming too early.
 }
 
 // NewCache creates and returns a new Cache struct with default values.
 func NewCache(cache_file_name string, watch_dir string, bin_size int64, bin_channel chan Bin) *Cache {
     new_cache := &Cache{}
+    new_cache.md5s = make(map[string]string)
     new_cache.watch_dir = watch_dir
     new_cache.bin_size = bin_size
     new_cache.bin_channel = bin_channel
@@ -31,21 +33,42 @@ func NewCache(cache_file_name string, watch_dir string, bin_size int64, bin_chan
 
 // updateFile updates the record of bytes that have been allocated to a Bin.
 // Take note that updateFile does NOT update the local cache.
-func (cache *Cache) updateFile(path string, new_byte_progress int64, info os.FileInfo) {
-    if new_byte_progress == info.Size() {
+func (cache *Cache) updateFile(path string, new_byte_progress int64, info os.FileInfo) bool {
+    finished := false
+    if new_byte_progress == info.Size() || new_byte_progress == -1 {
         new_byte_progress = -1
+        finished = true
     }
     if new_byte_progress > info.Size() {
         error_log.LogError("Bin tried to store too many bytes of", path)
     }
     cache.listener.Files[path] = new_byte_progress
+    return finished
 }
 
 // removeFile deletes a file and its progress from both the in-memory and local cache.
 // It should only be used when a file has been confirmed to have completely sent.
 func (cache *Cache) removeFile(path string) {
-    delete(cache.listener.Files, getWholePath(path))
+    whole_path := getWholePath(path)
+    delete(cache.listener.Files, whole_path)
+    delete(cache.md5s, whole_path)
     cache.listener.WriteCache()
+}
+
+// getFileMD5 generates the MD5 given a file path, and stores it to cache.md5s, so that future parts
+// that come from the same file don't have to regenerate the whole file MD5.
+// The MD5 is deleted from cache.md5s when the file removal request is processed by the sender webserver.
+func (cache *Cache) getFileMD5(path string) string {
+    md5, already_calculated := cache.md5s[path]
+    if !already_calculated {
+        new_md5, md5_err := util.FileMD5(path)
+        if md5_err != nil {
+            error_log.LogError(md5_err.Error())
+        }
+        cache.md5s[path] = new_md5
+        return new_md5
+    }
+    return md5
 }
 
 // freeSender checks the Busy value of all senders and returns true if there are any non-busy Senders.
@@ -72,8 +95,8 @@ func (cache *Cache) allocate() {
             time.Sleep(100 * time.Millisecond)
             continue
         }
-        new_bin := NewBin(cache.bin_size, cache.watch_dir)
-        new_bin.fill(cache)
+        new_bin := NewBin(cache, cache.bin_size, cache.watch_dir)
+        new_bin.fill()
         if new_bin.Empty {
             files_available = false
         } else {

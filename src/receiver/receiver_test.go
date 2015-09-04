@@ -94,3 +94,10 @@ func TestSinglePartReceive(t *testing.T) {
         t.Error("Contents of file not the same as sent data")
     }
 }
+
+// Cleans garbage files from src after test completion
+func TestCleanup(t *testing.T) {
+    os.RemoveAll("final")
+    os.RemoveAll("stage")
+    os.Remove("listener_cache.dat")
+}

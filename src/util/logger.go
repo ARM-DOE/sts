@@ -110,7 +110,8 @@ func (logger *Logger) LogReceive(s string, md5 string, size int64, hostname stri
     logger.log_lock.Lock()
     defer logger.log_lock.Unlock()
     logger.updateFileHandle(hostname)
-    logger.internal_logger.Printf("%s:%s:%d:%d:", s, md5, size, time.Now().Unix())
+    log_string := fmt.Sprintf("%s:%s:%d:%d:", s, md5, size, time.Now().Unix())
+    logger.internal_logger.Println(log_string)
 }
 
 // getCurrentLogPath returns the path of the current log file. It takes optional argument host_names

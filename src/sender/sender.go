@@ -120,7 +120,7 @@ func (sender *Sender) sendDisk(send_bin Bin) {
     }
     dest_fi.Close()
     util.NewCompanion(dest_path, bin_part.TotalSize)
-    util.AddPartToCompanion(dest_path, stream_md5.SumString(), getPartLocation(0, bin_part.TotalSize))
+    util.AddPartToCompanion(dest_path, stream_md5.SumString(), getPartLocation(0, bin_part.TotalSize), stream_md5.SumString())
     // Tell receiver that we wrote a file to disk
     post_url := fmt.Sprintf("http://%s/disk_add.go?name=%s&md5=%s&size=%d", config.Receiver_Address, dest_path, stream_md5.SumString(), bin_part.TotalSize)
     request, _ := http.NewRequest("POST", post_url, nil)
@@ -204,6 +204,7 @@ func (body *BinBody) startNextPart() {
     new_header.Add("name", getStorePath(body.bin_part.Path, body.bin.WatchDir))
     new_header.Add("total_size", fmt.Sprintf("%d", body.bin_part.TotalSize))
     new_header.Add("location", getPartLocation(body.bin_part.Start, body.bin_part.End))
+    new_header.Add("file_md5", body.bin_part.File_MD5)
     body.writer.CreatePart(new_header)
     body.unsent_header = body.writer_buffer.Bytes()
     body.file_index++

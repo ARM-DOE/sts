@@ -2,10 +2,11 @@ package util
 
 import (
     "crypto/md5"
+    "errors"
     "fmt"
     "hash"
     "io"
-    //"os"
+    "os"
 )
 
 // GenerateMD5 generates and returns an md5 string from an array of bytes.
@@ -17,23 +18,15 @@ func GenerateMD5(data []byte) string {
 
 // FileMD5 calculates the MD5 of a file given a path.
 // Unlike GenerateMD5, FileMD5 doesn't load the whole file into memory.
-// func FileMD5(path string) string {
-//     block_size := 4096
-//     fi, err := os.Open(path)
-//     if err != nil {
-//         panic("File " + path + " does not exist, can't generate MD5")
-//     }
-//     next_bytes := make([]byte, block_size)
-//     new_hash := md5.New()
-//     for {
-//         _, err := fi.Read(next_bytes)
-//         new_hash.Write(next_bytes)
-//         if err != nil {
-//             // file is done
-//             return fmt.Sprintf("%x", new_hash.Sum(nil))
-//         }
-//     }
-// }
+func FileMD5(path string) (string, error) {
+    fi, err := os.Open(path)
+    if err != nil {
+        return "", errors.New("File " + path + " does not exist, can't generate MD5")
+    }
+    stream_md5 := NewStreamMD5()
+    stream_md5.ReadAll(fi)
+    return stream_md5.SumString(), nil
+}
 
 // StreamMD5 is a struct that manages the digesting of byte blocks to an instance of an MD5 hash.
 type StreamMD5 struct {

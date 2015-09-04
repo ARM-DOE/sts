@@ -8,6 +8,7 @@ import (
     "net/http"
     "net/textproto"
     "os"
+    path_util "path"
     "path/filepath"
     "regexp"
     "strconv"
@@ -112,7 +113,7 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
         return
     }
     // Update the companion file of the part, and check if the whole file is done
-    util.AddPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"))
+    util.AddPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"), part.Header.Get("file_md5"))
     if isFileComplete(part_path) {
         // Finish file by moving it to the final directory and removing the .tmp extension.
         tmp := util.JoinPath(config.Output_Directory, host_name, part_path)
@@ -228,7 +229,12 @@ func finishFile(addition_channel chan string) {
             // Recreate the staging directory path so the companion can be taken care of.
             host_name := strings.Split(getStorePath(new_file, config.Output_Directory), string(os.PathSeparator))[0]
             staged_dir := util.JoinPath(config.Staging_Directory, getStorePath(new_file, util.JoinPath(config.Output_Directory, host_name)))
+            // Get file size & md5
+            info, _ := os.Stat(new_file)
+            file_md5 := util.DecodeCompanion(staged_dir).File_MD5
+            // Finally, clean up the file
             removeFromCache(staged_dir)
+            receiver_log.LogReceive(path_util.Base(new_file), file_md5, info.Size(), host_name)
             os.Remove(staged_dir + ".comp")
         }()
     }
@@ -254,13 +260,13 @@ func onFinish() {
 // main is the entry point of the webserver. It is responsible for registering HTTP
 // handlers, parsing the config file, starting the file listener, and beginning the request serving loop.
 func Main(config_file string) {
+    finalize_mutex = sync.Mutex{}
+    util.CompanionLock = sync.Mutex{}
+    config = util.ParseConfig(config_file) // Load config file
     // Setup loggers
     receiver_log = util.NewLogger(config.Logs_Directory, util.LOGGING_RECEIVE)
     error_log = util.NewLogger(config.Logs_Directory, util.LOGGING_ERROR)
     disk_log = util.NewLogger(config.Logs_Directory, util.LOGGING_DISK)
-    finalize_mutex = sync.Mutex{}
-    util.CompanionLock = sync.Mutex{}
-    config = util.ParseConfig(config_file) // Load config file
     // Setup listener and add ignore patterns.
     addition_channel := make(chan string, 1)
     listener := util.NewListener(config.Cache_File_Name, error_log, config.Staging_Directory, config.Output_Directory)

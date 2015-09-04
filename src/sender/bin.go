@@ -5,6 +5,7 @@ import (
     "fmt"
     "io/ioutil"
     "os"
+    path_util "path"
     "path/filepath"
     "regexp"
     "strings"
@@ -21,6 +22,7 @@ type Part struct {
     End       int64  // Ending byte in the part
     TotalSize int64  // Total size of the file that the Part represents
     MD5       string // MD5 of the data in the part file from Start:End
+    File_MD5  string // The MD5 of the entire file that the part came from.
 }
 
 // NewPart creates and returns a new instance of a Part.
@@ -80,6 +82,7 @@ type Bin struct {
     TransferMethod string
     WatchDir       string
     Empty          bool
+    cache          *Cache
 }
 
 // NewBin creates a new empty Bin object.
@@ -87,8 +90,9 @@ type Bin struct {
 // how many bytes the Bin can hold before it is designated as full.
 // It also takes argument watch_dir, which allows the Bin to generate a path
 // where the files will be stored on the receiving end.
-func NewBin(size int64, watch_dir string) Bin {
+func NewBin(cache *Cache, size int64, watch_dir string) Bin {
     new_bin := Bin{}
+    new_bin.cache = cache
     new_bin.TransferMethod = TRANSFER_HTTP
     new_bin.Size = size
     new_bin.BytesLeft = size
@@ -153,11 +157,11 @@ func (bin *Bin) delete() {
 // After finding a file, it uses shouldAllocate() to see if the data should be added to the Bin.
 // It repeats this process until either the Bin runs out of room, or there are no more valid & unallocated files.
 // After a bin is filled, the local cache will be updated.
-func (bin *Bin) fill(cache *Cache) {
+func (bin *Bin) fill() {
     keep_trying := true // There may still some files in the cache that have been passed over due to selecting of higher priority data
     for keep_trying {   // This outer for loop keeps looping until no unallocated data can be found.
         keep_trying = false // Set keep_trying to false until a file is found that will allow the loop to continue.
-        for path, allocation := range cache.listener.Files {
+        for path, allocation := range bin.cache.listener.Files {
             if bin.BytesLeft == 0 {
                 break // Bin is full
             }
@@ -173,19 +177,22 @@ func (bin *Bin) fill(cache *Cache) {
             file_size := info.Size()
             if file_size == 0 {
                 // Empty file
-                cache.removeFile(path)
+                bin.cache.removeFile(path)
             }
-            if allocation < file_size && allocation != -1 && shouldAllocate(cache, path) {
+            if allocation < file_size && allocation != -1 && shouldAllocate(bin.cache, path) {
                 // File should be allocated, add to Bin
                 if tag_data.TransferMethod() != TRANSFER_HTTP && bin.Empty {
                     // If the Bin is empty, add any non-standard transfer method files.
-                    bin.handleExternalTransferMethod(cache, path, tag_data)
+                    bin.handleExternalTransferMethod(path, tag_data)
                     break
                 }
                 added_bytes := bin.fitBytes(allocation, file_size)
                 bin.BytesLeft = bin.BytesLeft - added_bytes
                 bin.addPart(path, allocation, allocation+added_bytes, info)
-                cache.updateFile(path, allocation+added_bytes, info)
+                file_finished := bin.cache.updateFile(path, allocation+added_bytes, info)
+                if file_finished {
+                    send_log.LogSend(path_util.Base(path), bin.cache.getFileMD5(path), added_bytes, config.Receiver_Address)
+                }
             }
             if allocation != -1 {
                 keep_trying = true
@@ -195,7 +202,7 @@ func (bin *Bin) fill(cache *Cache) {
     if !bin.Empty {
         bin.save()
     }
-    cache.listener.WriteCache()
+    bin.cache.listener.WriteCache()
 }
 
 // shouldAllocate checks if the given file should be allowed to be saved to a Bin.
@@ -269,7 +276,7 @@ func getTag(path string) util.TagData {
 // handleExternalTranferMethod is called when a non-HTTP, unallocated file is found, and the
 // currently allocating Bin is empty. It calls either handleDisk or handleGridFTP depending
 // on the transfer method of the file.
-func (bin *Bin) handleExternalTransferMethod(cache *Cache, path string, tag_data util.TagData) {
+func (bin *Bin) handleExternalTransferMethod(path string, tag_data util.TagData) {
     info, _ := os.Stat(path)
     switch tag_data.TransferMethod() {
     case TRANSFER_HTTP:
@@ -283,7 +290,7 @@ func (bin *Bin) handleExternalTransferMethod(cache *Cache, path string, tag_data
         error_log.LogError("Transfer method", tag_data.TransferMethod(), "not recognized")
         panic("")
     }
-    cache.updateFile(path, -1, info)
+    bin.cache.updateFile(path, -1, info)
 }
 
 // handleDisk is called to prep bins for files with transfer method disk.
@@ -320,8 +327,10 @@ func (bin *Bin) fitBytes(allocation int64, file_size int64) int64 {
 
 // addPart calls NewPart and appends the new part to the Bin.
 // See documentation for NewPart for an in-depth explanation of addParts arguments.
-func (bin *Bin) addPart(path string, start int64, end int64, info os.FileInfo) {
+func (bin *Bin) addPart(path string, start int64, end int64, info os.FileInfo) Part {
     new_part := NewPart(path, start, end, info.Size())
+    new_part.File_MD5 = bin.cache.getFileMD5(path)
     bin.Files = append(bin.Files, new_part)
     bin.Empty = false
+    return new_part
 }

@@ -19,7 +19,7 @@ func TestLoadSaveBins(t *testing.T) {
     cwd, _ := os.Getwd()
     cache = NewCache("cache_test.dat", cwd, 3000, bin_channel)
     // Create and save new bin
-    dummy_bin := NewBin(3000, cwd)
+    dummy_bin := NewBin(cache, 3000, cwd)
     dummy_bin.BytesLeft = -66
     dummy_bin.save()
     cache.loadBins()

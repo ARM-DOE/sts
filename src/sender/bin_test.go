@@ -12,6 +12,7 @@ func TestSetup(t *testing.T) {
 
 // TestShouldAllocate tests whether the Bin.fill() method will insert files into the Bin in the correct order.
 func TestShouldAllocate(t *testing.T) {
+    send_log = util.NewLogger("/dev/null", util.LOGGING_SEND)
     defer os.Remove("cache_test2.dat")
     config = util.ParseConfig("test_config.yaml")
     ch := make(chan Bin, 5)
@@ -21,8 +22,8 @@ func TestShouldAllocate(t *testing.T) {
     dummy_cache.listener.Files["laser/data.cdf"] = 0
     dummy_cache.listener.Files["log/events.log"] = -1
     dummy_cache.listener.Files["log/events2.log"] = 0
-    test_bin := NewBin(3000, "test")
-    test_bin.fill(dummy_cache)
+    test_bin := NewBin(dummy_cache, 3000, "test")
+    test_bin.fill()
     defer os.Remove(test_bin.Name)
     data_order := [4]string{"log/events2.log", "laser/data.cdf", "default/data.cdf"}
     for index, part := range test_bin.Files {

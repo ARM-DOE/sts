@@ -19,6 +19,7 @@ type Companion struct {
     TotalSize    int64    // The sum of part bytes received so far.
     SenderName   string   // The hostname and port of the sender that sent the first part of the file.
     CurrentParts []string // A listing of parts received so far. Format for each string: md5;first_byte:last_byte
+    File_MD5     string   // The MD5 of the whole file, as reported by the sender.
 }
 
 // newCompanion creates a new companion file initialized
@@ -54,10 +55,12 @@ func DecodeCompanion(path string) *Companion {
 // path points to the file the companion represents.
 // id is the ID that will be added to the JSON data.
 // location is the location header that contains both the start and end bytes of the part.
-func AddPartToCompanion(path string, id string, location string) {
+// file_md5 is the md5 of the whole file according to the sender.
+func AddPartToCompanion(path string, id string, location string, file_md5 string) {
     CompanionLock.Lock()
     defer CompanionLock.Unlock()
     companion := DecodeCompanion(path)
+    companion.File_MD5 = file_md5
     companion_addition := id + ";" + location
     if !IsStringInArray(companion.CurrentParts, companion_addition) {
         companion.CurrentParts = append(companion.CurrentParts, companion_addition)
