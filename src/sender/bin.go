@@ -76,8 +76,8 @@ func (part *Part) countReads(block_size int) int64 {
 // to senders, which construct and send a multipart file from the list of Parts.
 type Bin struct {
     Files          []Part // All the instances of Part that the Bin contains
-    Size           int64  // Maximum amount of bytes that the Bin is able to store
-    BytesLeft      int64  // Unallocated bytes in the Bin
+    Size           int    // Maximum amount of bytes that the Bin is able to store
+    BytesLeft      int    // Unallocated bytes in the Bin
     Name           string // MD5 of Bin.Files creates unique Bin name for writing to disk
     TransferMethod string
     WatchDir       string
@@ -90,7 +90,7 @@ type Bin struct {
 // how many bytes the Bin can hold before it is designated as full.
 // It also takes argument watch_dir, which allows the Bin to generate a path
 // where the files will be stored on the receiving end.
-func NewBin(cache *Cache, size int64, watch_dir string) Bin {
+func NewBin(cache *Cache, size int, watch_dir string) Bin {
     new_bin := Bin{}
     new_bin.cache = cache
     new_bin.TransferMethod = TRANSFER_HTTP
@@ -188,10 +188,11 @@ func (bin *Bin) fill() {
                 }
                 added_bytes := bin.fitBytes(allocation, file_size)
                 bin.BytesLeft = bin.BytesLeft - added_bytes
-                bin.addPart(path, allocation, allocation+added_bytes, info)
-                file_finished := bin.cache.updateFile(path, allocation+added_bytes, info)
+                new_allocation := allocation + int64(added_bytes)
+                bin.addPart(path, allocation, new_allocation, info)
+                file_finished := bin.cache.updateFile(path, new_allocation, info)
                 if file_finished {
-                    send_log.LogSend(path_util.Base(path), bin.cache.getFileMD5(path), added_bytes, config.Receiver_Address)
+                    send_log.LogSend(path_util.Base(path), bin.cache.getFileMD5(path), new_allocation, config.Receiver_Address)
                 }
             }
             if allocation != -1 {
@@ -261,7 +262,7 @@ func highestPriority(cache *Cache, tag_data util.TagData) bool {
 // If no tag pattern matches, it returns the default TagData.
 func getTag(path string) util.TagData {
     path_tag := strings.Split(path, ".")[0]
-    for tag_pattern, tag_data := range config.Tags {
+    for tag_pattern, tag_data := range config.AccessTags() {
         if tag_pattern == "DEFAULT" {
             continue // Don't check default tag
         }
@@ -270,7 +271,7 @@ func getTag(path string) util.TagData {
             return tag_data
         }
     }
-    return config.Tags["DEFAULT"]
+    return config.AccessTags()["DEFAULT"]
 }
 
 // handleExternalTranferMethod is called when a non-HTTP, unallocated file is found, and the
@@ -297,7 +298,7 @@ func (bin *Bin) handleExternalTransferMethod(path string, tag_data util.TagData)
 func (bin *Bin) handleDisk(path string, tag_data util.TagData) {
     bin.TransferMethod = TRANSFER_DISK
     info, _ := os.Stat(path)
-    bin.Size = info.Size()
+    bin.Size = -1
     bin.BytesLeft = 0
     bin.addPart(path, 0, info.Size(), info)
 }
@@ -306,7 +307,7 @@ func (bin *Bin) handleDisk(path string, tag_data util.TagData) {
 func (bin *Bin) handleGridFTP(path string, tag_data util.TagData) {
     bin.TransferMethod = TRANSFER_GRIDFTP
     info, _ := os.Stat(path)
-    bin.Size = info.Size()
+    bin.Size = -1
     bin.BytesLeft = 0
     bin.addPart(path, 0, info.Size(), info)
 }
@@ -314,14 +315,14 @@ func (bin *Bin) handleGridFTP(path string, tag_data util.TagData) {
 // fitBytes checks a file to see how much of that file can fit inside a Bin.
 // It takes argument allocation, which specifies how many bytes of the file have already been allocated to a Bin.
 // fitBytes returns either all the bytes in the file, or how many can fit into the Bin.
-func (bin *Bin) fitBytes(allocation int64, file_size int64) int64 {
+func (bin *Bin) fitBytes(allocation int64, file_size int64) int {
     unallocated_bytes := file_size - allocation
-    if unallocated_bytes > bin.BytesLeft {
+    if unallocated_bytes > int64(bin.BytesLeft) {
         // Can't fit the whole file, return everything left in the bin.
         return bin.BytesLeft
     } else {
         // The file does fit, return its size
-        return unallocated_bytes
+        return int(unallocated_bytes)
     }
 }
 

@@ -281,6 +281,8 @@ func Main(config_file string) {
     // Register request handling functions
     http.HandleFunc("/send.go", sendHandler)
     http.HandleFunc("/disk_add.go", diskWriteHandler)
+    http.HandleFunc("/editor.go", config.EditConfigInterface)
+    http.HandleFunc("/edit_config.go", config.EditConfig)
     http.HandleFunc("/", errorHandler)
     http.ListenAndServe(fmt.Sprintf(":%s", config.Server_Port), nil)
 }

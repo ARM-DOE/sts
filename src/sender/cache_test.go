@@ -52,7 +52,9 @@ func TestMultiAllocate(t *testing.T) {
     // Test a bin filling up with two files
     cache.listener.Files["send_test.txt"] = 0
     cache.listener.Files["send_test2.txt"] = 0
+    t.Error(cache.listener.Files)
     cache.allocate()
+    t.Error(cache.listener.Files)
     go func() {
         time.Sleep(200 * time.Millisecond)
         timeout_channel <- true
@@ -71,6 +73,8 @@ func TestMultiAllocate(t *testing.T) {
                 return
             }
         } else {
+            t.Error(sent_bin.Size)
+            t.Error(sent_bin)
             t.Errorf("Expected bin with 2 files after allocation, got Bin with %d", len(sent_bin.Files))
         }
     }

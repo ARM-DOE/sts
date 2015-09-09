@@ -10,7 +10,7 @@ import (
 // Cache is a wrapper around Listener that provides extra Bin-filling functionality.
 type Cache struct {
     bin_channel  chan Bin          // The channel that newly filled Bins should be passed into.
-    bin_size     int64             // Default Bin size. Obtained from config.
+    bin_size     int               // Default Bin size. Obtained from config.
     watch_dir    string            // Watch directory, used to create listener and new bins.
     listener     *util.Listener    // The instance of listener that the cache uses to store data and get new files.
     senders      []*Sender         // A list of all the active senders that the cache can query when creating new Bins.
@@ -19,7 +19,7 @@ type Cache struct {
 }
 
 // NewCache creates and returns a new Cache struct with default values.
-func NewCache(cache_file_name string, watch_dir string, bin_size int64, bin_channel chan Bin) *Cache {
+func NewCache(cache_file_name string, watch_dir string, bin_size int, bin_channel chan Bin) *Cache {
     new_cache := &Cache{}
     new_cache.md5s = make(map[string]string)
     new_cache.watch_dir = watch_dir
@@ -122,8 +122,12 @@ func (cache *Cache) scan() {
     }
 }
 
-func (cache *Cache) BinSize() int64 {
+func (cache *Cache) BinSize() int {
     return cache.bin_size
+}
+
+func (cache *Cache) SetBinSize(new_size int) {
+    cache.bin_size = new_size
 }
 
 func (cache *Cache) SetSenders(senders []*Sender) {

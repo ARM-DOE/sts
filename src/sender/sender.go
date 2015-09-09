@@ -63,7 +63,7 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
         send_bin.Files[index].getMD5()
     }
     bin_body := CreateBinBody(send_bin)
-    bin_body.compression = sender.compression
+    bin_body.compression = config.AccessCompression()
     request_url := fmt.Sprintf("http://%s/send.go", config.Receiver_Address)
     request, err := http.NewRequest("PUT", request_url, bin_body)
     request.Header.Add("Transfer-Encoding", "chunked")

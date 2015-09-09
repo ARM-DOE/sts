@@ -21,11 +21,11 @@ var send_log util.Logger
 // It parses config values that are necessary during runtime,
 // dispatches the listening and sending threads, and loops infinitely.
 func Main(config_file string) {
-    config = util.ParseConfig(config_file)
-    config.Directory = checkWatchDir(config.Directory) // Exits if watch dir is not valid
     // Create loggers
     send_log = util.NewLogger(config.Logs_Directory, 1)
     error_log = util.NewLogger(config.Logs_Directory, 4)
+    // Parse config
+    config = util.ParseConfig(config_file)
     // Create the channel through which new bins will be sent from the sender to the receiver.
     bin_channel := make(chan Bin, config.Sender_Threads+5) // Create a bin channel with buffer size large enough to accommodate all sender threads and a little wiggle room.
     // Create and start cache file handler and webserver
@@ -45,6 +45,12 @@ func Main(config_file string) {
     go file_cache.scan() // Start the file listener thread
     fmt.Println("Ready to send")
     for {
+        if config.ShouldReload() {
+            // Update config values in all objects
+            config = util.ParseConfig(config.FileName())
+            file_cache.SetBinSize(config.Bin_Size)
+            config.Reloaded()
+        }
         time.Sleep(1 * time.Second)
     }
 }

@@ -30,6 +30,8 @@ func (server *Webserver) startServer() {
     http.HandleFunc("/get_file.go", server.getFile)
     http.HandleFunc("/remove.go", server.removeFromCache)
     http.HandleFunc("/", server.errorHandler)
+    http.HandleFunc("/edit_config.go", config.EditConfig)
+    http.HandleFunc("/editor.go", config.EditConfigInterface)
     http.ListenAndServe(fmt.Sprintf(":%s", config.Server_Port), nil)
 }
 
