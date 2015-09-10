@@ -6,6 +6,7 @@ import (
     "net"
     "os"
     "strings"
+    "syscall"
     "time"
 )
 
@@ -52,6 +53,27 @@ func JoinPath(params ...string) string {
 // easily found and removed later.
 func PrintDebug(str string) {
     fmt.Println(str)
+}
+
+// Restart is called to restart the sts binary. No closing of resources is performed, so data could
+// be lost if Restart() is called without proper preparation.
+func Restart() {
+    // Gather variables from current process to pass to new process
+    std_pipes := make([]*os.File, 3)
+    std_pipes[syscall.Stdin] = os.Stdin
+    std_pipes[syscall.Stdout] = os.Stdout
+    std_pipes[syscall.Stderr] = os.Stderr
+    cwd, _ := os.Getwd()
+    env_vars := os.Environ()
+    sys_vars := &syscall.SysProcAttr{}
+    attributes := os.ProcAttr{
+        Dir:   cwd,
+        Env:   env_vars,
+        Files: std_pipes,
+        Sys:   sys_vars}
+    new_sts, _ := os.StartProcess(os.Args[0], os.Args, &attributes) // Start new process
+    syscall.Kill(os.Getppid(), syscall.SIGTERM)
+    new_sts.Wait()
 }
 
 // GetHostname does a lookup on an IP address. If the IP has already been successfully looked up,

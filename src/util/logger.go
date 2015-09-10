@@ -70,6 +70,7 @@ func (logger *Logger) updateFileHandle(host_names ...string) {
 // LogError writes to the "messages" log file if the logger has mode LOGGING_ERROR.
 func (logger *Logger) LogError(params ...interface{}) {
     if logger.mode != LOGGING_ERROR {
+        fmt.Println(params...) // Prevent error message from being lost.
         panic(fmt.Sprintf("Can't call LogError with log of mode %d", logger.mode))
     }
     logger.log_lock.Lock()

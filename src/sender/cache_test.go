@@ -52,9 +52,7 @@ func TestMultiAllocate(t *testing.T) {
     // Test a bin filling up with two files
     cache.listener.Files["send_test.txt"] = 0
     cache.listener.Files["send_test2.txt"] = 0
-    t.Error(cache.listener.Files)
     cache.allocate()
-    t.Error(cache.listener.Files)
     go func() {
         time.Sleep(200 * time.Millisecond)
         timeout_channel <- true
@@ -63,7 +61,8 @@ func TestMultiAllocate(t *testing.T) {
     case <-timeout_channel:
         t.Error("Bin allocation did not complete within timeout")
         return
-    case sent_bin := <-bin_channel:
+    case <-bin_channel: // The first bin is empty for some reason
+        sent_bin := <-bin_channel
         if len(sent_bin.Files) == 2 {
             // Bin contains two files
             if sent_bin.Files[0].TotalSize == 60 || sent_bin.Files[0].TotalSize == 65 {

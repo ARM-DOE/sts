@@ -81,6 +81,24 @@ func (cache *Cache) freeSender() bool {
     return false
 }
 
+// setSendersActive sets the active status of all senders to the specified value.
+func (cache *Cache) setSendersActive(active bool) {
+    for _, sender := range cache.senders {
+        sender.Active = active
+    }
+}
+
+// anyActiveSender checks if any senders are still active or busy, and returns false if they are all idle.
+func (cache *Cache) anyActiveSender() bool {
+    senders_resting := true
+    for _, sender := range cache.senders {
+        if sender.Active == true || sender.Busy == true {
+            senders_resting = false
+        }
+    }
+    return !senders_resting
+}
+
 // allocate is called when a new file is detected and on startup.
 // While there are still any unallocated bytes in the cache, allocate continuously fills new Bins.
 // When a new non-empty Bin is filled, it is sent down the Bin channel.

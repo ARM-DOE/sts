@@ -21,15 +21,15 @@ var send_log util.Logger
 // It parses config values that are necessary during runtime,
 // dispatches the listening and sending threads, and loops infinitely.
 func Main(config_file string) {
+    // Parse config
+    config = util.ParseConfig(config_file)
     // Create loggers
     send_log = util.NewLogger(config.Logs_Directory, 1)
     error_log = util.NewLogger(config.Logs_Directory, 4)
-    // Parse config
-    config = util.ParseConfig(config_file)
     // Create the channel through which new bins will be sent from the sender to the receiver.
     bin_channel := make(chan Bin, config.Sender_Threads+5) // Create a bin channel with buffer size large enough to accommodate all sender threads and a little wiggle room.
     // Create and start cache file handler and webserver
-    file_cache := NewCache(config.Cache_File_Name, config.Directory, config.Bin_Size, bin_channel)
+    file_cache := NewCache(config.Cache_File_Name, config.Directory, config.BinSize(), bin_channel)
     file_cache.listener.LoadCache()
     server := NewWebserver(file_cache)
     go server.startServer()
@@ -37,7 +37,7 @@ func Main(config_file string) {
     // Dispatch senders
     senders := make([]*Sender, config.Sender_Threads)
     for dispatched_senders := 0; dispatched_senders < config.Sender_Threads; dispatched_senders++ {
-        created_sender := NewSender(file_cache.bin_channel, config.Compression)
+        created_sender := NewSender(file_cache.bin_channel, config.Compression())
         go created_sender.run()
         senders[dispatched_senders] = created_sender
     }
@@ -45,12 +45,7 @@ func Main(config_file string) {
     go file_cache.scan() // Start the file listener thread
     fmt.Println("Ready to send")
     for {
-        if config.ShouldReload() {
-            // Update config values in all objects
-            config = util.ParseConfig(config.FileName())
-            file_cache.SetBinSize(config.Bin_Size)
-            config.Reloaded()
-        }
+        checkReload(file_cache)
         time.Sleep(1 * time.Second)
     }
 }
@@ -60,6 +55,30 @@ func Main(config_file string) {
 func getStorePath(full_path string, watch_directory string) string {
     store_path := strings.Replace(full_path, filepath.Dir(watch_directory)+string(os.PathSeparator), "", 1)
     return store_path
+}
+
+// checkReload is called by the main thread every second to check if any changes have been made to
+// the config file to the webserver. If changes are detected, checkReload determines whether to reload
+// only dynamic values of whether to perform a full restart. If a full restart is needed, Restart() will
+// be called once all sender threads have finished their current Bin.
+func checkReload(cache *Cache) {
+    if config.ShouldReload() {
+        // Update in-memory config
+        old_config := config
+        config = util.ParseConfig(config.FileName())
+        if config.StaticDiff(old_config) {
+            error_log.LogError("Static config value(s) changed, restarting...")
+            cache.setSendersActive(false)
+            for cache.anyActiveSender() {
+                time.Sleep(1 * time.Second)
+            }
+            util.Restart()
+        } else {
+            // Reload dynamic values
+            cache.SetBinSize(config.BinSize())
+        }
+        config.Reloaded()
+    }
 }
 
 // getWholePath returns the absolute path of the file given the path where the file will be stored on the receiver.

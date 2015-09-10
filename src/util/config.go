@@ -8,18 +8,15 @@ import (
     "os"
     "path/filepath"
     "strings"
-    "sync"
 )
 
 // Config is the struct that all values from the configuration file are loaded into when it is parsed.
 type Config struct {
-    // Configuration values from file
+    // Static configuration values from file - require restart to change
     Directory               string
     Sender_Threads          int
     Log_File_Duration_Hours int
     Cache_File_Name         string
-    Bin_Size                int
-    Compression             bool
     Disk_Path               string
     Output_Directory        string
     Server_Port             string
@@ -27,11 +24,20 @@ type Config struct {
     Receiver_Address        string
     Staging_Directory       string
     Logs_Directory          string
-    Tags                    map[string]TagData
+    Dynamic                 DynamicValues
     // Internal config values
-    file_name     string
-    should_reload bool
-    access_lock   sync.Mutex
+    file_name      string
+    should_reload  bool
+    should_restart bool
+}
+
+// DynamicValues are the values that can be changed without needing a restart.
+// Every Dynamic value needs a get method and must be used in a safe-to-reload way
+// Changes to dynamic values will not trigger a restart, changes to any other values will.
+type DynamicValues struct {
+    Tags        map[string]TagData
+    Compression bool
+    Bin_Size    int
 }
 
 // TagData contains the priority and transfer method for each tag, loaded from the config.
@@ -61,7 +67,6 @@ func ParseConfig(file_name string) Config {
         os.Exit(1)
     }
     loaded_config.file_name = abs_path
-    loaded_config.access_lock = sync.Mutex{}
     return loaded_config
 }
 
@@ -69,6 +74,7 @@ func (config *Config) ShouldReload() bool {
     return config.should_reload
 }
 
+// Reloaded should be called after the config has been successfully reloaded.
 func (config *Config) Reloaded() {
     config.should_reload = false
 }
@@ -77,18 +83,17 @@ func (config *Config) FileName() string {
     return config.file_name
 }
 
-func (config *Config) AccessTags() map[string]TagData {
-    config.access_lock.Lock()
-    current_tags := config.Tags
-    config.access_lock.Unlock()
-    return current_tags
+// AccessTags is the access method for
+func (config *Config) Tags() map[string]TagData {
+    return config.Dynamic.Tags
 }
 
-func (config *Config) AccessCompression() bool {
-    config.access_lock.Lock()
-    current_compression := config.Compression
-    config.access_lock.Unlock()
-    return current_compression
+func (config *Config) Compression() bool {
+    return config.Dynamic.Compression
+}
+
+func (config *Config) BinSize() int {
+    return config.Dynamic.Bin_Size
 }
 
 func (config *Config) EditConfig(w http.ResponseWriter, r *http.Request) {
@@ -108,6 +113,25 @@ func (config *Config) EditConfig(w http.ResponseWriter, r *http.Request) {
         http.Redirect(w, r, "/editor.go", 301)
     }
     config.should_reload = true
+}
+
+// StaticDiff takes two configs and checks if their static variables are the same by nulling
+// all dynamic/runtime variables in the config. Could potentially need updates if new variables
+// are added to Config.
+func (config Config) StaticDiff(old_config Config) bool {
+    static_values_changed := false
+    // Set everything but static values to default
+    config.Dynamic = DynamicValues{}
+    config.should_reload = false
+    config.should_restart = false
+    old_config.Dynamic = DynamicValues{}
+    old_config.should_reload = false
+    old_config.should_restart = false
+    // Test if two string representations of config are equal
+    if !(fmt.Sprintf("%v", config) == fmt.Sprintf("%v", old_config)) {
+        static_values_changed = true
+    }
+    return static_values_changed
 }
 
 func (config *Config) EditConfigInterface(w http.ResponseWriter, r *http.Request) {

@@ -262,7 +262,7 @@ func highestPriority(cache *Cache, tag_data util.TagData) bool {
 // If no tag pattern matches, it returns the default TagData.
 func getTag(path string) util.TagData {
     path_tag := strings.Split(path, ".")[0]
-    for tag_pattern, tag_data := range config.AccessTags() {
+    for tag_pattern, tag_data := range config.Tags() {
         if tag_pattern == "DEFAULT" {
             continue // Don't check default tag
         }
@@ -271,7 +271,7 @@ func getTag(path string) util.TagData {
             return tag_data
         }
     }
-    return config.AccessTags()["DEFAULT"]
+    return config.Tags()["DEFAULT"]
 }
 
 // handleExternalTranferMethod is called when a non-HTTP, unallocated file is found, and the

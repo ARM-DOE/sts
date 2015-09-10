@@ -20,6 +20,7 @@ func main() {
     default:
         help()
     }
+    return
 }
 
 func help() {

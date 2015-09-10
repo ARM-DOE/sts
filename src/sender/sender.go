@@ -22,12 +22,14 @@ type Sender struct {
     queue       chan Bin // Channel that new bins are pulled from.
     compression bool     // Bool that controls whether compression is turned on. Obtained from config file.
     Busy        bool     // Set to true when the sender is currently sending a file.
+    Active      bool     // Set Active to true if the sender is allowed to accept new Bins.
 }
 
 // NewSender creates and returns a new instance of the Sender struct.
 // It takes a Bin channel as an argument, which the Sender uses to receiver newly filled or loaded Bins.
 func NewSender(file_queue chan Bin, compression bool) *Sender {
     new_sender := &Sender{}
+    new_sender.Active = true
     new_sender.queue = file_queue
     new_sender.compression = compression
     return new_sender
@@ -38,6 +40,10 @@ func NewSender(file_queue chan Bin, compression bool) *Sender {
 // of the Bin.
 func (sender *Sender) run() {
     for {
+        if !sender.Active {
+            time.Sleep(1 * time.Second)
+            continue
+        }
         send_bin := <-sender.queue
         sender.Busy = true
         fmt.Println("Sending bin of size ", send_bin.Size)
@@ -63,7 +69,7 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
         send_bin.Files[index].getMD5()
     }
     bin_body := CreateBinBody(send_bin)
-    bin_body.compression = config.AccessCompression()
+    bin_body.compression = config.Compression()
     request_url := fmt.Sprintf("http://%s/send.go", config.Receiver_Address)
     request, err := http.NewRequest("PUT", request_url, bin_body)
     request.Header.Add("Transfer-Encoding", "chunked")

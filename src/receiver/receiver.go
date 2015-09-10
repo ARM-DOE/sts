@@ -257,6 +257,21 @@ func onFinish() {
     finalize_mutex.Unlock()
 }
 
+func checkReload() {
+    if config.ShouldReload() {
+        // Update in-memory config
+        old_config := config
+        config = util.ParseConfig(config.FileName())
+        if config.StaticDiff(old_config) {
+            error_log.LogError("Static config value(s) changed, restarting...")
+            util.Restart()
+        } else {
+            // If there were dynamic values, this is where they would be reloaded.
+        }
+        config.Reloaded()
+    }
+}
+
 // main is the entry point of the webserver. It is responsible for registering HTTP
 // handlers, parsing the config file, starting the file listener, and beginning the request serving loop.
 func Main(config_file string) {
@@ -284,5 +299,9 @@ func Main(config_file string) {
     http.HandleFunc("/editor.go", config.EditConfigInterface)
     http.HandleFunc("/edit_config.go", config.EditConfig)
     http.HandleFunc("/", errorHandler)
-    http.ListenAndServe(fmt.Sprintf(":%s", config.Server_Port), nil)
+    go http.ListenAndServe(fmt.Sprintf(":%s", config.Server_Port), nil)
+    for {
+        checkReload()
+        time.Sleep(1 * time.Second)
+    }
 }
