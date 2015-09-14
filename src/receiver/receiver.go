@@ -257,13 +257,14 @@ func onFinish() {
     finalize_mutex.Unlock()
 }
 
-func checkReload() {
+func checkReload(server net.Listener) {
     if config.ShouldReload() {
         // Update in-memory config
         old_config := config
         config = util.ParseConfig(config.FileName())
         if config.StaticDiff(old_config) {
             error_log.LogError("Static config value(s) changed, restarting...")
+            server.Close()
             util.Restart()
         } else {
             // If there were dynamic values, this is where they would be reloaded.
@@ -299,9 +300,15 @@ func Main(config_file string) {
     http.HandleFunc("/editor.go", config.EditConfigInterface)
     http.HandleFunc("/edit_config.go", config.EditConfig)
     http.HandleFunc("/", errorHandler)
-    go http.ListenAndServe(fmt.Sprintf(":%s", config.Server_Port), nil)
-    for {
-        checkReload()
-        time.Sleep(1 * time.Second)
+    serv, serv_err := net.Listen("tcp", fmt.Sprintf(":%s", config.Server_Port))
+    if serv_err != nil {
+        error_log.LogError(serv_err.Error())
     }
+    go func() {
+        for {
+            checkReload(serv)
+            time.Sleep(1 * time.Second)
+        }
+    }()
+    http.Serve(serv, nil)
 }

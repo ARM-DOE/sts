@@ -71,9 +71,8 @@ func Restart() {
         Env:   env_vars,
         Files: std_pipes,
         Sys:   sys_vars}
-    new_sts, _ := os.StartProcess(os.Args[0], os.Args, &attributes) // Start new process
-    syscall.Kill(os.Getppid(), syscall.SIGTERM)
-    new_sts.Wait()
+    os.StartProcess(os.Args[0], os.Args, &attributes) // Start new process
+    os.Exit(2)                                        // Restart
 }
 
 // GetHostname does a lookup on an IP address. If the IP has already been successfully looked up,

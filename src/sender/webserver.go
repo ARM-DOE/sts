@@ -2,6 +2,7 @@ package sender
 
 import (
     "fmt"
+    "net"
     "net/http"
     "os"
     "strconv"
@@ -26,13 +27,18 @@ func NewWebserver(cache *Cache) *Webserver {
 
 // startServer is the entry point of the webserver. It is responsible for registering
 // handlers and beginning the request serving loop.
-func (server *Webserver) startServer() {
+func (server *Webserver) startServer() net.Listener {
     http.HandleFunc("/get_file.go", server.getFile)
     http.HandleFunc("/remove.go", server.removeFromCache)
     http.HandleFunc("/", server.errorHandler)
     http.HandleFunc("/edit_config.go", config.EditConfig)
     http.HandleFunc("/editor.go", config.EditConfigInterface)
-    http.ListenAndServe(fmt.Sprintf(":%s", config.Server_Port), nil)
+    serv, serv_err := net.Listen("tcp", fmt.Sprintf(":%s", config.Server_Port))
+    if serv_err != nil {
+        error_log.LogError(serv_err.Error())
+    }
+    go http.Serve(serv, nil)
+    return serv
 }
 
 // getFile takes a file name, start, and end position in the file to return a whole or partial file

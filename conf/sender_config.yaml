@@ -1,5 +1,5 @@
 directory: watch_directory
-sender_threads: 20
+sender_threads: 10
 log_file_duration_hours: 3000
 cache_file_name: file_cache.dat
 logs_directory: logs

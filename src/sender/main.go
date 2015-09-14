@@ -2,6 +2,7 @@ package sender
 
 import (
     "fmt"
+    "net"
     "os"
     "path/filepath"
     "strings"
@@ -32,7 +33,7 @@ func Main(config_file string) {
     file_cache := NewCache(config.Cache_File_Name, config.Directory, config.BinSize(), bin_channel)
     file_cache.listener.LoadCache()
     server := NewWebserver(file_cache)
-    go server.startServer()
+    server_listener := server.startServer()
 
     // Dispatch senders
     senders := make([]*Sender, config.Sender_Threads)
@@ -45,7 +46,7 @@ func Main(config_file string) {
     go file_cache.scan() // Start the file listener thread
     fmt.Println("Ready to send")
     for {
-        checkReload(file_cache)
+        checkReload(file_cache, server_listener)
         time.Sleep(1 * time.Second)
     }
 }
@@ -61,7 +62,7 @@ func getStorePath(full_path string, watch_directory string) string {
 // the config file to the webserver. If changes are detected, checkReload determines whether to reload
 // only dynamic values of whether to perform a full restart. If a full restart is needed, Restart() will
 // be called once all sender threads have finished their current Bin.
-func checkReload(cache *Cache) {
+func checkReload(cache *Cache, server_listener net.Listener) {
     if config.ShouldReload() {
         // Update in-memory config
         old_config := config

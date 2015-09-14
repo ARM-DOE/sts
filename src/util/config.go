@@ -175,7 +175,7 @@ function loaded() {
 <input type="hidden" name="config" id="editor_contents" value="">
 <div id="editor" visibility="hidden">`+string(config_contents)+`</div>
 </br><center><input type="submit" id="save_button" onClick=save();return false; value="Save"></center></form>
-<script src="https://googledrive.com/host/0B-dFWLqeu-Z_V3hMVDlCMVd1dTA/ace.js" type="text/javascript" charset="utf-8"></script>
+<script src="https://engineering.arm.gov/~dohnalek/ace.js" type="text/javascript" charset="utf-8"></script>
 <script>
     var editor = ace.edit("editor");
     editor.setShowPrintMargin(false);
