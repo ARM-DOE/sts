@@ -8,6 +8,9 @@ import (
     "os"
 )
 
+// cached_certs is a map of certs that have already been loaded by LoadCert().
+// If a cert with the same cert_path and key_path is requested from LoadCert()
+// it doesn't need to be loaded from disk again.
 var cached_certs map[string]tls.Certificate
 
 // AyncListenAndServeTLS spawns a new goroutine with a TLS server listening on the returned

@@ -58,21 +58,8 @@ func PrintDebug(str string) {
 // Restart is called to restart the sts binary. No closing of resources is performed, so data could
 // be lost if Restart() is called without proper preparation.
 func Restart() {
-    // Gather variables from current process to pass to new process
-    std_pipes := make([]*os.File, 3)
-    std_pipes[syscall.Stdin] = os.Stdin
-    std_pipes[syscall.Stdout] = os.Stdout
-    std_pipes[syscall.Stderr] = os.Stderr
-    cwd, _ := os.Getwd()
-    env_vars := os.Environ()
-    sys_vars := &syscall.SysProcAttr{}
-    attributes := os.ProcAttr{
-        Dir:   cwd,
-        Env:   env_vars,
-        Files: std_pipes,
-        Sys:   sys_vars}
-    os.StartProcess(os.Args[0], os.Args, &attributes) // Start new process
-    os.Exit(2)                                        // Restart
+    // Replace the currently running process with a new instance of the sts.
+    syscall.Exec(os.Args[0], os.Args, os.Environ())
 }
 
 // GetHostname does a lookup on an IP address. If the IP has already been successfully looked up,
