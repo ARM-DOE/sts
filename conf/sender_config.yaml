@@ -6,6 +6,10 @@ logs_directory: logs
 disk_path: disk
 receiver_address: localhost:8081
 server_port: 8080
+server_ssl_cert: ../../conf/server.pem
+server_ssl_key: ../../conf/server.key
+client_ssl_cert: ../../conf/client.pem
+client_ssl_key: ../../conf/client.key
 
 dynamic:
   bin_size: 300000

@@ -18,7 +18,7 @@ var config util.Config
 var error_log util.Logger
 var send_log util.Logger
 
-// main is the entry point for the sender program.
+// Main is the entry point for the sender program.
 // It parses config values that are necessary during runtime,
 // dispatches the listening and sending threads, and loops infinitely.
 func Main(config_file string) {

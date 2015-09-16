@@ -28,6 +28,45 @@ var error_log util.Logger
 var receiver_log util.Logger
 var disk_log util.Logger
 
+// Main is the entry point of the webserver. It is responsible for registering HTTP
+// handlers, parsing the config file, starting the file listener, and beginning the request serving loop.
+func Main(config_file string) {
+    finalize_mutex = sync.Mutex{}
+    util.CompanionLock = sync.Mutex{}
+    config = util.ParseConfig(config_file) // Load config file
+    // Setup loggers
+    receiver_log = util.NewLogger(config.Logs_Directory, util.LOGGING_RECEIVE)
+    error_log = util.NewLogger(config.Logs_Directory, util.LOGGING_ERROR)
+    disk_log = util.NewLogger(config.Logs_Directory, util.LOGGING_DISK)
+    // Setup listener and add ignore patterns.
+    addition_channel := make(chan string, 1)
+    listener := util.NewListener(config.Cache_File_Name, error_log, config.Staging_Directory, config.Output_Directory)
+    listener.SetOnFinish(onFinish)
+    listener.AddIgnored(`\.tmp`)
+    listener.AddIgnored(`\.comp`)
+    listener.AddIgnored(regexp.QuoteMeta(config.Cache_File_Name))
+    // Start listening threads
+    go finishFile(addition_channel)
+    listener.LoadCache()
+    go listener.Listen(addition_channel)
+    // Register request handling functions
+    http.HandleFunc("/send.go", sendHandler)
+    http.HandleFunc("/disk_add.go", diskWriteHandler)
+    http.HandleFunc("/editor.go", config.EditConfigInterface)
+    http.HandleFunc("/edit_config.go", config.EditConfig)
+    http.HandleFunc("/", errorHandler)
+    // Setup SSL server
+    ssl_listener, setup_err := util.AsyncListenAndServeTLS(fmt.Sprintf(":%s", config.Server_Port), config.Server_SSL_Cert, config.Server_SSL_Key)
+    if setup_err != nil {
+        error_log.LogError(setup_err.Error())
+    }
+    // Enter mainloop to check for config changes
+    for {
+        checkReload(ssl_listener)
+        time.Sleep(1 * time.Second)
+    }
+}
+
 // errorHandler is called when any page that is not a registered API method is requested.
 func errorHandler(w http.ResponseWriter, r *http.Request) {
     fmt.Fprint(w, http.StatusNotFound)
@@ -46,6 +85,7 @@ func getPartLocation(location string) (int64, int64) {
 // It is responsible for verifying the md5 of each part in the file, replicating
 // its directory structure as it was on the sender, and writing the file to disk.
 func sendHandler(w http.ResponseWriter, r *http.Request) {
+    defer r.Body.Close()
     ip, _, _ := net.SplitHostPort(r.RemoteAddr)
     host_name := util.GetHostname(ip)
     compression := false
@@ -155,8 +195,11 @@ func isFileComplete(path string) bool {
 // read out the first and only part, and pass it back into handleFile for validation.
 func requestPart(path string, part_header textproto.MIMEHeader, start int64, end int64, boundary string) *multipart.Part {
     host_name := util.DecodeCompanion(path).SenderName
-    post_url := fmt.Sprintf("http://%s:%s/get_file.go?name=%s&start=%d&end=%d&boundary=%s", host_name, config.Server_Port, path, start, end, boundary)
-    client := http.Client{}
+    post_url := fmt.Sprintf("https://%s:%s/get_file.go?name=%s&start=%d&end=%d&boundary=%s", host_name, config.Server_Port, path, start, end, boundary)
+    client, client_err := util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key)
+    if client_err != nil {
+        error_log.LogError(client_err.Error())
+    }
     request_complete := false
     var return_part *multipart.Part
     for !request_complete {
@@ -202,9 +245,12 @@ func getStorePath(full_path string, watch_directory string) string {
 // It loops until the Sender confirms that the file has been removed.
 func removeFromCache(path string) {
     request_complete := false
-    client := http.Client{}
+    client, client_err := util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key)
+    if client_err != nil {
+        error_log.LogError(client_err)
+    }
     host_name := util.DecodeCompanion(path).SenderName
-    post_url := fmt.Sprintf("http://%s:%s/remove.go?name=%s", host_name, config.Sender_Server_Port, getStorePath(path, config.Staging_Directory))
+    post_url := fmt.Sprintf("https://%s:%s/remove.go?name=%s", host_name, config.Sender_Server_Port, getStorePath(path, config.Staging_Directory))
     for !request_complete {
         request, _ := http.NewRequest("POST", post_url, nil)
         _, err := client.Do(request)
@@ -271,44 +317,4 @@ func checkReload(server net.Listener) {
         }
         config.Reloaded()
     }
-}
-
-// main is the entry point of the webserver. It is responsible for registering HTTP
-// handlers, parsing the config file, starting the file listener, and beginning the request serving loop.
-func Main(config_file string) {
-    finalize_mutex = sync.Mutex{}
-    util.CompanionLock = sync.Mutex{}
-    config = util.ParseConfig(config_file) // Load config file
-    // Setup loggers
-    receiver_log = util.NewLogger(config.Logs_Directory, util.LOGGING_RECEIVE)
-    error_log = util.NewLogger(config.Logs_Directory, util.LOGGING_ERROR)
-    disk_log = util.NewLogger(config.Logs_Directory, util.LOGGING_DISK)
-    // Setup listener and add ignore patterns.
-    addition_channel := make(chan string, 1)
-    listener := util.NewListener(config.Cache_File_Name, error_log, config.Staging_Directory, config.Output_Directory)
-    listener.SetOnFinish(onFinish)
-    listener.AddIgnored(`\.tmp`)
-    listener.AddIgnored(`\.comp`)
-    listener.AddIgnored(regexp.QuoteMeta(config.Cache_File_Name))
-    // Start listening threads
-    go finishFile(addition_channel)
-    listener.LoadCache()
-    go listener.Listen(addition_channel)
-    // Register request handling functions
-    http.HandleFunc("/send.go", sendHandler)
-    http.HandleFunc("/disk_add.go", diskWriteHandler)
-    http.HandleFunc("/editor.go", config.EditConfigInterface)
-    http.HandleFunc("/edit_config.go", config.EditConfig)
-    http.HandleFunc("/", errorHandler)
-    serv, serv_err := net.Listen("tcp", fmt.Sprintf(":%s", config.Server_Port))
-    if serv_err != nil {
-        error_log.LogError(serv_err.Error())
-    }
-    go func() {
-        for {
-            checkReload(serv)
-            time.Sleep(1 * time.Second)
-        }
-    }()
-    http.Serve(serv, nil)
 }

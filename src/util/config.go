@@ -24,6 +24,10 @@ type Config struct {
     Receiver_Address        string
     Staging_Directory       string
     Logs_Directory          string
+    Server_SSL_Cert         string
+    Server_SSL_Key          string
+    Client_SSL_Cert         string
+    Client_SSL_Key          string
     Dynamic                 DynamicValues
     // Internal config values
     file_name      string

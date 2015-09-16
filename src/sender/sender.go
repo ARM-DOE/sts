@@ -70,10 +70,11 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
     }
     bin_body := CreateBinBody(send_bin)
     bin_body.compression = config.Compression()
-    request_url := fmt.Sprintf("http://%s/send.go", config.Receiver_Address)
+    request_url := fmt.Sprintf("https://%s/send.go", config.Receiver_Address)
     request, err := http.NewRequest("PUT", request_url, bin_body)
     request.Header.Add("Transfer-Encoding", "chunked")
     request.Header.Add("Boundary", bin_body.Boundary())
+    request.Header.Set("Connection", "close") // Prevents persistent connections opening too many file handles
     request.ContentLength = -1
     if bin_body.compression {
         request.Header.Add("Content-Encoding", "gzip")
@@ -81,7 +82,10 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
     if err != nil {
         error_log.LogError(err.Error())
     }
-    client := http.Client{}
+    client, client_err := util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key)
+    if client_err != nil {
+        error_log.LogError(client_err.Error())
+    }
     response, sending_err := client.Do(request)
     if sending_err != nil {
         error_log.LogError(sending_err.Error())
@@ -92,6 +96,7 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
         if string(response_code) == "200" {
             send_bin.delete() // Sending is complete, so remove the bin file
         }
+        response.Body.Close()
     }
 }
 
@@ -128,9 +133,12 @@ func (sender *Sender) sendDisk(send_bin Bin) {
     util.NewCompanion(dest_path, bin_part.TotalSize)
     util.AddPartToCompanion(dest_path, stream_md5.SumString(), getPartLocation(0, bin_part.TotalSize), stream_md5.SumString())
     // Tell receiver that we wrote a file to disk
-    post_url := fmt.Sprintf("http://%s/disk_add.go?name=%s&md5=%s&size=%d", config.Receiver_Address, dest_path, stream_md5.SumString(), bin_part.TotalSize)
+    post_url := fmt.Sprintf("https://%s/disk_add.go?name=%s&md5=%s&size=%d", config.Receiver_Address, dest_path, stream_md5.SumString(), bin_part.TotalSize)
     request, _ := http.NewRequest("POST", post_url, nil)
-    client := http.Client{}
+    client, client_err := util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key)
+    if client_err != nil {
+        error_log.LogError(client_err.Error())
+    }
     resp, req_err := client.Do(request)
     if req_err != nil {
         error_log.LogError("Encountered", req_err.Error(), "while trying to send", dest_path, "confirmation request")

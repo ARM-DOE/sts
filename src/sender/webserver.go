@@ -33,11 +33,10 @@ func (server *Webserver) startServer() net.Listener {
     http.HandleFunc("/", server.errorHandler)
     http.HandleFunc("/edit_config.go", config.EditConfig)
     http.HandleFunc("/editor.go", config.EditConfigInterface)
-    serv, serv_err := net.Listen("tcp", fmt.Sprintf(":%s", config.Server_Port))
+    serv, serv_err := util.AsyncListenAndServeTLS(fmt.Sprintf(":%s", config.Server_Port), config.Server_SSL_Cert, config.Server_SSL_Key)
     if serv_err != nil {
         error_log.LogError(serv_err.Error())
     }
-    go http.Serve(serv, nil)
     return serv
 }
 

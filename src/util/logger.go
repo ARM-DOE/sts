@@ -1,10 +1,12 @@
 package util
 
 import (
+    "errors"
     "fmt"
     "log"
     "os"
     "path/filepath"
+    "runtime"
     "strconv"
     "sync"
     "time"
@@ -35,7 +37,7 @@ func NewLogger(base_path string, mode int) Logger {
     new_logger.mode = mode
     new_logger.base_path = base_path
     if mode == LOGGING_ERROR {
-        new_logger.internal_logger = log.New(nil, "", log.Ldate|log.Ltime|log.Lshortfile)
+        new_logger.internal_logger = log.New(nil, "", log.Ldate|log.Ltime)
     } else {
         new_logger.internal_logger = log.New(nil, "", 0)
     }
@@ -68,16 +70,20 @@ func (logger *Logger) updateFileHandle(host_names ...string) {
 }
 
 // LogError writes to the "messages" log file if the logger has mode LOGGING_ERROR.
-func (logger *Logger) LogError(params ...interface{}) {
+func (logger *Logger) LogError(params ...interface{}) error {
     if logger.mode != LOGGING_ERROR {
         fmt.Println(params...) // Prevent error message from being lost.
-        panic(fmt.Sprintf("Can't call LogError with log of mode %d", logger.mode))
+        return errors.New(fmt.Sprintf("Can't call LogError with log of mode %d", logger.mode))
     }
     logger.log_lock.Lock()
     defer logger.log_lock.Unlock()
     logger.updateFileHandle()
+    // Get file name and line number of the caller of this function
+    _, file_name, line, _ := runtime.Caller(1)
+    params = append([]interface{}{fmt.Sprintf("%s:%d", filepath.Base(file_name), line)}, params...)
     fmt.Println(params...)
     logger.internal_logger.Println(params...)
+    return nil
 }
 
 // LogDisk writes to the "to_disk" log file if the logger has mode LOGGING_DISK.

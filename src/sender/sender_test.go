@@ -54,6 +54,8 @@ func TestSingleBin(t *testing.T) {
     config.Server_Port = "8080"
     config.Sender_Server_Port = "8080"
     config.Receiver_Address = "localhost:8081"
+    config.Client_SSL_Cert = "../conf/client.pem"
+    config.Client_SSL_Key = "../conf/client.key"
     // Create and pass new bin to sender
     error_status = ""
     test_file = "send_test.txt"
@@ -68,7 +70,7 @@ func TestSingleBin(t *testing.T) {
     }
     // Start webserver
     http.HandleFunc("/send.go", receiveFileHandler)
-    go http.ListenAndServe(":8081", nil)
+    util.AsyncListenAndServeTLS(":8081", config.Client_SSL_Cert, config.Client_SSL_Key)
     new_bin.addPart(test_file, 0, 60, info)
     bin_queue <- new_bin
     time.Sleep(200 * time.Millisecond) // Time the sender is allowed to use to get the file

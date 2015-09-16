@@ -37,10 +37,13 @@ func TestMultiPartReceive(t *testing.T) {
     second_part, _ := writer.CreatePart(header)
     second_part.Write(small_file)
     writer.Close()
-    request, _ := http.NewRequest("PUT", "http://localhost:8081/send.go", bytes.NewReader(buff.Bytes()))
+    request, _ := http.NewRequest("PUT", "https://localhost:8081/send.go", bytes.NewReader(buff.Bytes()))
     request.Header.Add("Transfer-Encoding", "chunked")
     request.Header.Add("Boundary", writer.Boundary())
-    client := http.Client{}
+    client, client_err := util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key)
+    if client_err != nil {
+        t.Error(client_err.Error())
+    }
     client.Do(request)
     // Check that files exist
     fi, open_err := os.Open(util.JoinPath("final", "localhost", "test_dir", "small_file.txt"))
@@ -79,10 +82,14 @@ func TestSinglePartReceive(t *testing.T) {
     new_part, _ := writer.CreatePart(header)
     new_part.Write(small_file)
     writer.Close()
-    request, _ := http.NewRequest("PUT", "http://localhost:8081/send.go", bytes.NewReader(buff.Bytes()))
+    request, _ := http.NewRequest("PUT", "https://localhost:8081/send.go", bytes.NewReader(buff.Bytes()))
     request.Header.Add("Transfer-Encoding", "chunked")
     request.Header.Add("Boundary", writer.Boundary())
-    client := http.Client{}
+    client, client_err := util.GetTLSClient("../../conf/client.pem", "../../conf/client.key")
+    if client_err != nil {
+        t.Error(client_err)
+        return
+    }
     client.Do(request)
     // Check that file exists
     fi, open_err := os.Open(util.JoinPath("final", "localhost", "test_dir", "small_file.txt"))
