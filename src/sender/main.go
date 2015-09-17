@@ -23,7 +23,11 @@ var send_log util.Logger
 // dispatches the listening and sending threads, and loops infinitely.
 func Main(config_file string) {
     // Parse config
-    config = util.ParseConfig(config_file)
+    var parse_err error
+    config, parse_err = util.ParseConfig(config_file)
+    if parse_err != nil {
+        fmt.Println("Couldn't parse config", parse_err.Error())
+    }
     // Create loggers
     send_log = util.NewLogger(config.Logs_Directory, 1)
     error_log = util.NewLogger(config.Logs_Directory, 4)
@@ -31,7 +35,10 @@ func Main(config_file string) {
     bin_channel := make(chan Bin, config.Sender_Threads+5) // Create a bin channel with buffer size large enough to accommodate all sender threads and a little wiggle room.
     // Create and start cache file handler and webserver
     file_cache := NewCache(config.Cache_File_Name, config.Directory, config.BinSize(), bin_channel)
-    file_cache.listener.LoadCache()
+    cache_err := file_cache.listener.LoadCache()
+    if cache_err != nil {
+        error_log.LogError("Could not load cache:", cache_err.Error())
+    }
     server := NewWebserver(file_cache)
     server_listener := server.startServer()
 
@@ -66,7 +73,13 @@ func checkReload(cache *Cache, server_listener net.Listener) {
     if config.ShouldReload() {
         // Update in-memory config
         old_config := config
-        config = util.ParseConfig(config.FileName())
+        temp_config, parse_err := util.ParseConfig(config.FileName())
+        if parse_err != nil {
+            error_log.LogError("Couldn't parse config file, changes not accepted:", parse_err.Error())
+            config.Reloaded()
+            return
+        }
+        config = temp_config
         if config.StaticDiff(old_config) {
             error_log.LogError("Static config value(s) changed, restarting...")
             cache.setSendersActive(false)
@@ -99,6 +112,9 @@ func checkWatchDir(watch_dir string) string {
         error_log.LogError("Watch directory does not exist")
         os.Exit(1)
     }
-    abs_dir, _ := filepath.Abs(watch_dir)
+    abs_dir, abs_err := filepath.Abs(watch_dir)
+    if abs_err != nil {
+        error_log.LogError(fmt.Sprintf("Could not generate abs path for watch directory %s: %s", watch_dir, abs_err.Error()))
+    }
     return abs_dir
 }

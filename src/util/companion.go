@@ -24,7 +24,7 @@ type Companion struct {
 
 // newCompanion creates a new companion file initialized
 // with specified parameters and writes it to disk.
-func NewCompanion(path string, size int64, host_name ...string) Companion {
+func NewCompanion(path string, size int64, host_name ...string) (Companion, error) {
     if &CompanionLock == nil {
         CompanionLock = sync.Mutex{}
     }
@@ -35,18 +35,27 @@ func NewCompanion(path string, size int64, host_name ...string) Companion {
     if len(host_name) > 0 {
         new_companion.SenderName = host_name[0]
     }
-    new_companion.EncodeAndWrite()
-    return new_companion
+    enc_err := new_companion.EncodeAndWrite()
+    if enc_err != nil {
+        return Companion{}, enc_err
+    }
+    return new_companion, nil
 }
 
 // decodeCompanion takes the path of the file that the companion represents, decodes,
 // and returns the companion struct that can be found at that path.
-func DecodeCompanion(path string) *Companion {
+func DecodeCompanion(path string) (*Companion, error) {
     path = path + ".comp"
     new_companion := &Companion{}
-    companion_bytes, _ := ioutil.ReadFile(path)
-    json.Unmarshal(companion_bytes, new_companion)
-    return new_companion
+    companion_bytes, read_err := ioutil.ReadFile(path)
+    if read_err != nil {
+        return nil, read_err
+    }
+    unmarshal_err := json.Unmarshal(companion_bytes, new_companion)
+    if unmarshal_err != nil {
+        return nil, unmarshal_err
+    }
+    return new_companion, nil
 }
 
 // addPartToCompanion decodes a companion struct, adds the specified id to CurrentParts
@@ -56,24 +65,35 @@ func DecodeCompanion(path string) *Companion {
 // id is the ID that will be added to the JSON data.
 // location is the location header that contains both the start and end bytes of the part.
 // file_md5 is the md5 of the whole file according to the sender.
-func AddPartToCompanion(path string, id string, location string, file_md5 string) {
+func AddPartToCompanion(path string, id string, location string, file_md5 string) error {
     CompanionLock.Lock()
     defer CompanionLock.Unlock()
-    companion := DecodeCompanion(path)
+    companion, companion_err := DecodeCompanion(path)
+    if companion_err != nil {
+        return companion_err
+    }
     companion.File_MD5 = file_md5
     companion_addition := id + ";" + location
     if !IsStringInArray(companion.CurrentParts, companion_addition) {
         companion.CurrentParts = append(companion.CurrentParts, companion_addition)
     }
-    companion.EncodeAndWrite()
+    enc_err := companion.EncodeAndWrite()
+    if enc_err != nil {
+        return enc_err
+    }
+    return nil
 }
 
 // encodeAndWrite takes the in-memory representation of a companion file,
 // creates a JSON representation, and writes it to disk.
-func (comp *Companion) EncodeAndWrite() {
+func (comp *Companion) EncodeAndWrite() error {
     companion_bytes, _ := json.Marshal(comp)
-    comp_file, _ := os.OpenFile(comp.Path+".comp.tmp", os.O_RDWR|os.O_CREATE, 0700)
+    comp_file, open_err := os.OpenFile(comp.Path+".comp.tmp", os.O_RDWR|os.O_CREATE, 0700)
+    if open_err != nil {
+        return open_err
+    }
     comp_file.Write(companion_bytes)
     comp_file.Close()
     os.Rename(comp.Path+".comp.tmp", comp.Path+".comp")
+    return nil
 }

@@ -52,7 +52,7 @@ func NewListener(cache_file_name string, error_log Logger, watch_dirs ...string)
 }
 
 // LoadCache replaces the in-memory cache with the cache saved to disk.
-func (listener *Listener) LoadCache() {
+func (listener *Listener) LoadCache() error {
     _, err := os.Stat(listener.file_name)
     if os.IsNotExist(err) {
         // Cache file does not exist, create new one
@@ -60,7 +60,10 @@ func (listener *Listener) LoadCache() {
         listener.last_update = GetTimestamp()
         listener.WriteCache()
     }
-    fi, _ := os.Open(listener.file_name)
+    fi, open_err := os.Open(listener.file_name)
+    if open_err != nil {
+        return open_err
+    }
     new_map := make(map[string]int64)
     json_decoder := json.NewDecoder(fi)
     decode_err := json_decoder.Decode(&new_map)
@@ -69,6 +72,7 @@ func (listener *Listener) LoadCache() {
     }
     listener.Files = new_map
     listener.last_update = listener.Files["__TIMESTAMP__"]
+    return nil
 }
 
 // WriteCache dumps the in-memory cache to local file.

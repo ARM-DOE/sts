@@ -57,9 +57,12 @@ func (tag *TagData) TransferMethod() string {
 }
 
 // parseConfig parses the config.yaml file and returns the parsed results as an instance of the Config struct.
-func ParseConfig(file_name string) Config {
+func ParseConfig(file_name string) (Config, error) {
     var loaded_config Config
-    abs_path, _ := filepath.Abs(file_name)
+    abs_path, abs_err := filepath.Abs(file_name)
+    if abs_err != nil {
+        return Config{}, abs_err
+    }
     config_fi, config_err := ioutil.ReadFile(abs_path)
     if config_err != nil {
         fmt.Println("config file", file_name, "not found")
@@ -71,7 +74,7 @@ func ParseConfig(file_name string) Config {
         os.Exit(1)
     }
     loaded_config.file_name = abs_path
-    return loaded_config
+    return loaded_config, nil
 }
 
 func (config *Config) ShouldReload() bool {
@@ -139,9 +142,12 @@ func (config Config) StaticDiff(old_config Config) bool {
 }
 
 func (config *Config) EditConfigInterface(w http.ResponseWriter, r *http.Request) {
-    config_contents, _ := ioutil.ReadFile(config.file_name)
-    fmt.Fprint(w,
-        `
+    config_contents, read_err := ioutil.ReadFile(config.file_name)
+    if read_err != nil {
+        fmt.Fprint(w, read_err.Error())
+    } else {
+        fmt.Fprint(w,
+            `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -188,4 +194,5 @@ function loaded() {
 </script>
 </body>
 </html>`)
+    }
 }

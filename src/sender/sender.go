@@ -66,7 +66,10 @@ func (sender *Sender) run() {
 // the Bin body in an HTTP request to the receiver.
 func (sender *Sender) sendHTTP(send_bin Bin) {
     for index, _ := range send_bin.Files {
-        send_bin.Files[index].getMD5()
+        md5_err := send_bin.Files[index].getMD5()
+        if md5_err != nil {
+            error_log.LogError(md5_err.Error())
+        }
     }
     bin_body := CreateBinBody(send_bin)
     bin_body.compression = config.Compression()
@@ -92,7 +95,10 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
         time.Sleep(5 * time.Second) // Wait so you don't choke the Bin queue if it keeps failing in quick succession.
         sender.queue <- send_bin    // Pass the bin back into the Bin queue.
     } else {
-        response_code, _ := ioutil.ReadAll(response.Body)
+        response_code, read_err := ioutil.ReadAll(response.Body)
+        if read_err != nil {
+            error_log.LogError("Could not read HTTP response from receiver: ", read_err.Error())
+        }
         if string(response_code) == "200" {
             send_bin.delete() // Sending is complete, so remove the bin file
         }
@@ -130,11 +136,20 @@ func (sender *Sender) sendDisk(send_bin Bin) {
         }
     }
     dest_fi.Close()
-    util.NewCompanion(dest_path, bin_part.TotalSize)
-    util.AddPartToCompanion(dest_path, stream_md5.SumString(), getPartLocation(0, bin_part.TotalSize), stream_md5.SumString())
+    _, comp_err := util.NewCompanion(dest_path, bin_part.TotalSize)
+    if comp_err != nil {
+        error_log.LogError("Could not create new companion:", comp_err.Error())
+    }
+    add_err := util.AddPartToCompanion(dest_path, stream_md5.SumString(), getPartLocation(0, bin_part.TotalSize), stream_md5.SumString())
+    if add_err != nil {
+        error_log.LogError("Failed to add part to companion:", add_err.Error())
+    }
     // Tell receiver that we wrote a file to disk
     post_url := fmt.Sprintf("https://%s/disk_add.go?name=%s&md5=%s&size=%d", config.Receiver_Address, dest_path, stream_md5.SumString(), bin_part.TotalSize)
-    request, _ := http.NewRequest("POST", post_url, nil)
+    request, req_err := http.NewRequest("POST", post_url, nil)
+    if req_err != nil {
+        error_log.LogError("Could not generate HTTP request object: ", req_err.Error())
+    }
     client, client_err := util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key)
     if client_err != nil {
         error_log.LogError(client_err.Error())
@@ -143,7 +158,10 @@ func (sender *Sender) sendDisk(send_bin Bin) {
     if req_err != nil {
         error_log.LogError("Encountered", req_err.Error(), "while trying to send", dest_path, "confirmation request")
     }
-    resp_bytes, _ := ioutil.ReadAll(resp.Body)
+    resp_bytes, read_err := ioutil.ReadAll(resp.Body)
+    if read_err != nil {
+        error_log.LogError("Unable to read server confirmation of disk write:", read_err.Error())
+    }
     if string(resp_bytes) == "200" {
         send_bin.delete() // Write finished, delete bin.
     } else {
@@ -187,7 +205,11 @@ func CreateBinBody(bin Bin, boundary ...string) *BinBody {
     new_body.eof_returned = false
     new_body.compression = false
     new_body.gzip_buffer = bytes.Buffer{}
-    new_body.gzip_writer, _ = gzip.NewWriterLevel(&new_body.gzip_buffer, gzip.BestCompression)
+    var gzip_creation_err error
+    new_body.gzip_writer, gzip_creation_err = gzip.NewWriterLevel(&new_body.gzip_buffer, gzip.BestCompression)
+    if gzip_creation_err != nil {
+        error_log.LogError("Could not create gzip writer:", gzip_creation_err.Error())
+    }
     new_body.bin = bin
     new_body.writer_buffer = bytes.Buffer{}
     new_body.file_index = 0
@@ -209,7 +231,11 @@ func (body *BinBody) startNextPart() {
     body.part_progress = 0
     body.writer_buffer.Truncate(0)
     body.bin_part = body.bin.Files[body.file_index]
-    body.file_handle, _ = os.Open(body.bin_part.Path)
+    var open_err error
+    body.file_handle, open_err = os.Open(body.bin_part.Path)
+    if open_err != nil {
+        error_log.LogError(fmt.Sprintf("Could not open file %s while creating Bin body: %s", body.bin_part.Path, open_err.Error()))
+    }
     body.file_handle.Seek(body.bin_part.Start, 0)
     new_header := textproto.MIMEHeader{}
     new_header.Add("Content-Disposition", "form-data")

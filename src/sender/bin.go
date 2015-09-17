@@ -43,8 +43,11 @@ func NewPart(path string, start int64, end int64, total_size int64) Part {
 
 // getMD5 uses StreamMD5 to digest the file part that the
 // Part instance refers to and update its Part.MD5 value.
-func (part *Part) getMD5() {
-    fi, _ := os.Open(part.Path)
+func (part *Part) getMD5() error {
+    fi, open_err := os.Open(part.Path)
+    if open_err != nil {
+        return open_err
+    }
     fi.Seek(part.Start, 0)
     md5_stream := util.NewStreamMD5()
     file_buff := make([]byte, md5_stream.BlockSize)
@@ -57,6 +60,7 @@ func (part *Part) getMD5() {
         md5_stream.Update(file_buff)
     }
     part.MD5 = md5_stream.SumString()
+    return nil
 }
 
 // countReads returns an int that represents the number of calls to Read()
@@ -115,7 +119,10 @@ func (cache *Cache) loadBins() {
 // Each deserialized Bin is then passed to the Bin channel.
 func (cache *Cache) walkBin(path string, info os.FileInfo, err error) error {
     if strings.HasSuffix(path, ".bin") {
-        bin_file, _ := ioutil.ReadFile(path)
+        bin_file, read_err := ioutil.ReadFile(path)
+        if read_err != nil {
+            error_log.LogError(read_err.Error())
+        }
         loaded_bin := cache.loadBin(bin_file)
         cache.bin_channel <- loaded_bin
     }
@@ -221,11 +228,17 @@ func shouldAllocate(cache *Cache, path string) bool {
 // if there are any older files of the same tag which have not yet been sent.
 // If there are no older files in the tag, it returns true.
 func oldestFileInTag(cache *Cache, path string) bool {
-    stat, _ := os.Stat(path)
+    stat, stat_err := os.Stat(path)
+    if stat_err != nil {
+        error_log.LogError(stat_err.Error())
+    }
     modtime := stat.ModTime()
     for cache_path, allocation := range cache.listener.Files {
         if allocation != -1 && sameTag(path, cache_path) {
-            cache_stat, _ := os.Stat(cache_path)
+            cache_stat, stat_err := os.Stat(cache_path)
+            if stat_err != nil {
+                error_log.LogError(stat_err.Error())
+            }
             cache_modtime := cache_stat.ModTime()
             if modtime.Before(cache_modtime) {
                 return false
@@ -266,7 +279,10 @@ func getTag(path string) util.TagData {
         if tag_pattern == "DEFAULT" {
             continue // Don't check default tag
         }
-        matched, _ := regexp.MatchString(tag_pattern, path_tag)
+        matched, match_err := regexp.MatchString(tag_pattern, path_tag)
+        if match_err != nil {
+            error_log.LogError(match_err.Error())
+        }
         if matched {
             return tag_data
         }
@@ -278,7 +294,10 @@ func getTag(path string) util.TagData {
 // currently allocating Bin is empty. It calls either handleDisk or handleGridFTP depending
 // on the transfer method of the file.
 func (bin *Bin) handleExternalTransferMethod(path string, tag_data util.TagData) {
-    info, _ := os.Stat(path)
+    info, stat_err := os.Stat(path)
+    if stat_err != nil {
+        error_log.LogError(stat_err.Error())
+    }
     switch tag_data.TransferMethod() {
     case TRANSFER_HTTP:
         error_log.LogError("handleExternalTransferMethod called, but method is not external")
@@ -297,7 +316,10 @@ func (bin *Bin) handleExternalTransferMethod(path string, tag_data util.TagData)
 // handleDisk is called to prep bins for files with transfer method disk.
 func (bin *Bin) handleDisk(path string, tag_data util.TagData) {
     bin.TransferMethod = TRANSFER_DISK
-    info, _ := os.Stat(path)
+    info, stat_err := os.Stat(path)
+    if stat_err != nil {
+        error_log.LogError(stat_err.Error())
+    }
     bin.Size = -1
     bin.BytesLeft = 0
     bin.addPart(path, 0, info.Size(), info)
@@ -306,7 +328,10 @@ func (bin *Bin) handleDisk(path string, tag_data util.TagData) {
 // handleGridFTP is called to prep bins for files with transfer method GridFTP.
 func (bin *Bin) handleGridFTP(path string, tag_data util.TagData) {
     bin.TransferMethod = TRANSFER_GRIDFTP
-    info, _ := os.Stat(path)
+    info, stat_err := os.Stat(path)
+    if stat_err != nil {
+        error_log.LogError(stat_err.Error())
+    }
     bin.Size = -1
     bin.BytesLeft = 0
     bin.addPart(path, 0, info.Size(), info)

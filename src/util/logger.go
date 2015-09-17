@@ -64,7 +64,11 @@ func (logger *Logger) updateFileHandle(host_names ...string) {
         logger.log_path = current_path
         logger.file_handle.Close()
         os.MkdirAll(filepath.Dir(current_path), os.ModePerm)
-        logger.file_handle, _ = os.OpenFile(current_path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0700)
+        var open_err error
+        logger.file_handle, open_err = os.OpenFile(current_path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0700)
+        if open_err != nil {
+            fmt.Println("Couldn't open log file: ", open_err.Error())
+        }
         logger.internal_logger.SetOutput(logger.file_handle)
     }
 }

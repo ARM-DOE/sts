@@ -33,7 +33,11 @@ var disk_log util.Logger
 func Main(config_file string) {
     finalize_mutex = sync.Mutex{}
     util.CompanionLock = sync.Mutex{}
-    config = util.ParseConfig(config_file) // Load config file
+    var parse_err error
+    config, parse_err = util.ParseConfig(config_file) // Load config file
+    if parse_err != nil {
+        fmt.Println("Couldn't parse config", parse_err.Error())
+    }
     // Setup loggers
     receiver_log = util.NewLogger(config.Logs_Directory, util.LOGGING_RECEIVE)
     error_log = util.NewLogger(config.Logs_Directory, util.LOGGING_ERROR)
@@ -47,7 +51,10 @@ func Main(config_file string) {
     listener.AddIgnored(regexp.QuoteMeta(config.Cache_File_Name))
     // Start listening threads
     go finishFile(addition_channel)
-    listener.LoadCache()
+    cache_err := listener.LoadCache()
+    if cache_err != nil {
+        error_log.LogError("Error loading listener cache:", cache_err.Error())
+    }
     go listener.Listen(addition_channel)
     // Register request handling functions
     http.HandleFunc("/send.go", sendHandler)
@@ -76,8 +83,14 @@ func errorHandler(w http.ResponseWriter, r *http.Request) {
 // Location format: "start_byte:end_byte"
 func getPartLocation(location string) (int64, int64) {
     split_header := strings.Split(location, ":")
-    start, _ := strconv.ParseInt(split_header[0], 10, 64)
-    end, _ := strconv.ParseInt(split_header[1], 10, 64)
+    start, start_err := strconv.ParseInt(split_header[0], 10, 64)
+    end, end_err := strconv.ParseInt(split_header[1], 10, 64)
+    if start_err != nil {
+        error_log.LogError(start_err.Error())
+    }
+    if end_err != nil {
+        error_log.LogError(end_err.Error())
+    }
     return start, end
 }
 
@@ -116,16 +129,27 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
     // If the file which this part belongs to does not already exist, create a new empty file and companion file.
     _, err := os.Open(write_path)
     if os.IsNotExist(err) {
-        total_size, _ := strconv.ParseInt(part.Header.Get("total_size"), 10, 64)
+        size_header := part.Header.Get("total_size")
+        total_size, parse_err := strconv.ParseInt(size_header, 10, 64)
+        if parse_err != nil {
+            error_log.LogError(fmt.Sprintf("Could not parse %s to int64: %s", size_header, parse_err.Error()))
+        }
         createEmptyFile(part_path, total_size, host_name)
     }
     // Start reading and iterating over the part
-    part_fi, _ := os.OpenFile(write_path, os.O_WRONLY, 0600)
+    part_fi, open_err := os.OpenFile(write_path, os.O_WRONLY, 0600)
+    if open_err != nil {
+        error_log.LogError("Could not open file while trying to write part:", open_err.Error())
+    }
     part_fi.Seek(part_start, 0)
     part_bytes := make([]byte, part_md5.BlockSize)
     var gzip_reader *gzip.Reader
     if compressed {
-        gzip_reader, _ = gzip.NewReader(part)
+        var gzip_err error
+        gzip_reader, gzip_err = gzip.NewReader(part)
+        if gzip_err != nil {
+            error_log.LogError("Could not create new gzip reader while parsing sent part:", gzip_err.Error())
+        }
     }
     for {
         var err error
@@ -153,7 +177,10 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
         return
     }
     // Update the companion file of the part, and check if the whole file is done
-    util.AddPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"), part.Header.Get("file_md5"))
+    add_err := util.AddPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"), part.Header.Get("file_md5"))
+    if add_err != nil {
+        error_log.LogError("Failed to add part to companion:", add_err.Error())
+    }
     if isFileComplete(part_path) {
         // Finish file by moving it to the final directory and removing the .tmp extension.
         tmp := util.JoinPath(config.Output_Directory, host_name, part_path)
@@ -174,12 +201,14 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
 // the function returns true.
 func isFileComplete(path string) bool {
     is_done := false
-    decoded_companion := util.DecodeCompanion(path)
+    decoded_companion, comp_err := util.DecodeCompanion(path)
+    if comp_err != nil {
+        error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", path, comp_err.Error()))
+    }
     companion_size := int64(0)
     for _, element := range decoded_companion.CurrentParts {
-        part_locations := strings.Split(strings.Split(element, ";")[1], ":")
-        start, _ := strconv.ParseInt(part_locations[0], 10, 64)
-        end, _ := strconv.ParseInt(part_locations[1], 10, 64)
+        part_locations := strings.Split(element, ";")[1]
+        start, end := getPartLocation(part_locations)
         part_size := end - start
         companion_size += part_size
     }
@@ -194,7 +223,11 @@ func isFileComplete(path string) bool {
 // is specified. After receiving a file part with associated header data, requestPart will
 // read out the first and only part, and pass it back into handleFile for validation.
 func requestPart(path string, part_header textproto.MIMEHeader, start int64, end int64, boundary string) *multipart.Part {
-    host_name := util.DecodeCompanion(path).SenderName
+    companion, comp_err := util.DecodeCompanion(path)
+    if comp_err != nil {
+        error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", path, comp_err.Error()))
+    }
+    host_name := companion.SenderName
     post_url := fmt.Sprintf("https://%s:%s/get_file.go?name=%s&start=%d&end=%d&boundary=%s", host_name, config.Server_Port, path, start, end, boundary)
     client, client_err := util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key)
     if client_err != nil {
@@ -203,7 +236,10 @@ func requestPart(path string, part_header textproto.MIMEHeader, start int64, end
     request_complete := false
     var return_part *multipart.Part
     for !request_complete {
-        request, _ := http.NewRequest("POST", post_url, nil)
+        request, req_create_err := http.NewRequest("POST", post_url, nil)
+        if req_create_err != nil {
+            error_log.LogError(fmt.Sprintf("Could not create HTTP request object with URL %s: %s", post_url, req_create_err.Error()))
+        }
         resp, req_err := client.Do(request)
         if req_err != nil {
             error_log.LogError("Failed to re-request part. Sender is probably down.")
@@ -227,8 +263,14 @@ func requestPart(path string, part_header textproto.MIMEHeader, start int64, end
 // It requires the hostname to create the companion file
 func createEmptyFile(path string, size int64, host_name string) {
     os.MkdirAll(filepath.Dir(path), os.ModePerm)
-    util.NewCompanion(path, size, host_name)
-    fi, _ := os.Create(path + ".tmp")
+    _, comp_err := util.NewCompanion(path, size, host_name)
+    if comp_err != nil {
+        error_log.LogError("Could not create new companion:", comp_err.Error())
+    }
+    fi, create_err := os.Create(path + ".tmp")
+    if create_err != nil {
+        error_log.LogError(fmt.Sprintf("Couldn't create empty file at %s.tmp with size %d: %s", path, size, create_err.Error()))
+    }
     fi.Truncate(size)
     fi.Close()
 }
@@ -249,13 +291,20 @@ func removeFromCache(path string) {
     if client_err != nil {
         error_log.LogError(client_err)
     }
-    host_name := util.DecodeCompanion(path).SenderName
+    companion, comp_err := util.DecodeCompanion(path)
+    if comp_err != nil {
+        error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", path, comp_err.Error()))
+    }
+    host_name := companion.SenderName
     post_url := fmt.Sprintf("https://%s:%s/remove.go?name=%s", host_name, config.Sender_Server_Port, getStorePath(path, config.Staging_Directory))
     for !request_complete {
-        request, _ := http.NewRequest("POST", post_url, nil)
-        _, err := client.Do(request)
-        if err != nil {
-            error_log.LogError("Request to remove from cache failed")
+        request, req_err := http.NewRequest("POST", post_url, nil)
+        if req_err != nil {
+            error_log.LogError(fmt.Sprintf("Could not create HTTP request object with URL %s: %s", post_url, req_err.Error()))
+        }
+        _, resp_err := client.Do(request)
+        if resp_err != nil {
+            error_log.LogError("Request to remove from cache failed:", resp_err.Error())
             time.Sleep(5 * time.Second)
         } else {
             request_complete = true
@@ -276,8 +325,15 @@ func finishFile(addition_channel chan string) {
             host_name := strings.Split(getStorePath(new_file, config.Output_Directory), string(os.PathSeparator))[0]
             staged_dir := util.JoinPath(config.Staging_Directory, getStorePath(new_file, util.JoinPath(config.Output_Directory, host_name)))
             // Get file size & md5
-            info, _ := os.Stat(new_file)
-            file_md5 := util.DecodeCompanion(staged_dir).File_MD5
+            info, stat_err := os.Stat(new_file)
+            if stat_err != nil {
+                error_log.LogError("Couldn't stat file: ", stat_err.Error())
+            }
+            companion, comp_err := util.DecodeCompanion(staged_dir)
+            if comp_err != nil {
+                error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", staged_dir, comp_err.Error()))
+            }
+            file_md5 := companion.File_MD5
             // Finally, clean up the file
             removeFromCache(staged_dir)
             receiver_log.LogReceive(path_util.Base(new_file), file_md5, info.Size(), host_name)
@@ -290,7 +346,10 @@ func finishFile(addition_channel chan string) {
 func diskWriteHandler(w http.ResponseWriter, r *http.Request) {
     file_path := r.FormValue("name")
     md5 := r.FormValue("md5")
-    size, _ := strconv.ParseInt(r.FormValue("size"), 10, 64)
+    size, parse_err := strconv.ParseInt(r.FormValue("size"), 10, 64)
+    if parse_err != nil {
+        error_log.LogError(fmt.Sprintf("Couldn't parse int64 from %s: %s", r.FormValue("size"), parse_err.Error()))
+    }
     disk_log.LogDisk(file_path, md5, size)
     fmt.Fprint(w, http.StatusOK)
 }
@@ -307,7 +366,13 @@ func checkReload(server net.Listener) {
     if config.ShouldReload() {
         // Update in-memory config
         old_config := config
-        config = util.ParseConfig(config.FileName())
+        temp_config, parse_err := util.ParseConfig(config.FileName())
+        if parse_err != nil {
+            error_log.LogError("Couldn't parse config file, changes not accepted:", parse_err.Error())
+            config.Reloaded()
+            return
+        }
+        config = temp_config
         if config.StaticDiff(old_config) {
             error_log.LogError("Static config value(s) changed, restarting...")
             server.Close()
