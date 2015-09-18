@@ -13,7 +13,7 @@ var CompanionLock sync.Mutex
 
 // Companion is a struct that represents the data of a JSON companion file.
 // The methods related to companion files usually operate independently from
-// an object instance since companions are generally stored on disk.
+// an object instance since each update to a companion should be reflected on disk.
 type Companion struct {
     Path         string   // The path to the file that the companion is describing.
     TotalSize    int64    // The sum of part bytes received so far.

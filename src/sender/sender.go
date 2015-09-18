@@ -71,7 +71,7 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
             error_log.LogError(md5_err.Error())
         }
     }
-    bin_body := CreateBinBody(send_bin)
+    bin_body := NewBinBody(send_bin)
     bin_body.compression = config.Compression()
     request_url := fmt.Sprintf("https://%s/send.go", config.Receiver_Address)
     request, err := http.NewRequest("PUT", request_url, bin_body)
@@ -194,9 +194,9 @@ type BinBody struct {
     gzip_buffer   bytes.Buffer
 }
 
-// CreateBinBody creates a new instance of a BinBody from an instance of Bin.
+// NewBinBody creates a new instance of a BinBody from an instance of Bin.
 // It takes the optional boundary argument, which sets the multipart writer boundary upon creation.
-func CreateBinBody(bin Bin, boundary ...string) *BinBody {
+func NewBinBody(bin Bin, boundary ...string) *BinBody {
     if len(bin.Files) < 1 {
         error_log.LogError("Tried to convert empty Bin to bytes")
         panic("")

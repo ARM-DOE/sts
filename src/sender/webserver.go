@@ -69,7 +69,7 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
         if md5_err != nil {
             error_log.LogError(md5_err.Error())
         }
-        bin_stream := CreateBinBody(bin, boundary)
+        bin_stream := NewBinBody(bin, boundary)
         byte_buffer := make([]byte, util.DEFAULT_BLOCK_SIZE)
         for {
             bytes_read, eof := bin_stream.Read(byte_buffer)

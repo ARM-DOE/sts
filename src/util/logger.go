@@ -73,7 +73,8 @@ func (logger *Logger) updateFileHandle(host_names ...string) {
     }
 }
 
-// LogError writes to the "messages" log file if the logger has mode LOGGING_ERROR.
+// LogError joins each item in params{} by a space, prepends a timestamp and the location of the error,
+// and writes the result to stdout and to the "messages" log file.
 func (logger *Logger) LogError(params ...interface{}) error {
     if logger.mode != LOGGING_ERROR {
         fmt.Println(params...) // Prevent error message from being lost.
@@ -90,7 +91,7 @@ func (logger *Logger) LogError(params ...interface{}) error {
     return nil
 }
 
-// LogDisk writes to the "to_disk" log file if the logger has mode LOGGING_DISK.
+// LogDisk writes a formatted string to the "to_disk" log file.
 func (logger *Logger) LogDisk(s string, md5 string, size int64) {
     if logger.mode != LOGGING_DISK {
         panic(fmt.Sprintf("Can't call LogDisk with log of mode %d", logger.mode))
@@ -101,7 +102,7 @@ func (logger *Logger) LogDisk(s string, md5 string, size int64) {
     logger.internal_logger.Printf("%s:%s:%d:%d", s, md5, size, time.Now().Unix())
 }
 
-// LogSend writes to the "outgoing_to" log file if the logger has mode LOGGING_SEND.
+// LogSend writes a formatted string to the "outgoing_to" log file.
 func (logger *Logger) LogSend(s string, md5 string, size int64, hostname string) {
     if logger.mode != LOGGING_SEND {
         panic(fmt.Sprintf("Can't call LogSend with log of mode %d", logger.mode))
@@ -113,7 +114,7 @@ func (logger *Logger) LogSend(s string, md5 string, size int64, hostname string)
     logger.internal_logger.Printf(log_string)
 }
 
-// LogReceive writes to the "incoming_from" log file if the logger has mode LOGGING_RECEIVE.
+// LogReceive writes a formatted string to the "incoming_from" log file.
 func (logger *Logger) LogReceive(s string, md5 string, size int64, hostname string) {
     if logger.mode != LOGGING_RECEIVE {
         panic(fmt.Sprintf("Can't call LogReceive with log of mode %d", logger.mode))
@@ -125,11 +126,12 @@ func (logger *Logger) LogReceive(s string, md5 string, size int64, hostname stri
     logger.internal_logger.Println(log_string)
 }
 
-// getCurrentLogPath returns the path of the current log file. It takes optional argument host_names
+// getCurrentLogPath returns what should be the path of the current log file. It is  used to
+// detect when a day has passed, and a new log file should be opened. It takes optional argument host_name
 // which must be of length 1 or not supplied. The given hostname will be appended to the log path.
-func getCurrentLogPath(base_path string, mode int, host_names ...string) string {
+func getCurrentLogPath(base_path string, mode int, host_name ...string) string {
     if len(host_names) > 0 {
-        return JoinPath(base_path, getDirectory(mode), host_names[0], getMonth(), getDay())
+        return JoinPath(base_path, getDirectory(mode), host_name[0], getMonth(), getDay())
     }
     return JoinPath(base_path, getDirectory(mode), getMonth(), getDay())
 }
@@ -150,8 +152,8 @@ func getDirectory(mode int) string {
     return "fail"
 }
 
-// getDay gets the current day (1-31) and pads it with a leading 0 if it less than 2 characters long.
-// Ex. 9 becomes 09.
+// getDay gets the current day (1-31) and pads it with a leading 0
+// if it is less than 2 characters long. Ex. 9 becomes 09.
 func getDay() string {
     day_string := strconv.Itoa(time.Now().Day())
     if len(day_string) == 1 {
@@ -160,8 +162,8 @@ func getDay() string {
     return day_string
 }
 
-// getDay gets the current month (1-12) and pads it with a leading 0 if it less than 2 characters long.
-// Ex. 9 becomes 09.
+// getDay gets the current month (1-12) and pads it with a leading 0
+// if it is less than 2 characters long. Ex. 9 becomes 09.
 func getMonth() string {
     month_string := strconv.Itoa(int((time.Now().Month())))
     if len(month_string) == 1 {

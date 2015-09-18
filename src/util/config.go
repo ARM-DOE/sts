@@ -103,12 +103,24 @@ func (config *Config) BinSize() int {
     return config.Dynamic.Bin_Size
 }
 
+// EditConfig can be used as an http.HandleFunc. It should be used to handle a page named
+// "/edit_config.go" for correct interoperability with EditConfigInterface(). It accepts
+// a parameter named "config" that should contain a full copy of the config, with any
+// changed values. If the YAML not parseable, the server will respond with a 400 (Bad Request).
 func (config *Config) EditConfig(w http.ResponseWriter, r *http.Request) {
     new_config := r.FormValue("config")
     if len(new_config) < 1 {
         fmt.Fprint(w, http.StatusBadRequest)
         return
     }
+    // Check if yaml is valid
+    var test_config Config
+    unmarshal_err := yaml.Unmarshal([]byte(new_config), &test_config)
+    if unmarshal_err != nil {
+        fmt.Fprintf(w, "%d: %s", http.StatusBadRequest, unmarshal_err.Error())
+        return
+    }
+    // Config is valid, write to file.
     temp_config := config.file_name + ".tmp"
     conf_fi, _ := os.Create(temp_config)
     conf_fi.Write([]byte(new_config))
@@ -141,6 +153,12 @@ func (config Config) StaticDiff(old_config Config) bool {
     return static_values_changed
 }
 
+// EditConfigInterface can be used as an http.HandleFunc. It should be used on a page named
+// "/editor.go" for correct interoperability with EditConfig(). It sends a pretty HTML
+// interface with an embedded javascript text editor (ACE). The text editor is pre-filled with
+// the current contents of the config. When the user clicks the "save" button in the
+// HTML form, the contents of the editor are posted to "/edit_config.go" on the same server under
+// the key "config".
 func (config *Config) EditConfigInterface(w http.ResponseWriter, r *http.Request) {
     config_contents, read_err := ioutil.ReadFile(config.file_name)
     if read_err != nil {

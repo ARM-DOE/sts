@@ -41,11 +41,12 @@ func AsyncListenAndServeTLS(addr string, certFile string, keyFile string) (net.L
 // loaded in the past. If it hasn't already been loaded, the cert and key file are read
 // from disk, cached, and returned as a tls.Certificate.
 func LoadCert(cert_path string, key_path string) (tls.Certificate, error) {
+    cert_key := getCertKey(cert_path, key_path)
     var return_cert tls.Certificate
     if cached_certs == nil {
         cached_certs = make(map[string]tls.Certificate)
     }
-    cached_cert, have_cert := cached_certs[getCertKey(cert_path, key_path)]
+    cached_cert, have_cert := cached_certs[cert_key]
     if have_cert {
         return_cert = cached_cert
     } else {
@@ -63,7 +64,7 @@ func LoadCert(cert_path string, key_path string) (tls.Certificate, error) {
         if cert_err != nil {
             return tls.Certificate{}, cert_err
         }
-        cached_certs[getCertKey(cert_path, key_path)] = return_cert
+        cached_certs[cert_key] = return_cert
     }
     return return_cert, nil
 }
