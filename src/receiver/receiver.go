@@ -23,6 +23,7 @@ import (
 var finalize_mutex sync.Mutex
 
 var config util.Config
+var client http.Client
 
 var error_log util.Logger
 var receiver_log util.Logger
@@ -42,6 +43,12 @@ func Main(config_file string) {
     receiver_log = util.NewLogger(config.Logs_Directory, util.LOGGING_RECEIVE)
     error_log = util.NewLogger(config.Logs_Directory, util.LOGGING_ERROR)
     disk_log = util.NewLogger(config.Logs_Directory, util.LOGGING_DISK)
+    // Create HTTP client
+    var client_err error
+    client, client_err = util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key)
+    if client_err != nil {
+        error_log.LogError(client_err.Error())
+    }
     // Setup listener and add ignore patterns.
     addition_channel := make(chan string, 1)
     listener := util.NewListener(config.Cache_File_Name, error_log, config.Staging_Directory, config.Output_Directory)
@@ -229,10 +236,6 @@ func requestPart(path string, part_header textproto.MIMEHeader, start int64, end
     }
     host_name := companion.SenderName
     post_url := fmt.Sprintf("https://%s:%s/get_file.go?name=%s&start=%d&end=%d&boundary=%s", host_name, config.Server_Port, path, start, end, boundary)
-    client, client_err := util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key)
-    if client_err != nil {
-        error_log.LogError(client_err.Error())
-    }
     request_complete := false
     var return_part *multipart.Part
     for !request_complete {
@@ -287,10 +290,6 @@ func getStorePath(full_path string, watch_directory string) string {
 // It loops until the Sender confirms that the file has been removed.
 func removeFromCache(path string) {
     request_complete := false
-    client, client_err := util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key)
-    if client_err != nil {
-        error_log.LogError(client_err)
-    }
     companion, comp_err := util.DecodeCompanion(path)
     if comp_err != nil {
         error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", path, comp_err.Error()))

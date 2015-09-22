@@ -87,6 +87,7 @@ func GetTLSClient(client_cert string, client_key string) (http.Client, error) {
     // Create new client using cert
     client_transport := http.Transport{}
     client_transport.TLSClientConfig = &tls_config
+    client_transport.DisableKeepAlives = true
     new_client := http.Client{}
     new_client.Transport = &client_transport
     return new_client, nil

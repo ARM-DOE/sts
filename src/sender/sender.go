@@ -23,6 +23,7 @@ type Sender struct {
     compression bool     // Bool that controls whether compression is turned on. Obtained from config file.
     Busy        bool     // Set to true when the sender is currently sending a file.
     Active      bool     // Set Active to true if the sender is allowed to accept new Bins.
+    client      http.Client
 }
 
 // NewSender creates and returns a new instance of the Sender struct.
@@ -32,6 +33,11 @@ func NewSender(file_queue chan Bin, compression bool) *Sender {
     new_sender.Active = true
     new_sender.queue = file_queue
     new_sender.compression = compression
+    var client_err error
+    new_sender.client, client_err = util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key)
+    if client_err != nil {
+        error_log.LogError(client_err.Error())
+    }
     return new_sender
 }
 
@@ -86,11 +92,7 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
     if err != nil {
         error_log.LogError(err.Error())
     }
-    client, client_err := util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key)
-    if client_err != nil {
-        error_log.LogError(client_err.Error())
-    }
-    response, sending_err := client.Do(request)
+    response, sending_err := sender.client.Do(request)
     if sending_err != nil {
         error_log.LogError(sending_err.Error())
         time.Sleep(5 * time.Second) // Wait so you don't choke the Bin queue if it keeps failing in quick succession.
@@ -104,6 +106,7 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
             send_bin.delete() // Sending is complete, so remove the bin file
         }
         response.Body.Close()
+        request.Close = true
     }
 }
 
@@ -151,11 +154,7 @@ func (sender *Sender) sendDisk(send_bin Bin) {
     if req_err != nil {
         error_log.LogError("Could not generate HTTP request object: ", req_err.Error())
     }
-    client, client_err := util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key)
-    if client_err != nil {
-        error_log.LogError(client_err.Error())
-    }
-    resp, req_err := client.Do(request)
+    resp, req_err := sender.client.Do(request)
     if req_err != nil {
         error_log.LogError("Encountered", req_err.Error(), "while trying to send", dest_path, "confirmation request")
     }
