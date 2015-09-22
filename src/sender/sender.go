@@ -66,7 +66,8 @@ func (sender *Sender) run() {
 // the Bin body in an HTTP request to the receiver.
 func (sender *Sender) sendHTTP(send_bin Bin) {
     for index, _ := range send_bin.Files {
-        md5_err := send_bin.Files[index].getMD5()
+        md5, md5_err := send_bin.Files[index].getMD5()
+        send_bin.Files[index].MD5 = md5
         if md5_err != nil {
             error_log.LogError(md5_err.Error())
         }

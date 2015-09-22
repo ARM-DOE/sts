@@ -332,6 +332,7 @@ func finishFile(addition_channel chan string) {
             companion, comp_err := util.DecodeCompanion(staged_dir)
             if comp_err != nil {
                 error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", staged_dir, comp_err.Error()))
+                return
             }
             file_md5 := companion.File_MD5
             // Finally, clean up the file

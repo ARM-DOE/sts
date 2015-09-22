@@ -50,8 +50,8 @@ func TestMultiAllocate(t *testing.T) {
     senders[0] = fake_sender
     cache.SetSenders(senders)
     // Test a bin filling up with two files
-    cache.listener.Files["send_test.txt"] = 0
-    cache.listener.Files["send_test2.txt"] = 0
+    cache.listener.Files["send_test.txt"] = util.CacheFile{}
+    cache.listener.Files["send_test2.txt"] = util.CacheFile{}
     cache.allocate()
     go func() {
         time.Sleep(200 * time.Millisecond)

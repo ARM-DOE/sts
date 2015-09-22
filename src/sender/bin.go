@@ -43,10 +43,10 @@ func NewPart(path string, start int64, end int64, total_size int64) Part {
 
 // getMD5 uses StreamMD5 to digest the file part that the
 // Part instance refers to and update its Part.MD5 value.
-func (part *Part) getMD5() error {
+func (part *Part) getMD5() (string, error) {
     fi, open_err := os.Open(part.Path)
     if open_err != nil {
-        return open_err
+        return "", open_err
     }
     fi.Seek(part.Start, 0)
     md5_stream := util.NewStreamMD5()
@@ -59,8 +59,7 @@ func (part *Part) getMD5() error {
         fi.Read(file_buff)
         md5_stream.Update(file_buff)
     }
-    part.MD5 = md5_stream.SumString()
-    return nil
+    return md5_stream.SumString(), nil
 }
 
 // countReads returns an int that represents the number of calls to Read()
@@ -168,7 +167,7 @@ func (bin *Bin) fill() {
     keep_trying := true // There may still some files in the cache that have been passed over due to selecting of higher priority data
     for keep_trying {   // This outer for loop keeps looping until no unallocated data can be found.
         keep_trying = false // Set keep_trying to false until a file is found that will allow the loop to continue.
-        for path, allocation := range bin.cache.listener.Files {
+        for path, cache_file := range bin.cache.listener.Files {
             if bin.BytesLeft == 0 {
                 break // Bin is full
             }
@@ -186,23 +185,23 @@ func (bin *Bin) fill() {
                 // Empty file
                 bin.cache.removeFile(path)
             }
-            if allocation < file_size && allocation != -1 && shouldAllocate(bin.cache, path) {
+            if cache_file.Allocation < file_size && cache_file.Allocation != -1 && shouldAllocate(bin.cache, path) {
                 // File should be allocated, add to Bin
                 if tag_data.TransferMethod() != TRANSFER_HTTP && bin.Empty {
                     // If the Bin is empty, add any non-standard transfer method files.
                     bin.handleExternalTransferMethod(path, tag_data)
                     break
                 }
-                added_bytes := bin.fitBytes(allocation, file_size)
+                added_bytes := bin.fitBytes(cache_file.Allocation, file_size)
                 bin.BytesLeft = bin.BytesLeft - added_bytes
-                new_allocation := allocation + int64(added_bytes)
-                bin.addPart(path, allocation, new_allocation, info)
+                new_allocation := cache_file.Allocation + int64(added_bytes)
+                bin.addPart(path, cache_file.Allocation, new_allocation, info)
                 file_finished := bin.cache.updateFile(path, new_allocation, info)
                 if file_finished {
                     send_log.LogSend(path_util.Base(path), bin.cache.getFileMD5(path), new_allocation, config.Receiver_Address)
                 }
             }
-            if allocation != -1 {
+            if cache_file.Allocation != -1 {
                 keep_trying = true
             }
         }
@@ -233,8 +232,8 @@ func oldestFileInTag(cache *Cache, path string) bool {
         error_log.LogError(stat_err.Error())
     }
     modtime := stat.ModTime()
-    for cache_path, allocation := range cache.listener.Files {
-        if allocation != -1 && sameTag(path, cache_path) {
+    for cache_path, cache_file := range cache.listener.Files {
+        if cache_file.Allocation != -1 && sameTag(path, cache_path) {
             cache_stat, stat_err := os.Stat(cache_path)
             if stat_err != nil {
                 error_log.LogError(stat_err.Error())
@@ -262,9 +261,9 @@ func sameTag(path1 string, path2 string) bool {
 // higher send priority than the given TagData. For the higher priority file to be registered,
 // it must have the same transfer method as the passed in TagData
 func highestPriority(cache *Cache, tag_data util.TagData) bool {
-    for path, allocation := range cache.listener.Files {
+    for path, cache_file := range cache.listener.Files {
         cache_tag := getTag(path)
-        if allocation != -1 && cache_tag.Priority < tag_data.Priority && cache_tag.TransferMethod() == tag_data.TransferMethod() {
+        if cache_file.Allocation != -1 && cache_tag.Priority < tag_data.Priority && cache_tag.TransferMethod() == tag_data.TransferMethod() {
             return false
         }
     }

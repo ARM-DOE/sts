@@ -18,10 +18,12 @@ func TestShouldAllocate(t *testing.T) {
     ch := make(chan Bin, 5)
     dummy_cache := NewCache("cache_test2.dat", "test_dir", 3000, ch)
     //dummy_cache.listener.Files["test_dir/radar/data.cdf"] = 0
-    dummy_cache.listener.Files["default/data.cdf"] = 0
-    dummy_cache.listener.Files["laser/data.cdf"] = 0
-    dummy_cache.listener.Files["log/events.log"] = -1
-    dummy_cache.listener.Files["log/events2.log"] = 0
+    done_file := util.CacheFile{}
+    done_file.SetAllocation(-1)
+    dummy_cache.listener.Files["default/data.cdf"] = util.CacheFile{}
+    dummy_cache.listener.Files["laser/data.cdf"] = util.CacheFile{}
+    dummy_cache.listener.Files["log/events.log"] = done_file
+    dummy_cache.listener.Files["log/events2.log"] = util.CacheFile{}
     test_bin := NewBin(dummy_cache, 3000, "test")
     test_bin.fill()
     defer os.Remove(test_bin.Name)

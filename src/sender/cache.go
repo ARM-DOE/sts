@@ -42,16 +42,17 @@ func (cache *Cache) updateFile(path string, new_byte_progress int64, info os.Fil
     if new_byte_progress > info.Size() {
         error_log.LogError("Bin tried to store too many bytes of", path)
     }
-    cache.listener.Files[path] = new_byte_progress
+    cache_file := cache.listener.Files[path]
+    cache_file.Allocation = new_byte_progress
+    cache.listener.Files[path] = cache_file
     return finished
 }
 
 // removeFile deletes a file and its progress from both the in-memory and local cache.
 // It should only be used when a file has been confirmed to have completely sent.
 func (cache *Cache) removeFile(path string) {
-    whole_path := getWholePath(path)
-    delete(cache.listener.Files, whole_path)
-    delete(cache.md5s, whole_path)
+    delete(cache.listener.Files, path)
+    delete(cache.md5s, path)
     cache.listener.WriteCache()
 }
 
@@ -135,7 +136,7 @@ func (cache *Cache) scan() {
     for {
         new_path := <-update_channel
         cache.channel_lock.Lock()
-        cache.listener.Files[new_path] = 0
+        cache.listener.Files[new_path] = util.CacheFile{}
         cache.channel_lock.Unlock()
     }
 }

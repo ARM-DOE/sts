@@ -130,7 +130,7 @@ func (logger *Logger) LogReceive(s string, md5 string, size int64, hostname stri
 // detect when a day has passed, and a new log file should be opened. It takes optional argument host_name
 // which must be of length 1 or not supplied. The given hostname will be appended to the log path.
 func getCurrentLogPath(base_path string, mode int, host_name ...string) string {
-    if len(host_names) > 0 {
+    if len(host_name) > 0 {
         return JoinPath(base_path, getDirectory(mode), host_name[0], getMonth(), getDay())
     }
     return JoinPath(base_path, getDirectory(mode), getMonth(), getDay())

@@ -65,7 +65,8 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
     } else {
         bin := NewBin(server.cache, server.cache.BinSize(), server.cache.listener.WatchDir(0))
         bin.addPart(name, start_byte, end_byte, file_info)
-        md5_err := bin.Files[0].getMD5()
+        md5, md5_err := bin.Files[0].getMD5()
+        bin.Files[0].MD5 = md5
         if md5_err != nil {
             error_log.LogError(md5_err.Error())
         }
@@ -89,7 +90,7 @@ func (server *Webserver) removeFromCache(w http.ResponseWriter, r *http.Request)
     file_path := r.FormValue("name")
     file_path = getWholePath(file_path)
     file_tag := getTag(file_path)
-    server.cache.removeFile(file_path)
+    server.cache.removeFile(r.FormValue("name"))
     if file_tag.Delete_On_Send {
         os.Remove(file_path)
     }

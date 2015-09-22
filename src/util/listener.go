@@ -16,18 +16,27 @@ import (
 // Listener maintains a local file that contains a timestamp for when it last checked a directory.
 // This local cache also has the capacity to store information about files.
 type Listener struct {
-    file_name       string           // Name of the cache file that the listener uses to store timestamp and file data
-    last_update     int64            // Time of last update in seconds since the epoch
-    Files           map[string]int64 // Storage for timestamp and any additional file data. This data structure is written to the local cache.
-    watch_dirs      []string         // This is the directory that the cache holds data about
-    update_channel  chan string      // The channel that new and valid file paths will be sent to upon detection
-    onFinish        FinishFunc       // Function called when a scan that detects new files finishes.
-    new_files       bool             // Set to true if there were new files found in the scan
-    scan_delay      int              // Delay for how often the listener should scan the file system.
-    ignore_patterns []string         // A list of patterns that each new file name (NOT path) is tested against. If a match is found the file is ignored.
-    recent_files    []string         // A list of files that were found in the most recent string of updates.
-    write_lock      sync.Mutex       // Prevents the cache from being written to or modified simultaneously
+    file_name       string               // Name of the cache file that the listener uses to store timestamp and file data
+    last_update     int64                // Time of last update in seconds since the epoch
+    Files           map[string]CacheFile // Storage for timestamp and any additional file data. This data structure is written to the local cache.
+    watch_dirs      []string             // This is the directory that the cache holds data about
+    update_channel  chan string          // The channel that new and valid file paths will be sent to upon detection
+    onFinish        FinishFunc           // Function called when a scan that detects new files finishes.
+    new_files       bool                 // Set to true if there were new files found in the scan
+    scan_delay      int                  // Delay for how often the listener should scan the file system.
+    ignore_patterns []string             // A list of patterns that each new file name (NOT path) is tested against. If a match is found the file is ignored.
+    recent_files    []string             // A list of files that were found in the most recent string of updates.
+    write_lock      sync.Mutex           // Prevents the cache from being written to or modified simultaneously
     error_log       Logger
+}
+
+type CacheFile struct {
+    Allocation int64
+    StartTime  int64
+}
+
+func (file *CacheFile) SetAllocation(new_allocation int64) {
+    file.Allocation = new_allocation
 }
 
 // FinishFunc is the function called after a scan that detects new files
@@ -45,7 +54,7 @@ func NewListener(cache_file_name string, error_log Logger, watch_dirs ...string)
     new_listener.file_name = cache_file_name
     new_listener.last_update = -1
     new_listener.watch_dirs = watch_dirs
-    new_listener.Files = make(map[string]int64)
+    new_listener.Files = make(map[string]CacheFile)
     new_listener.ignore_patterns = make([]string, 0)
     new_listener.AddIgnored(`\.DS_Store`)
     return new_listener
@@ -64,14 +73,14 @@ func (listener *Listener) LoadCache() error {
     if open_err != nil {
         return open_err
     }
-    new_map := make(map[string]int64)
+    new_map := make(map[string]CacheFile)
     json_decoder := json.NewDecoder(fi)
     decode_err := json_decoder.Decode(&new_map)
     if decode_err != nil && decode_err != io.EOF {
         listener.codingError(decode_err)
     }
     listener.Files = new_map
-    listener.last_update = listener.Files["__TIMESTAMP__"]
+    listener.last_update = listener.Files["__TIMESTAMP__"].Allocation
     return nil
 }
 
@@ -79,7 +88,7 @@ func (listener *Listener) LoadCache() error {
 func (listener *Listener) WriteCache() {
     listener.write_lock.Lock()
     defer listener.write_lock.Unlock()
-    listener.Files["__TIMESTAMP__"] = listener.last_update
+    listener.Files["__TIMESTAMP__"] = CacheFile{listener.last_update, 0}
     json_bytes, encode_err := json.Marshal(listener.Files)
     if encode_err != nil {
         listener.codingError(encode_err)

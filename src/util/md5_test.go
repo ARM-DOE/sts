@@ -16,6 +16,10 @@ var test = []struct {
     {[]byte("testing is always needed"), "9ff800f8bbe6997d143ff967d28e1dd7"},
 }
 
+func TestSetup(t *testing.T) {
+    os.Chdir("../../test")
+}
+
 func TestGenerateMD5(t *testing.T) {
     for _, c := range test {
         got := GenerateMD5(c.data)
