@@ -26,7 +26,7 @@ type Listener struct {
     scan_delay      int                  // Delay for how often the listener should scan the file system.
     ignore_patterns []string             // A list of patterns that each new file name (NOT path) is tested against. If a match is found the file is ignored.
     recent_files    []string             // A list of files that were found in the most recent string of updates.
-    write_lock      sync.Mutex           // Prevents the cache from being written to or modified simultaneously
+    WriteLock       sync.Mutex           // Prevents the cache from being written to disk and modified simultaneously
     error_log       Logger
 }
 
@@ -79,6 +79,8 @@ func (listener *Listener) LoadCache() error {
     if decode_err != nil && decode_err != io.EOF {
         listener.codingError(decode_err)
     }
+    listener.WriteLock.Lock()
+    defer listener.WriteLock.Unlock()
     listener.Files = new_map
     listener.last_update = listener.Files["__TIMESTAMP__"].Allocation
     return nil
@@ -86,8 +88,8 @@ func (listener *Listener) LoadCache() error {
 
 // WriteCache dumps the in-memory cache to local file.
 func (listener *Listener) WriteCache() {
-    listener.write_lock.Lock()
-    defer listener.write_lock.Unlock()
+    listener.WriteLock.Lock()
+    defer listener.WriteLock.Unlock()
     listener.Files["__TIMESTAMP__"] = CacheFile{listener.last_update, 0}
     json_bytes, encode_err := json.Marshal(listener.Files)
     if encode_err != nil {
