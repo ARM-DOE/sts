@@ -318,7 +318,7 @@ func finishFile(addition_channel chan string) {
         new_file := <-addition_channel
         // Acquire the mutex while working with new files so that the cache will re-detect unprocessed files in the event of a crash.
         finalize_mutex.Lock()
-        func() {
+        func() { // Create inline function so we can defer the release of the mutex lock.
             defer finalize_mutex.Unlock()
             // Recreate the staging directory path so the companion can be taken care of.
             host_name := strings.Split(getStorePath(new_file, config.Output_Directory), string(os.PathSeparator))[0]

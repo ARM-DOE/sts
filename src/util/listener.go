@@ -25,7 +25,7 @@ type Listener struct {
     new_files       bool                 // Set to true if there were new files found in the scan
     scan_delay      int                  // Delay for how often the listener should scan the file system.
     ignore_patterns []string             // A list of patterns that each new file name (NOT path) is tested against. If a match is found the file is ignored.
-    recent_files    []string             // A list of files that were found in the most recent string of updates.
+    recent_files    map[string]bool      // A list of files that were found in the most recent string of updates. Stored as a map for quick lookups.
     WriteLock       sync.Mutex           // Prevents the cache from being written to disk and modified simultaneously
     error_log       Logger
 }
@@ -49,7 +49,7 @@ type FinishFunc func()
 func NewListener(cache_file_name string, error_log Logger, watch_dirs ...string) *Listener {
     new_listener := &Listener{}
     new_listener.error_log = error_log
-    new_listener.recent_files = make([]string, 0)
+    new_listener.recent_files = make(map[string]bool)
     new_listener.scan_delay = 3
     new_listener.file_name = cache_file_name
     new_listener.last_update = -1
@@ -104,17 +104,18 @@ func (listener *Listener) WriteCache() {
 // If new files are found, their paths are sent to update_channel.
 // When finished, it updates the local cache file.
 func (listener *Listener) scanDir() {
+    before_update := GetTimestamp()
+    listener.new_files = false
     for _, watch_dir := range listener.watch_dirs {
-        if (!listener.new_files || len(listener.recent_files) > 1000) && len(listener.recent_files) > 0 {
-            // Clear recent files if files stop coming or if the recent_files cache is huge.
-            listener.recent_files = make([]string, 0)
-        }
-        listener.new_files = false
         filepath.Walk(watch_dir, listener.fileWalkHandler)
     }
-    listener.last_update = GetTimestamp()
+    listener.last_update = before_update
     listener.afterScan()
     listener.WriteCache()
+    if !listener.new_files && len(listener.recent_files) > 0 {
+        // Clear recent files if files stop coming for one update.
+        listener.recent_files = make(map[string]bool)
+    }
 }
 
 // fileWalkHandler is called for every file and directory in the directory managed by the Listener instance.
@@ -126,7 +127,7 @@ func (listener *Listener) fileWalkHandler(path string, info os.FileInfo, err err
     }
     if !info.IsDir() {
         _, in_map := listener.Files[path]
-        in_recent := IsStringInArray(listener.recent_files, path)
+        _, in_recent := listener.recent_files[path]
         modtime := info.ModTime()
         special_case := false
         if modtime == time.Unix(listener.last_update, 0) && !in_map {
@@ -136,7 +137,7 @@ func (listener *Listener) fileWalkHandler(path string, info os.FileInfo, err err
         }
         if !in_recent && !in_map && !listener.checkIgnored(info.Name()) && (modtime.After(time.Unix(listener.last_update, 0)) || special_case) {
             listener.new_files = true
-            listener.recent_files = append(listener.recent_files, path)
+            listener.recent_files[path] = true
             listener.update_channel <- path
         }
     }
