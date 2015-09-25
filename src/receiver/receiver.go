@@ -3,6 +3,8 @@ package receiver
 import (
     "compress/gzip"
     "fmt"
+    "io"
+    "io/ioutil"
     "mime/multipart"
     "net"
     "net/http"
@@ -255,6 +257,10 @@ func requestPart(path string, part_header textproto.MIMEHeader, start int64, end
             error_log.LogError(part_err.Error())
             continue
         }
+        // Discard body and close request
+        io.Copy(ioutil.Discard, resp.Body)
+        resp.Body.Close()
+        resp.Close = true
         return_part = part
         request_complete = true
     }
@@ -301,13 +307,18 @@ func removeFromCache(path string) {
         if req_err != nil {
             error_log.LogError(fmt.Sprintf("Could not create HTTP request object with URL %s: %s", post_url, req_err.Error()))
         }
-        _, resp_err := client.Do(request)
+        response, resp_err := client.Do(request)
         if resp_err != nil {
             error_log.LogError("Request to remove from cache failed:", resp_err.Error())
             time.Sleep(5 * time.Second)
+            continue
         } else {
             request_complete = true
         }
+        // Discard request response and close request
+        io.Copy(ioutil.Discard, response.Body)
+        response.Body.Close()
+        response.Close = true
     }
 }
 

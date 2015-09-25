@@ -162,6 +162,8 @@ func (sender *Sender) sendDisk(send_bin Bin) {
     if read_err != nil {
         error_log.LogError("Unable to read server confirmation of disk write:", read_err.Error())
     }
+    resp.Body.Close()
+    resp.Close = true
     if string(resp_bytes) == "200" {
         send_bin.delete() // Write finished, delete bin.
     } else {
