@@ -6,6 +6,7 @@ import (
     "net"
     "net/http"
     "os"
+    "time"
 )
 
 // cached_certs is a map of certs that have already been loaded by LoadCert().
@@ -89,6 +90,7 @@ func GetTLSClient(client_cert string, client_key string) (http.Client, error) {
     client_transport.TLSClientConfig = &tls_config
     client_transport.DisableKeepAlives = true
     new_client := http.Client{}
+    new_client.Timeout = time.Hour // Requests can't take longer than an hour
     new_client.Transport = &client_transport
     return new_client, nil
 }
