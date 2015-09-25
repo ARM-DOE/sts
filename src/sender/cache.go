@@ -33,7 +33,10 @@ func NewCache(cache_file_name string, watch_dir string, bin_size int, bin_channe
 
 // updateFile updates the record of bytes that have been allocated to a Bin.
 // Take note that updateFile does NOT update the local cache.
-func (cache *Cache) updateFile(path string, new_byte_progress int64, info os.FileInfo) bool {
+// updateFile takes an optional argument new_timestamp, which should be either true or false,
+// depending whether or not a new timestamp should be stored with the file.
+// Generally, this would only happen when the file is being updated for the first time.
+func (cache *Cache) updateFile(path string, new_byte_progress int64, info os.FileInfo, new_timestamp ...bool) bool {
     finished := false
     if new_byte_progress == info.Size() || new_byte_progress == -1 {
         new_byte_progress = -1
@@ -48,18 +51,24 @@ func (cache *Cache) updateFile(path string, new_byte_progress int64, info os.Fil
     // Update cache file with new byte progress
     cache_file := cache.listener.Files[path]
     cache_file.Allocation = new_byte_progress
+    if len(new_timestamp) > 0 && new_timestamp[0] == true {
+        cache_file.StartTime = util.GetTimestampNS()
+    }
     cache.listener.Files[path] = cache_file
     return finished
 }
 
 // removeFile deletes a file and its progress from both the in-memory and local cache.
 // It should only be used when a file has been confirmed to have completely sent.
-func (cache *Cache) removeFile(path string) {
+// It returns the time that the first chunk of the file was allocated to a bin.
+func (cache *Cache) removeFile(path string) int64 {
     cache.listener.WriteLock.Lock()
+    item_start := cache.listener.Files[path].StartTime
     delete(cache.listener.Files, path)
     delete(cache.md5s, path)
     cache.listener.WriteLock.Unlock()
     cache.listener.WriteCache()
+    return item_start
 }
 
 // getFileMD5 generates the MD5 given a file path, and stores it to cache.md5s, so that future parts

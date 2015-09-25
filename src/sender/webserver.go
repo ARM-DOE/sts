@@ -5,7 +5,9 @@ import (
     "net"
     "net/http"
     "os"
+    path_util "path"
     "strconv"
+    "time"
     "util"
 )
 
@@ -90,6 +92,12 @@ func (server *Webserver) removeFromCache(w http.ResponseWriter, r *http.Request)
     file_path := r.FormValue("name")
     file_path = getWholePath(file_path)
     file_tag := getTag(file_path)
+    info, err := os.Stat(file_path)
+    if err != nil {
+        error_log.LogError("File", file_path, "asked to remove from cache, but doesn't exist")
+    }
+    duration_seconds := (time.Now().UnixNano() - server.cache.listener.Files[r.FormValue("name")].StartTime) / int64(time.Millisecond)
+    send_log.LogSend(path_util.Base(file_path), server.cache.getFileMD5(file_path), info.Size(), config.Receiver_Address, duration_seconds)
     server.cache.removeFile(r.FormValue("name"))
     if file_tag.Delete_On_Send {
         os.Remove(file_path)

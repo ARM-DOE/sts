@@ -103,14 +103,14 @@ func (logger *Logger) LogDisk(s string, md5 string, size int64) {
 }
 
 // LogSend writes a formatted string to the "outgoing_to" log file.
-func (logger *Logger) LogSend(s string, md5 string, size int64, hostname string) {
+func (logger *Logger) LogSend(s string, md5 string, size int64, hostname string, send_time int64) {
     if logger.mode != LOGGING_SEND {
         panic(fmt.Sprintf("Can't call LogSend with log of mode %d", logger.mode))
     }
     logger.log_lock.Lock()
     defer logger.log_lock.Unlock()
     logger.updateFileHandle(hostname)
-    log_string := fmt.Sprintf("%s:%s:%d:%d: %d wallclock secs", s, md5, size, time.Now().Unix(), 0)
+    log_string := fmt.Sprintf("%s:%s:%d:%d: %d ms", s, md5, size, time.Now().Unix(), send_time)
     logger.internal_logger.Printf(log_string)
 }
 

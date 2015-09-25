@@ -21,6 +21,11 @@ func GetTimestamp() int64 {
     return now_time.Unix()
 }
 
+func GetTimestampNS() int64 {
+    now_time := time.Now()
+    return now_time.UnixNano()
+}
+
 // IsStringInArray takes an array of strings and a string value and returns a boolean.
 // true if the value is equal to a value in the array, else false.
 func IsStringInArray(array []string, value string) bool {

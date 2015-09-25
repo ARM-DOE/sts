@@ -5,7 +5,6 @@ import (
     "fmt"
     "io/ioutil"
     "os"
-    path_util "path"
     "path/filepath"
     "regexp"
     "strings"
@@ -178,7 +177,7 @@ func (bin *Bin) fill() {
             info, info_err := os.Stat(path)
             if info_err != nil {
                 error_log.LogError("File:", path, "registered in cache, but does not exist")
-                panic("")
+                bin.cache.removeFile(path)
             }
             file_size := info.Size()
             if file_size == 0 {
@@ -196,10 +195,11 @@ func (bin *Bin) fill() {
                 bin.BytesLeft = bin.BytesLeft - added_bytes
                 new_allocation := cache_file.Allocation + int64(added_bytes)
                 bin.addPart(path, cache_file.Allocation, new_allocation, info)
-                file_finished := bin.cache.updateFile(path, new_allocation, info)
-                if file_finished {
-                    send_log.LogSend(path_util.Base(path), bin.cache.getFileMD5(path), new_allocation, config.Receiver_Address)
+                update_startstamp := false
+                if cache_file.Allocation == 0 {
+                    update_startstamp = true // If the first chunk is being allocated, mark the start stamp.
                 }
+                bin.cache.updateFile(path, new_allocation, info, update_startstamp)
             }
             if cache_file.Allocation != -1 {
                 keep_trying = true
