@@ -373,6 +373,9 @@ func onFinish() {
     finalize_mutex.Unlock()
 }
 
+// checkReload checks if the config has been changed. If the config has changed,
+// it is determined whether the change can be processed without restarting the program.
+// If it can, the new values are propagated. If it can't, the program is restarted.
 func checkReload(server net.Listener) {
     if config.ShouldReload() {
         // Update in-memory config

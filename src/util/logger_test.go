@@ -13,7 +13,7 @@ func TestLogging(t *testing.T) {
     send_logger := NewLogger("logs", LOGGING_SEND)
     receiver_logger := NewLogger("logs", LOGGING_RECEIVE)
     error_logger := NewLogger("logs", LOGGING_ERROR)
-    send_logger.LogSend("foo/bar.cdf", "foobar", int64(45), "localhost")
+    send_logger.LogSend("foo/bar.cdf", "foobar", int64(45), "localhost", 5000)
     receiver_logger.LogReceive("foo/bar.cdf", "foobar", int64(45), "localhost")
     error_logger.LogError(io.EOF.Error(), 20)
     error_size, _ := os.Stat(error_logger.log_path)

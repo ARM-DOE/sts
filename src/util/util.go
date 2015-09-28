@@ -21,6 +21,7 @@ func GetTimestamp() int64 {
     return now_time.Unix()
 }
 
+// GetTimestampNS returns an int64 containing the current time since the epoch in nanoseconds.
 func GetTimestampNS() int64 {
     now_time := time.Now()
     return now_time.UnixNano()

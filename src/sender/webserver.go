@@ -66,7 +66,11 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
         fmt.Fprint(w, http.StatusBadRequest)
         return
     } else {
-        bin := NewBin(server.cache, server.cache.BinSize(), server.cache.listener.WatchDir(0))
+        watch_dir, dir_err := server.cache.listener.WatchDir(0)
+        if dir_err != nil {
+            error_log.LogError(dir_err.Error())
+        }
+        bin := NewBin(server.cache, server.cache.BinSize(), watch_dir)
         bin.addPart(name, start_byte, end_byte, file_info)
         md5, md5_err := bin.Files[0].getMD5()
         bin.Files[0].MD5 = md5

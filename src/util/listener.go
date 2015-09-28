@@ -2,6 +2,8 @@ package util
 
 import (
     "encoding/json"
+    "errors"
+    "fmt"
     "io"
     "io/ioutil"
     "os"
@@ -190,8 +192,11 @@ func (listener *Listener) Listen(new_file chan string) {
     }
 }
 
-func (listener *Listener) WatchDir(dir_slice int) string {
-    return listener.watch_dirs[dir_slice]
+func (listener *Listener) WatchDir(dir_slice int) (string, error) {
+    if len(listener.watch_dirs)-1 < dir_slice {
+        return "", errors.New(fmt.Sprintf("No watch dir registered with index %d", dir_slice))
+    }
+    return listener.watch_dirs[dir_slice], nil
 }
 
 // codingError is called when there is an error encoding the in-memory cache, or decoding the local copy of the cache.
