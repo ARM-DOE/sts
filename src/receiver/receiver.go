@@ -34,10 +34,11 @@ var disk_log util.Logger
 // Main is the entry point of the webserver. It is responsible for registering HTTP
 // handlers, parsing the config file, starting the file listener, and beginning the request serving loop.
 func Main(config_file string) {
+    // Setup mutex locks and parse config into global variable.
     finalize_mutex = sync.Mutex{}
     util.CompanionLock = sync.Mutex{}
     var parse_err error
-    config, parse_err = util.ParseConfig(config_file) // Load config file
+    config, parse_err = util.ParseConfig(config_file)
     if parse_err != nil {
         fmt.Println("Couldn't parse config", parse_err.Error())
     }
