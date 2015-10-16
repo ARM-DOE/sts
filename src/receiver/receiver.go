@@ -180,8 +180,11 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
     // Validate part
     if part.Header.Get("md5") != part_md5.SumString() {
         // Validation failed, request this specific part again using part size
-        error_log.LogError("Bad part of %s from bytes %s", part_path, part.Header.Get("location"))
+        error_log.LogError(fmt.Sprintf("Bad part of %s from bytes %s", part_path, part.Header.Get("location")))
         new_stream := requestPart(part_path, part.Header, part_start, part_end, boundary)
+        if new_stream.Header.Get("FAILED") == "true" {
+            return // This file failed, but we don't want to try again, so return and say the request was fine.
+        }
         time.Sleep(5 * time.Second)
         handlePart(new_stream, boundary, host_name, compressed)
         return
@@ -252,10 +255,22 @@ func requestPart(path string, part_header textproto.MIMEHeader, start int64, end
             time.Sleep(10 * time.Second)
             continue
         }
+        if resp.ContentLength == 3 { // It's an http error code, don't try to decode it.
+            error_code, _ := ioutil.ReadAll(resp.Body)
+            if string(error_code) == "410" {
+                error_log.LogError("Tried to re-obtain file that doesn't exist on sender, transfer failed: " + path)
+                // Add a failed header to the part so we know not to try and decode it.
+                return_part = &multipart.Part{}
+                return_part.Header = textproto.MIMEHeader{}
+                return_part.Header.Add("FAILED", "true")
+                break
+            }
+        }
         reader := multipart.NewReader(resp.Body, boundary)
         part, part_err := reader.NextPart()
         if part_err != nil {
-            error_log.LogError(part_err.Error())
+            // Server returned something that isn't a valid multipart file.
+            error_log.LogError(fmt.Sprintf("Error decoding file part in %s: %s", path, part_err.Error()))
             continue
         }
         // Discard body and close request
