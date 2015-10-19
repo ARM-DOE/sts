@@ -1,7 +1,6 @@
 import os
 import sys
 import time
-import shutil
 import random
 import tempfile
 
@@ -15,7 +14,6 @@ MAX_SIZE = 1e7
 WRITE_BLOCK_SIZE = 10000
 MIN_PATH_ADDITIONS = 0
 MAX_PATH_ADDITIONS = 4
-FINAL_PATH = ""
 
 
 def randBytes(num):
@@ -53,10 +51,12 @@ def generateFile(path):
     sys.stdout.write("done\n")
     sys.stdout.flush()
 
-while 1:
-    temp_dir = tempfile.gettempdir()
-    new_path = generatePath(temp_dir)
-    new_file_name = os.path.split(new_path)[-1]
-    generateFile(new_path)
-    os.utime(new_path, (time.time(), time.time()))
-    os.rename(new_path, os.path.join(sys.argv[1], new_file_name))
+
+if __name__ == "__main__":
+    while 1:
+        temp_dir = tempfile.gettempdir()
+        new_path = generatePath(temp_dir)
+        new_file_name = os.path.split(new_path)[-1]
+        generateFile(new_path)
+        os.utime(new_path, (time.time(), time.time()))
+        os.rename(new_path, os.path.join(sys.argv[1], new_file_name))
