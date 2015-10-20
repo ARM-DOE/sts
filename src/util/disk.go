@@ -1,17 +1,12 @@
-package main
+package util
 
 import (
     "errors"
-    "fmt"
     "os/exec"
     "regexp"
     "strconv"
     "strings"
 )
-
-func main() {
-    prepDisk("/mnt/sts-test")
-}
 
 func prepareDisk(dest_path string) error {
     disk_label := "ARMDATAx4"
