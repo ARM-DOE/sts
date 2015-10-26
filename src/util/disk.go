@@ -16,13 +16,14 @@ import (
 // which the disk manager may allow or block until disk space becomes available. DiskManager controls
 // disk detection, formatting, mounting, and unmounting.
 type DiskManager struct {
-    current_disk      string
-    write_path        string
-    free_space        int64
-    currently_writing int64
-    disk_full         bool
-    DISK_PADDING      int64
-    byte_lock         sync.Mutex
+    current_disk      string     // A string that contains the path of the disk currently mounted.
+    write_path        string     // The path that the disk should be mounted to and where files will be written.
+    free_space        int64      // The amount of free space remaining on the disk in bytes.
+    currently_writing int64      // The number of bytes that have been cleared to be written to the disk.
+    disk_full         bool       // A boolean that is set to true when a file is too big to be written to disk.
+    DISK_PADDING      int64      // The minimum number of bytes that should left empty on the disk.
+    byte_lock         sync.Mutex // Mutex lock that must be obtained before altering the number of free bytes on the disk.
+    last_space_used   int64      // How much space was used on the last disk. Used to check whether newly mounted disks are really new.
 }
 
 // CreateDiskManager creates a new instance of DiskManager and launches maintainDisk as a separate
@@ -32,6 +33,7 @@ func CreateDiskManager(write_path string, mode string) *DiskManager {
     new_manager.DISK_PADDING = 1e7
     new_manager.byte_lock = sync.Mutex{}
     new_manager.write_path = write_path
+    new_manager.last_space_used = -1
     if (runtime.GOOS == "linux" && mode == "auto") || mode == "true" {
         // Runtime is linux, or disk manager is enabled. Launch the monitoring goroutine.
         new_manager.ScanForDisk()
@@ -56,6 +58,7 @@ func (manager *DiskManager) maintainDisk() {
             // We have a disk mounted, unmount if it gets full.
             if manager.disk_full {
                 unmountDisk(manager.current_disk)
+                manager.last_space_used, _ = getDiskSpace(manager.current_disk)
                 manager.current_disk = ""
                 manager.disk_full = false
             }
@@ -67,9 +70,9 @@ func (manager *DiskManager) maintainDisk() {
 // ScanForDisk checks calls prepareDisk to check if there is a valid disk to mount. If a disk is
 // found, it is mounted and disk space levels are updated.
 func (manager *DiskManager) ScanForDisk() bool {
-    disk_path := prepareDisk(manager.write_path)
+    disk_path := prepareDisk(manager.write_path, manager.last_space_used)
     if len(disk_path) > 0 {
-        // Found a disk, set up
+        // Found a disk, set it up.
         manager.current_disk = disk_path
         _, manager.free_space = getDiskSpace(disk_path)
         return true
@@ -131,13 +134,20 @@ func (manager *DiskManager) HaveDisk() bool {
 // prepareDisk attempts to find, format, and mount a disk based on regex patterns. If a disk is
 // successfully mounted, the disk path is returned. If a disk is not successfully mounted, empty
 // string is returned.
-func prepareDisk(dest_path string) string {
+func prepareDisk(dest_path string, last_size int64) string {
     disk_label := "ARMDATAx4"
     disk_id := getDiskID()
     if len(disk_id) == 0 {
         return ""
     }
     disk_path := getDiskPath(disk_id)
+    // Check to see if disk space is the same as the disk that was just unmounted.
+    space_taken, _ := getDiskSpace(disk_path)
+    if space_taken == last_size {
+        // The space taken on this disk is the same as the disk we just unmounted.
+        // It's quite likely it's the same disk, so don't mount it again.
+        return ""
+    }
     partition_path := disk_path + "1"
     if !isDiskMounted(dest_path, disk_path) {
         if !isDiskPartitioned(disk_path) {
@@ -246,6 +256,8 @@ func getPartitionPath(disk_path string) string {
     return partition_path
 }
 
+// getDiskLabel returns the label of the specified disk.
+// It is used to check if a disk is formatted/partitioned.
 func getDiskLabel(disk_path string) string {
     e2label_output, e2label_err := runCommand("e2label", disk_path)
     if e2label_err != nil {
