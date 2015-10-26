@@ -31,6 +31,8 @@ func Main(config_file string) {
     // Create loggers
     send_log = util.NewLogger(config.Logs_Directory, 1)
     error_log = util.NewLogger(config.Logs_Directory, 4)
+    // Create disk manager and attempt to find disk
+    disk_manager := util.CreateDiskManager(config.Directory, config.DiskSwitching)
     // Create the channel through which new bins will be sent from the sender to the receiver.
     bin_channel := make(chan Bin, config.Sender_Threads+5) // Create a bin channel with buffer size large enough to accommodate all sender threads and a little wiggle room.
     // Create and start cache file handler and webserver
@@ -45,7 +47,7 @@ func Main(config_file string) {
     // Dispatch senders
     senders := make([]*Sender, config.Sender_Threads)
     for dispatched_senders := 0; dispatched_senders < config.Sender_Threads; dispatched_senders++ {
-        created_sender := NewSender(file_cache.bin_channel, config.Compression())
+        created_sender := NewSender(disk_manager, file_cache.bin_channel, config.Compression())
         go created_sender.run()
         senders[dispatched_senders] = created_sender
     }

@@ -19,18 +19,20 @@ import (
 // When an available Bin is found, Sender converts the Bin to a multipart file,
 // which it then transmits to the receiver.
 type Sender struct {
-    queue       chan Bin // Channel that new bins are pulled from.
-    compression bool     // Bool that controls whether compression is turned on. Obtained from config file.
-    Busy        bool     // Set to true when the sender is currently sending a file.
-    Active      bool     // Set Active to true if the sender is allowed to accept new Bins.
-    client      http.Client
+    queue        chan Bin          // Channel that new bins are pulled from.
+    compression  bool              // Bool that controls whether compression is turned on. Obtained from config file.
+    Busy         bool              // Set to true when the sender is currently sending a file.
+    Active       bool              // Set Active to true if the sender is allowed to accept new Bins.
+    disk_manager *util.DiskManager // Disk manager for linux, keeps the disk from overfilling & controls disk mounting
+    client       http.Client
 }
 
 // NewSender creates and returns a new instance of the Sender struct.
 // It takes a Bin channel as an argument, which the Sender uses to receiver newly filled or loaded Bins.
-func NewSender(file_queue chan Bin, compression bool) *Sender {
+func NewSender(disk_manager *util.DiskManager, file_queue chan Bin, compression bool) *Sender {
     new_sender := &Sender{}
     new_sender.Active = true
+    new_sender.disk_manager = disk_manager
     new_sender.queue = file_queue
     new_sender.compression = compression
     var client_err error
@@ -110,9 +112,17 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
     }
 }
 
-// sendDisk accepts Bins with transfer type Disk, and copies them to a location on the system.
+// sendDisk accepts Bins with transfer type Disk, and copies them to a location on the system
+// after receiving permission from the disk manager.
 func (sender *Sender) sendDisk(send_bin Bin) {
     bin_part := send_bin.Files[0] // Bin will have only one part
+    // Ask the disk manager whether we can begin writing
+    if !sender.disk_manager.CanWrite(bin_part.TotalSize) {
+        sender.disk_manager.WaitForWrite()
+    }
+    // Let the manager know that we're writing a file
+    sender.disk_manager.Writing(bin_part.TotalSize)
+    // Prep the directory and create the file
     dest_path := util.JoinPath(config.Disk_Path, getStorePath(bin_part.Path, config.Directory))
     mkdir_err := os.MkdirAll(filepath.Dir(dest_path), os.ModePerm)
     if mkdir_err != nil {
@@ -129,6 +139,8 @@ func (sender *Sender) sendDisk(send_bin Bin) {
         error_log.LogError(src_err.Error())
         return
     }
+
+    // Try to write the file to disk
     stream_md5 := util.NewStreamMD5()
     read_buffer := make([]byte, stream_md5.BlockSize)
     for {
@@ -140,6 +152,8 @@ func (sender *Sender) sendDisk(send_bin Bin) {
         }
     }
     dest_fi.Close()
+    // Tell the disk manager that we're done writing to disk.
+    sender.disk_manager.DoneWriting(bin_part.TotalSize)
     _, comp_err := util.NewCompanion(dest_path, bin_part.TotalSize)
     if comp_err != nil {
         error_log.LogError("Could not create new companion:", comp_err.Error())

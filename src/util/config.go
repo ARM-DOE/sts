@@ -28,6 +28,7 @@ type Config struct {
     Server_SSL_Key          string
     Client_SSL_Cert         string
     Client_SSL_Key          string
+    DiskSwitching           string
     Dynamic                 DynamicValues
     // Internal config values
     file_name      string

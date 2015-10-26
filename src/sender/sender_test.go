@@ -60,7 +60,7 @@ func TestSingleBin(t *testing.T) {
     error_status = ""
     test_file = "send_test.txt"
     bin_queue := make(chan Bin, 1)
-    sender := NewSender(bin_queue, false)
+    sender := NewSender(nil, bin_queue, false)
     go sender.run()
     new_bin := NewBin(cache, 3000, "test")
     info, err := os.Stat(test_file)
@@ -84,7 +84,7 @@ func TestSingleBin(t *testing.T) {
 func TestMultiBin(t *testing.T) {
     error_status = ""
     bin_queue := make(chan Bin, 1)
-    sender := NewSender(bin_queue, false)
+    sender := NewSender(nil, bin_queue, false)
     go sender.run()
     test_file1 := "send_test.txt"
     test_file2 := "send_test2.txt"

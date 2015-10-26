@@ -4,6 +4,7 @@ log_file_duration_hours: 3000
 cache_file_name: file_cache.dat
 logs_directory: logs
 disk_path: disk
+disk_switching: false # true, false, or auto
 receiver_address: localhost:8081
 server_port: 8080
 server_ssl_cert: ../../conf/server.pem

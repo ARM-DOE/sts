@@ -45,7 +45,7 @@ func TestMultiAllocate(t *testing.T) {
     defer os.Remove(util.JoinPath("bins", "bceb29582e576c0bcb92850ff2544b08.bin"))
     fake_queue := make(chan Bin, 5)
     timeout_channel := make(chan bool, 1)
-    fake_sender := NewSender(fake_queue, false)
+    fake_sender := NewSender(nil, fake_queue, false)
     senders := make([]*Sender, 1)
     senders[0] = fake_sender
     cache.SetSenders(senders)

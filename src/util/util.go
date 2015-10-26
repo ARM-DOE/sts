@@ -81,8 +81,6 @@ func GetHostname(ip string) string {
         return memoized_name
     }
     found_hosts, err := net.LookupAddr(ip)
-    fmt.Println(found_hosts)
-    fmt.Println(ip)
     if err != nil || len(found_hosts) < 1 {
         // Could not complete lookup
         return ip
