@@ -99,9 +99,15 @@ func checkReload(cache *Cache, server_listener net.Listener) {
 
 // getWholePath returns the absolute path of the file given the path where the file will be stored on the receiver.
 func getWholePath(store_path string) string {
-    abs_path, err := filepath.Abs(store_path)
-    if err != nil {
-        error_log.LogError(err.Error())
+    var abs_path string
+    if filepath.IsAbs(config.Directory) {
+        abs_path = fmt.Sprintf("%s%c%s", filepath.Dir(config.Directory), os.PathSeparator, store_path)
+    } else {
+        var abs_err error
+        abs_path, abs_err = filepath.Abs(store_path)
+        if abs_err != nil {
+            error_log.LogError(abs_err.Error())
+        }
     }
     return abs_path
 }
@@ -110,13 +116,19 @@ func getWholePath(store_path string) string {
 // It validates that the directory exists, and returns the absolute path.
 func checkWatchDir(watch_dir string) string {
     _, err := os.Stat(watch_dir)
+    var abs_dir string
     if os.IsNotExist(err) {
         error_log.LogError("Watch directory does not exist")
         os.Exit(1)
     }
-    abs_dir, abs_err := filepath.Abs(watch_dir)
-    if abs_err != nil {
-        error_log.LogError(fmt.Sprintf("Could not generate abs path for watch directory %s: %s", watch_dir, abs_err.Error()))
+    if !filepath.IsAbs(watch_dir) {
+        var abs_err error
+        abs_dir, abs_err = filepath.Abs(watch_dir)
+        if abs_err != nil {
+            error_log.LogError(fmt.Sprintf("Could not generate abs path for watch directory %s: %s", watch_dir, abs_err.Error()))
+        }
+    } else {
+        abs_dir = watch_dir
     }
     return abs_dir
 }

@@ -60,9 +60,15 @@ func (tag *TagData) TransferMethod() string {
 // parseConfig parses the config.yaml file and returns the parsed results as an instance of the Config struct.
 func ParseConfig(file_name string) (Config, error) {
     var loaded_config Config
-    abs_path, abs_err := filepath.Abs(file_name)
-    if abs_err != nil {
-        return Config{}, abs_err
+    var abs_path string
+    if !filepath.IsAbs(file_name) {
+        var abs_err error
+        abs_path, abs_err = filepath.Abs(file_name)
+        if abs_err != nil {
+            return Config{}, abs_err
+        }
+    } else {
+        abs_path = file_name
     }
     config_fi, config_err := ioutil.ReadFile(abs_path)
     if config_err != nil {
