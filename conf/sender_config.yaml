@@ -1,4 +1,4 @@
-directory: watch_directory
+directory: test_location # Use absolute path
 sender_threads: 10
 log_file_duration_hours: 3000
 cache_file_name: file_cache.dat
@@ -19,7 +19,7 @@ dynamic:
     DEFAULT:
       priority: 5
       sort: modtime # none, modtime
-      delete_on_send: false
+      delete_on_send: true
       transfer_method: HTTP # transfer methods: HTTP, Disk, GridFTP
     disk_test:
       priority: 5

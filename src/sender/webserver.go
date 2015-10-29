@@ -103,7 +103,7 @@ func (server *Webserver) removeFromCache(w http.ResponseWriter, r *http.Request)
     }
     duration_seconds := (time.Now().UnixNano() - server.cache.listener.Files[r.FormValue("name")].StartTime) / int64(time.Millisecond)
     send_log.LogSend(path_util.Base(file_path), server.cache.getFileMD5(file_path), info.Size(), strings.Split(config.Receiver_Address, ":")[0], duration_seconds)
-    server.cache.removeFile(r.FormValue("name"))
+    server.cache.removeFile(file_path)
     if file_tag.Delete_On_Send {
         remove_err := os.Remove(file_path)
         if remove_err != nil {
