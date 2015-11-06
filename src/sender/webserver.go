@@ -96,7 +96,7 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
 func (server *Webserver) removeFromCache(w http.ResponseWriter, r *http.Request) {
     file_path := r.FormValue("name")
     file_path = getWholePath(file_path)
-    file_tag := getTag(file_path)
+    file_tag := getTag(server.cache, file_path)
     info, err := os.Stat(file_path)
     if err != nil {
         error_log.LogError("File", file_path, "asked to remove from cache, but doesn't exist")

@@ -40,7 +40,7 @@ type Config struct {
 // Every Dynamic value needs a get method and must be used in a safe-to-reload way
 // Changes to dynamic values will not trigger a restart, changes to any other values will.
 type DynamicValues struct {
-    Tags        map[string]TagData
+    Tags        map[string]*TagData
     Compression bool
     Bin_Size    int
 }
@@ -98,7 +98,7 @@ func (config *Config) FileName() string {
 }
 
 // AccessTags is the access method for
-func (config *Config) Tags() map[string]TagData {
+func (config *Config) Tags() map[string]*TagData {
     return config.Dynamic.Tags
 }
 

@@ -32,13 +32,29 @@ type Listener struct {
     error_log       Logger
 }
 
+// CacheFile is the data structure that is stored on disk and in memory for every file in the cache
+// Only public fields are saved to disk.
 type CacheFile struct {
-    Allocation int64
-    StartTime  int64
+    Allocation int64    // An int64 that represents the number of bytes from this file that have been allocated to a Bin.
+    StartTime  int64    // A unix timestamp that is taken when the first part of a file is allocated. Used to calculate time taken for send.
+    tag        *TagData // Value used to cache tag lookups. Isn't written to disk.
 }
 
 func (file *CacheFile) SetAllocation(new_allocation int64) {
     file.Allocation = new_allocation
+}
+
+func (file *CacheFile) SetTag(tag *TagData) {
+    file.tag = tag
+}
+
+// HasTag returns a tag and true if a TagData has already been looked up and cached for the file,
+// if a file hasn't be cached, it will return false and nil.
+func (file *CacheFile) HasTag() (*TagData, bool) {
+    if file.tag != nil {
+        return file.tag, true
+    }
+    return nil, false
 }
 
 // FinishFunc is the function called after a scan that detects new files
@@ -92,7 +108,7 @@ func (listener *Listener) LoadCache() error {
 func (listener *Listener) WriteCache() {
     listener.WriteLock.Lock()
     defer listener.WriteLock.Unlock()
-    listener.Files["__TIMESTAMP__"] = CacheFile{listener.last_update, 0}
+    listener.Files["__TIMESTAMP__"] = CacheFile{listener.last_update, 0, nil}
     json_bytes, encode_err := json.Marshal(listener.Files)
     if encode_err != nil {
         listener.codingError(encode_err)

@@ -173,7 +173,6 @@ func (bin *Bin) fill() {
             if path == "__TIMESTAMP__" {
                 continue // Don't try to allocate the timestamp data
             }
-            tag_data := getTag(path)
             info, info_err := os.Stat(path)
             if info_err != nil {
                 error_log.LogError("File:", path, "registered in cache, but does not exist")
@@ -184,22 +183,28 @@ func (bin *Bin) fill() {
                 // Empty file
                 bin.cache.removeFile(path)
             }
-            if cache_file.Allocation < file_size && cache_file.Allocation != -1 && shouldAllocate(bin.cache, path) {
-                // File should be allocated, add to Bin
-                if tag_data.TransferMethod() != TRANSFER_HTTP && bin.Empty {
-                    // If the Bin is empty, add any non-standard transfer method files.
-                    bin.handleExternalTransferMethod(path, tag_data)
-                    break
+            if cache_file.Allocation < file_size && cache_file.Allocation != -1 {
+                // File passes initial check, do expensive check
+                tag_data := getTag(bin.cache, path)
+                if !shouldAllocate(bin.cache, tag_data, path) {
+                    // File didn't pass check, stop here.
+                } else {
+                    // File should be allocated, add to Bin
+                    if tag_data.TransferMethod() != TRANSFER_HTTP && bin.Empty {
+                        // If the Bin is empty, add any non-standard transfer method files.
+                        bin.handleExternalTransferMethod(path, tag_data)
+                        break
+                    }
+                    added_bytes := bin.fitBytes(cache_file.Allocation, file_size)
+                    bin.BytesLeft = bin.BytesLeft - added_bytes
+                    new_allocation := cache_file.Allocation + int64(added_bytes)
+                    bin.addPart(path, cache_file.Allocation, new_allocation, info)
+                    update_startstamp := false
+                    if cache_file.Allocation == 0 {
+                        update_startstamp = true // If the first chunk is being allocated, mark the start stamp.
+                    }
+                    bin.cache.updateFile(path, new_allocation, info, update_startstamp)
                 }
-                added_bytes := bin.fitBytes(cache_file.Allocation, file_size)
-                bin.BytesLeft = bin.BytesLeft - added_bytes
-                new_allocation := cache_file.Allocation + int64(added_bytes)
-                bin.addPart(path, cache_file.Allocation, new_allocation, info)
-                update_startstamp := false
-                if cache_file.Allocation == 0 {
-                    update_startstamp = true // If the first chunk is being allocated, mark the start stamp.
-                }
-                bin.cache.updateFile(path, new_allocation, info, update_startstamp)
             }
             if cache_file.Allocation != -1 {
                 keep_trying = true
@@ -215,12 +220,24 @@ func (bin *Bin) fill() {
 // shouldAllocate checks if the given file should be allowed to be saved to a Bin.
 // The file will not be allocated if there are higher priority files which haven't
 // been allocated yet, or if it isn't the oldest file in the cache with the same tag.
-func shouldAllocate(cache *Cache, path string) bool {
-    tag_data := getTag(path)
+func shouldAllocate(cache *Cache, tag_data *util.TagData, path string) bool {
     highest_priority := highestPriority(cache, tag_data)
     oldest_file := tag_data.Sort != "modtime" || oldestFileInTag(cache, path)
     should_send := highest_priority && oldest_file
     return should_send
+}
+
+// anyHigherPriority checks if there is any unallocated file in the cache that has a
+// higher send priority than the given TagData. For the higher priority file to be registered,
+// it must have the same transfer method as the passed in TagData
+func highestPriority(cache *Cache, tag_data *util.TagData) bool {
+    for path, cache_file := range cache.listener.Files {
+        cache_tag := getTag(cache, path)
+        if cache_file.Allocation != -1 && cache_tag.Priority < tag_data.Priority && cache_tag.TransferMethod() == tag_data.TransferMethod() {
+            return false
+        }
+    }
+    return true
 }
 
 // oldestFileInTag checks the modtime of every file in the cache to see
@@ -257,42 +274,41 @@ func sameTag(path1 string, path2 string) bool {
     return false
 }
 
-// anyHigherPriority checks if there is any unallocated file in the cache that has a
-// higher send priority than the given TagData. For the higher priority file to be registered,
-// it must have the same transfer method as the passed in TagData
-func highestPriority(cache *Cache, tag_data util.TagData) bool {
-    for path, cache_file := range cache.listener.Files {
-        cache_tag := getTag(path)
-        if cache_file.Allocation != -1 && cache_tag.Priority < tag_data.Priority && cache_tag.TransferMethod() == tag_data.TransferMethod() {
-            return false
+// getTag returns a pointer to a TagData instance for the first tag pattern that matches the file path.
+// It first attempts to return a cached TagData instance for that file name. If the cache lookup fails,
+// it will lookup via regex matching. If no tag pattern matches, it returns the default TagData.
+func getTag(cache *Cache, path string) *util.TagData {
+    file := cache.listener.Files[path]
+    cached_tag, tag_found := file.HasTag()
+    if tag_found {
+        return cached_tag
+    } else {
+        path_tag := strings.Split(path, ".")[0]
+        for tag_pattern, tag_data := range config.Tags() {
+            if tag_pattern == "DEFAULT" {
+                continue // Don't check default tag
+            }
+            matched, match_err := regexp.MatchString(tag_pattern, path_tag)
+            if match_err != nil {
+                error_log.LogError(match_err.Error())
+            }
+            if matched {
+                file.SetTag(tag_data)
+                cache.listener.Files[path] = file
+                return tag_data
+            }
         }
     }
-    return true
-}
-
-// getTag returns a TagData instance for the first tag pattern that matches the file path.
-// If no tag pattern matches, it returns the default TagData.
-func getTag(path string) util.TagData {
-    path_tag := strings.Split(path, ".")[0]
-    for tag_pattern, tag_data := range config.Tags() {
-        if tag_pattern == "DEFAULT" {
-            continue // Don't check default tag
-        }
-        matched, match_err := regexp.MatchString(tag_pattern, path_tag)
-        if match_err != nil {
-            error_log.LogError(match_err.Error())
-        }
-        if matched {
-            return tag_data
-        }
-    }
-    return config.Tags()["DEFAULT"]
+    default_tag := config.Tags()["DEFAULT"]
+    file.SetTag(default_tag)
+    cache.listener.Files[path] = file
+    return default_tag
 }
 
 // handleExternalTranferMethod is called when a non-HTTP, unallocated file is found, and the
 // currently allocating Bin is empty. It calls either handleDisk or handleGridFTP depending
 // on the transfer method of the file.
-func (bin *Bin) handleExternalTransferMethod(path string, tag_data util.TagData) {
+func (bin *Bin) handleExternalTransferMethod(path string, tag_data *util.TagData) {
     info, stat_err := os.Stat(path)
     if stat_err != nil {
         error_log.LogError(stat_err.Error())
@@ -313,7 +329,7 @@ func (bin *Bin) handleExternalTransferMethod(path string, tag_data util.TagData)
 }
 
 // handleDisk is called to prep bins for files with transfer method disk.
-func (bin *Bin) handleDisk(path string, tag_data util.TagData) {
+func (bin *Bin) handleDisk(path string, tag_data *util.TagData) {
     bin.TransferMethod = TRANSFER_DISK
     info, stat_err := os.Stat(path)
     if stat_err != nil {
@@ -325,7 +341,7 @@ func (bin *Bin) handleDisk(path string, tag_data util.TagData) {
 }
 
 // handleGridFTP is called to prep bins for files with transfer method GridFTP.
-func (bin *Bin) handleGridFTP(path string, tag_data util.TagData) {
+func (bin *Bin) handleGridFTP(path string, tag_data *util.TagData) {
     bin.TransferMethod = TRANSFER_GRIDFTP
     info, stat_err := os.Stat(path)
     if stat_err != nil {
