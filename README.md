@@ -10,4 +10,4 @@ STS - Golang
 - Graceful restarting on config change
 
 ### Flowchart:
-![Flowchart](conf/sts.png?raw=true)
+![Flowchart](conf/sts.svg?raw=true)
