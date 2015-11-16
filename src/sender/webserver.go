@@ -47,7 +47,11 @@ func (server *Webserver) startServer() net.Listener {
 // as a multipart request. This handler is called when "get_file.go" is requested.
 // Sample request: /get_file.go?name=watch_directory/test_file.txt&start=0&end=30&boundary=865876njgbhrnghu
 func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
+    // The path will come in with the lowest subdirectory of config.Directory already attached,
+    // we've got to remove it and append the full config.Directory.
     name := r.FormValue("name")
+    path_parts := strings.Split(name, string(os.PathSeparator))
+    final_path := config.Directory + string(os.PathSeparator) + path_util.Join(path_parts[1:]...)
     boundary := r.FormValue("boundary")
     start_byte_string := r.FormValue("start")
     end_byte_string := r.FormValue("end")
@@ -57,7 +61,7 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
         fmt.Fprint(w, http.StatusBadRequest)
         return
     }
-    fi, err := os.Open(name)
+    fi, err := os.Open(final_path)
     file_info, _ := fi.Stat()
     if err != nil {
         fmt.Fprintln(w, http.StatusGone)
@@ -71,7 +75,7 @@ func (server *Webserver) getFile(w http.ResponseWriter, r *http.Request) {
             error_log.LogError(dir_err.Error())
         }
         bin := NewBin(server.cache, server.cache.BinSize(), watch_dir)
-        bin.addPart(name, start_byte, end_byte, file_info)
+        bin.addPart(final_path, start_byte, end_byte, file_info)
         md5, md5_err := bin.Files[0].getMD5()
         bin.Files[0].MD5 = md5
         if md5_err != nil {

@@ -241,7 +241,8 @@ func requestPart(path string, part_header textproto.MIMEHeader, start int64, end
         error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", path, comp_err.Error()))
     }
     host_name := companion.SenderName
-    post_url := fmt.Sprintf("https://%s:%s/get_file.go?name=%s&start=%d&end=%d&boundary=%s", host_name, config.Server_Port, path, start, end, boundary)
+    post_path := strings.Replace(path, config.Staging_Directory+string(os.PathSeparator), "", 1)
+    post_url := fmt.Sprintf("https://%s:%s/get_file.go?name=%s&start=%d&end=%d&boundary=%s", host_name, config.Sender_Server_Port, post_path, start, end, boundary)
     request_complete := false
     var return_part *multipart.Part
     for !request_complete {
@@ -251,14 +252,14 @@ func requestPart(path string, part_header textproto.MIMEHeader, start int64, end
         }
         resp, req_err := client.Do(request)
         if req_err != nil {
-            error_log.LogError("Failed to re-request part. Sender is probably down.")
+            error_log.LogError(fmt.Sprintf("Failed to re-request part: %s Sender is probably down.", req_err.Error()))
             time.Sleep(10 * time.Second)
             continue
         }
-        if resp.ContentLength == 3 { // It's an http error code, don't try to decode it.
+        if resp.ContentLength < 5 && resp.ContentLength > 0 { // It's an error code, don't try to decode it.
             error_code, _ := ioutil.ReadAll(resp.Body)
-            if string(error_code) == "410" {
-                error_log.LogError("Tried to re-obtain file that doesn't exist on sender, transfer failed: " + path)
+            if string(error_code) == "410" || string(error_code) == "410\n" {
+                error_log.LogError("Tried to re-obtain file that doesn't exist on sender, transfer failed: " + post_path)
                 // Add a failed header to the part so we know not to try and decode it.
                 return_part = &multipart.Part{}
                 return_part.Header = textproto.MIMEHeader{}

@@ -54,7 +54,7 @@ func (sender *Sender) run() {
         }
         send_bin := <-sender.queue
         sender.Busy = true
-        fmt.Println("Sending bin of size ", send_bin.Size)
+        fmt.Println("Sending bin of size ", send_bin.Size, "and name", send_bin.Name)
         switch send_bin.TransferMethod {
         case TRANSFER_HTTP:
             sender.sendHTTP(send_bin)
@@ -106,6 +106,8 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
         }
         if string(response_code) == "200" {
             send_bin.delete() // Sending is complete, so remove the bin file
+        } else {
+            error_log.LogError("Send failed with response code: ", string(response_code))
         }
         response.Body.Close()
         request.Close = true
