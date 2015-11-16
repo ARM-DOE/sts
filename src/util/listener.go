@@ -222,5 +222,5 @@ func (listener *Listener) codingError(err error) {
     listener.error_log.LogError("Cache corruption in " + listener.file_name)
     listener.error_log.LogError("Cache contents dump:", listener.Files)
     listener.error_log.LogError(err)
-    panic("")
+    panic("Fatal error")
 }

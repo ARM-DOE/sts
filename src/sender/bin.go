@@ -316,14 +316,14 @@ func (bin *Bin) handleExternalTransferMethod(path string, tag_data *util.TagData
     switch tag_data.TransferMethod() {
     case TRANSFER_HTTP:
         error_log.LogError("handleExternalTransferMethod called, but method is not external")
-        panic("")
+        panic("Fatal error")
     case TRANSFER_DISK:
         bin.handleDisk(path, tag_data)
     case TRANSFER_GRIDFTP:
         bin.handleGridFTP(path, tag_data)
     default:
         error_log.LogError("Transfer method", tag_data.TransferMethod(), "not recognized")
-        panic("")
+        panic("Fatal error")
     }
     bin.cache.updateFile(path, -1, info)
 }

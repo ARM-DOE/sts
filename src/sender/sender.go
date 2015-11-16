@@ -64,7 +64,7 @@ func (sender *Sender) run() {
             sender.sendGridFTP(send_bin)
         default:
             error_log.LogError("Unknown Bin.TransferMethod", send_bin.TransferMethod, "in", send_bin.Name)
-            panic("")
+            panic("Fatal error")
         }
         sender.Busy = false
     }
@@ -215,7 +215,7 @@ type BinBody struct {
 func NewBinBody(bin Bin, boundary ...string) *BinBody {
     if len(bin.Files) < 1 {
         error_log.LogError("Tried to convert empty Bin to bytes")
-        panic("")
+        panic("Fatal error")
     }
     new_body := &BinBody{}
     new_body.eof_returned = false

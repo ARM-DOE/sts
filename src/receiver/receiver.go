@@ -202,7 +202,7 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
         rename_err := os.Rename(write_path, rename_path)
         if rename_err != nil {
             error_log.LogError(rename_err.Error())
-            panic("")
+            panic("Fatal error")
         }
         os.Chtimes(rename_path, time.Now(), time.Now()) // Update mtime so that listener will pick up the file
         fmt.Println("Fully assembled ", part_path)
