@@ -1,0 +1,69 @@
+#!/bin/bash
+#
+# /etc/init.d/stssend
+#       
+# stssend    Site Transfer Software Send Mode Daemon
+#
+# Brent Kolasinski
+# Argonne National Laboratory
+# brent@anl.gov
+#
+# chkconfig: 345 70 30
+# description: stssend is the Site Transfer Software send mode daemon
+# processname: stssend 
+
+# Source function library.
+. /etc/init.d/functions
+
+# Varialbes needed for startup
+RETVAL=0
+BINARY='sts'
+STS_PATH="/home/stsdev/sts/out/sender"
+LOCKFILE="/var/lock/subsys/$BINARY"
+CONFIG="/home/stsdev/conf/sender_config.yaml"
+STS_FLAGS="-s"
+
+start() {
+    echo -n "Starting stssend: "
+    
+    if [ -e $LOCKFILE ]
+      then
+        echo -n "STS already running! Exiting...\n"
+        return 1
+    fi
+
+    $STS_PATH/$BINARY $STS_FLAGS $CONFIG 2>&1 /dev/null
+    $RETVAL=$?
+    touch /var/lock/subsys/$BINARY
+    return $RETVAL
+}
+
+stop() {
+    echo -n "Shutting down stssend: "
+    pkill $BINARY
+    $RETVAL=$?
+    rm -f /var/lock/subsys/$BINARY
+    return $RETVAL
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+#    status)
+#        ;;
+    restart)
+        stop
+        start
+        ;;
+#    reload)
+#        ;;
+    *)
+        echo "Usage: <servicename> {start|stop|status|reload|restart[|probe]"
+        exit 1
+        ;;
+esac
+exit $?
