@@ -13,11 +13,11 @@
 
 STSTYPE=$1
 
-if [ $STSTYPE -eq 'stssend'  ]
+if [ $STSTYPE = 'stssend'  ]
   then
     cp ./stssend /etc/init.d/
     chkconfig --add stssend
-elif [ $STSTYPE -eq 'stsreceive' ]
+elif [ $STSTYPE = 'stsreceive' ]
   then
     cp ./stsreceive /etc/init.d/
     chkconfig --add stsreceive

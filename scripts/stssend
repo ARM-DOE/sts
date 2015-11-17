@@ -62,7 +62,7 @@ case "$1" in
 #    reload)
 #        ;;
     *)
-        echo "Usage: <servicename> {start|stop|status|reload|restart[|probe]"
+        echo "Usage: stssend {start|stop|restart}"
         exit 1
         ;;
 esac
