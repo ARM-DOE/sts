@@ -274,10 +274,7 @@ func requestPart(path string, part_header textproto.MIMEHeader, start int64, end
             error_log.LogError(fmt.Sprintf("Error decoding file part in %s: %s", path, part_err.Error()))
             continue
         }
-        // Discard body and close request
-        io.Copy(ioutil.Discard, resp.Body)
-        resp.Body.Close()
-        resp.Close = true
+        // Set status as successfully received.
         return_part = part
         request_complete = true
     }
