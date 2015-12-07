@@ -66,9 +66,6 @@ func (part *Part) getMD5() (string, error) {
 // buffer being passed to Read()
 func (part *Part) countReads(block_size int) int64 {
     part_size := part.End - part.Start
-    if part_size%int64(block_size) == 0 {
-        return part_size / int64(block_size)
-    }
     return (part_size / int64(block_size)) + 1
 }
 

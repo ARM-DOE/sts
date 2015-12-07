@@ -26,10 +26,15 @@ if [[ $sts_alive ]] # do not run tests if either the sender or receiver are curr
   then
     echo "--Sender/receiver running, skipping tests"
   else
-    echo "--Testing"
-    go test -cover util
-    go test -cover sender
-    go test -cover receiver
+    if [[ $1 == "-t" ]]
+      then
+        echo "--Testing"
+        go test -cover util
+        go test -cover sender
+        go test -cover receiver
+      else
+        echo "--Skipping tests"
+    fi
 fi
 
 # cleanup after testing
