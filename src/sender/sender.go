@@ -82,7 +82,7 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
     }
     bin_body := NewBinBody(send_bin)
     bin_body.compression = config.Compression()
-    request_url := fmt.Sprintf("https://%s/send.go", config.Receiver_Address)
+    request_url := fmt.Sprintf("%s://%s/send.go", config.Protocol(), config.Receiver_Address)
     request, err := http.NewRequest("PUT", request_url, bin_body)
     request.Header.Add("Transfer-Encoding", "chunked")
     request.Header.Add("Boundary", bin_body.Boundary())
@@ -165,7 +165,7 @@ func (sender *Sender) sendDisk(send_bin Bin) {
         error_log.LogError("Failed to add part to companion:", add_err.Error())
     }
     // Tell receiver that we wrote a file to disk
-    post_url := fmt.Sprintf("https://%s/disk_add.go?name=%s&md5=%s&size=%d", config.Receiver_Address, dest_path, stream_md5.SumString(), bin_part.TotalSize)
+    post_url := fmt.Sprintf("%s://%s/disk_add.go?name=%s&md5=%s&size=%d", config.Protocol(), config.Receiver_Address, dest_path, stream_md5.SumString(), bin_part.TotalSize)
     request, req_err := http.NewRequest("POST", post_url, nil)
     if req_err != nil {
         error_log.LogError("Could not generate HTTP request object: ", req_err.Error())

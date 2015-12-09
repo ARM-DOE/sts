@@ -72,14 +72,23 @@ func Main(config_file string) {
     http.HandleFunc("/editor.go", config.EditConfigInterface)
     http.HandleFunc("/edit_config.go", config.EditConfig)
     http.HandleFunc("/", errorHandler)
-    // Setup SSL server
-    ssl_listener, setup_err := util.AsyncListenAndServeTLS(fmt.Sprintf(":%s", config.Server_Port), config.Server_SSL_Cert, config.Server_SSL_Key)
-    if setup_err != nil {
-        error_log.LogError(setup_err.Error())
+    // Setup server with correct HTTP protocol
+    var serv net.Listener
+    var serv_err error
+    address := fmt.Sprintf(":%s", config.Server_Port)
+    if config.Protocol() == "https" {
+        serv, serv_err = util.AsyncListenAndServeTLS(address, config.Server_SSL_Cert, config.Server_SSL_Key)
+    } else if config.Protocol() == "http" {
+        serv, serv_err = util.AsyncListenAndServe(address)
+    } else {
+        error_log.LogError(fmt.Sprintf("Protocol type %s is not valid"), config.Protocol())
+    }
+    if serv_err != nil {
+        error_log.LogError(serv_err.Error())
     }
     // Enter mainloop to check for config changes
     for {
-        checkReload(ssl_listener)
+        checkReload(serv)
         time.Sleep(1 * time.Second)
     }
 }
@@ -242,7 +251,7 @@ func requestPart(path string, part_header textproto.MIMEHeader, start int64, end
     }
     host_name := companion.SenderName
     post_path := strings.Replace(path, config.Staging_Directory+string(os.PathSeparator), "", 1)
-    post_url := fmt.Sprintf("https://%s:%s/get_file.go?name=%s&start=%d&end=%d&boundary=%s", host_name, config.Sender_Server_Port, post_path, start, end, boundary)
+    post_url := fmt.Sprintf("%s://%s:%s/get_file.go?name=%s&start=%d&end=%d&boundary=%s", config.Protocol(), host_name, config.Sender_Server_Port, post_path, start, end, boundary)
     request_complete := false
     var return_part *multipart.Part
     for !request_complete {
@@ -315,7 +324,7 @@ func removeFromCache(path string) {
         error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", path, comp_err.Error()))
     }
     host_name := companion.SenderName
-    post_url := fmt.Sprintf("https://%s:%s/remove.go?name=%s", host_name, config.Sender_Server_Port, getStorePath(path, config.Staging_Directory))
+    post_url := fmt.Sprintf("%s://%s:%s/remove.go?name=%s", config.Protocol(), host_name, config.Sender_Server_Port, getStorePath(path, config.Staging_Directory))
     for !request_complete {
         request, req_err := http.NewRequest("POST", post_url, nil)
         if req_err != nil {

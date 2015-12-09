@@ -36,7 +36,16 @@ func (server *Webserver) startServer() net.Listener {
     http.HandleFunc("/", server.errorHandler)
     http.HandleFunc("/edit_config.go", config.EditConfig)
     http.HandleFunc("/editor.go", config.EditConfigInterface)
-    serv, serv_err := util.AsyncListenAndServeTLS(fmt.Sprintf(":%s", config.Server_Port), config.Server_SSL_Cert, config.Server_SSL_Key)
+    address := fmt.Sprintf(":%s", config.Server_Port)
+    var serv net.Listener
+    var serv_err error
+    if config.Protocol() == "https" {
+        serv, serv_err = util.AsyncListenAndServeTLS(address, config.Server_SSL_Cert, config.Server_SSL_Key)
+    } else if config.Protocol() == "http" {
+        serv, serv_err = util.AsyncListenAndServe(address)
+    } else {
+        error_log.LogError(fmt.Sprintf("Protocol type %s is not valid"), config.Protocol())
+    }
     if serv_err != nil {
         error_log.LogError(serv_err.Error())
     }

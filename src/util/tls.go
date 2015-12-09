@@ -38,6 +38,19 @@ func AsyncListenAndServeTLS(addr string, certFile string, keyFile string) (net.L
     return ssl_listener, nil
 }
 
+// AsyncListenAndServe is the plain HTTP equivalent of AsyncListenAndServeTLS. It returns a net.Listener
+// which can be closed at any time.
+func AsyncListenAndServe(addr string) (net.Listener, error) {
+    server := http.Server{}
+    server.Addr = addr
+    listener, listener_err := net.Listen("tcp", server.Addr)
+    if listener_err != nil {
+        return nil, listener_err
+    }
+    go server.Serve(listener)
+    return listener, nil
+}
+
 // LoadCert checks the list of pre-loaded certs and returns one if it has already been
 // loaded in the past. If it hasn't already been loaded, the cert and key file are read
 // from disk, cached, and returned as a tls.Certificate.

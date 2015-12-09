@@ -13,27 +13,34 @@ import (
 // Config is the struct that all values from the configuration file are loaded into when it is parsed.
 type Config struct {
     // Static configuration values from file - require restart to change
-    Directory               string
-    Sender_Threads          int
-    Log_File_Duration_Hours int
-    Cache_File_Name         string
-    Disk_Path               string
-    Output_Directory        string
-    Server_Port             string
-    Sender_Server_Port      string
-    Receiver_Address        string
-    Staging_Directory       string
-    Logs_Directory          string
-    Server_SSL_Cert         string
-    Server_SSL_Key          string
-    Client_SSL_Cert         string
-    Client_SSL_Key          string
-    DiskSwitching           string
-    Dynamic                 DynamicValues
+    Directory          string
+    Sender_Threads     int
+    Cache_File_Name    string
+    Disk_Path          string
+    Output_Directory   string
+    Server_Port        string
+    Sender_Server_Port string
+    Receiver_Address   string
+    Staging_Directory  string
+    Logs_Directory     string
+    TLS                bool
+    Server_SSL_Cert    string
+    Server_SSL_Key     string
+    Client_SSL_Cert    string
+    Client_SSL_Key     string
+    DiskSwitching      string
+    Dynamic            DynamicValues
     // Internal config values
     file_name      string
     should_reload  bool
     should_restart bool
+}
+
+func (config Config) Protocol() string {
+    if config.TLS {
+        return "https"
+    }
+    return "http"
 }
 
 // DynamicValues are the values that can be changed without needing a restart.
