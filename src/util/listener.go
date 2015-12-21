@@ -84,7 +84,7 @@ func (listener *Listener) LoadCache() error {
     if os.IsNotExist(err) {
         // Cache file does not exist, create new one
         os.Create(listener.file_name)
-        listener.last_update = GetTimestamp()
+        listener.last_update = 0
         listener.WriteCache()
     }
     fi, open_err := os.Open(listener.file_name)
