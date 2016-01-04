@@ -1,0 +1,26 @@
+directory: test_location # Use absolute path
+sender_threads: 10
+cache_file_name: file_cache.dat
+logs_directory: logs
+disk_path: disk
+disk_switching: false # true, false, or auto
+receiver_address: localhost:8081
+server_port: 8080
+tls: false
+server_ssl_cert: ../../conf/server.pem
+server_ssl_key: ../../conf/server.key
+client_ssl_cert: ../../conf/client.pem
+client_ssl_key: ../../conf/client.key
+
+dynamic:
+  bin_size: 300000
+  compression: false
+  tags:
+    DEFAULT:
+      priority: 5
+      sort: modtime # none, modtime
+      delete_on_send: true
+      transfer_method: HTTP # transfer methods: HTTP, Disk, GridFTP
+    disk_test:
+      priority: 5
+      transfer_method: Disk

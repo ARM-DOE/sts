@@ -1,0 +1,11 @@
+cache_file_name: listener_cache.dat
+staging_directory: stage
+output_directory: final
+logs_directory: logs
+server_port: 8081
+sender_server_port: 8080
+tls: false
+server_ssl_cert: ../../conf/server.pem
+server_ssl_key: ../../conf/server.key
+client_ssl_cert: ../../conf/client.pem
+client_ssl_key: ../../conf/client.key

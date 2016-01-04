@@ -1,0 +1,69 @@
+#!/bin/bash
+#
+# /etc/init.d/stsreceive
+#       
+# stsreceive    Site Transfer Software Receive Mode Daemon
+#
+# Brent Kolasinski
+# Argonne National Laboratory
+# brent@anl.gov
+#
+# chkconfig: 345 70 30
+# description: stsreceive is the Site Transfer Software receive mode daemon
+# processname: stsreceive 
+
+# Source function library.
+. /etc/init.d/functions
+
+# Varialbes needed for startup
+RETVAL=0
+BINARY='sts'
+STS_PATH="/home/stsdev/sts/out/receiver"
+LOCKFILE="/var/lock/subsys/$BINARY"
+CONFIG="/home/stsdev/conf/receiver_config.yaml"
+STS_FLAGS="-r"
+
+start() {
+    echo -n "Starting stsreceive: "
+    
+    if [ -e $LOCKFILE ]
+      then
+        echo -n "STS already running! Exiting...\n"
+        return 1
+    fi
+
+    $STS_PATH/$BINARY $STS_FLAGS $CONFIG 2>&1 /dev/null
+    $RETVAL=$?
+    touch /var/lock/subsys/$BINARY
+    return $RETVAL
+}
+
+stop() {
+    echo -n "Shutting down stsreceive: "
+    pkill $BINARY
+    $RETVAL=$?
+    rm -f /var/lock/subsys/$BINARY
+    return $RETVAL
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+#    status)
+#        ;;
+    restart)
+        stop
+        start
+        ;;
+#    reload)
+#        ;;
+    *)
+        echo "Usage: stsreceive {start|stop|restart}"
+        exit 1
+        ;;
+esac
+exit $?
