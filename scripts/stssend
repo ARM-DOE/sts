@@ -18,9 +18,9 @@
 # Varialbes needed for startup
 RETVAL=0
 BINARY='sts'
-STS_PATH="/home/stsdev/sts/out/sender"
+STS_PATH="/apps/transfer/bin"
 LOCKFILE="/var/lock/subsys/$BINARY"
-CONFIG="/home/stsdev/conf/sender_config.yaml"
+CONFIG="/apps/transfer/conf/sts.out.yaml"
 STS_FLAGS="-s"
 
 start() {
@@ -34,7 +34,7 @@ start() {
 
     $STS_PATH/$BINARY $STS_FLAGS $CONFIG 2>&1 /dev/null
     $RETVAL=$?
-    touch /var/lock/subsys/$BINARY
+    touch $LOCKFILE
     return $RETVAL
 }
 
@@ -42,7 +42,7 @@ stop() {
     echo -n "Shutting down stssend: "
     pkill $BINARY
     $RETVAL=$?
-    rm -f /var/lock/subsys/$BINARY
+    rm -f $LOCKFILE
     return $RETVAL
 }
 
