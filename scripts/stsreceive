@@ -12,10 +12,10 @@
 # description: stsreceive is the Site Transfer Software receive mode daemon
 # processname: stsreceive 
 
-# Source function library.
+# Source function library
 . /etc/init.d/functions
 
-# Varialbes needed for startup
+# Variables needed for startup
 RETVAL=0
 BINARY='sts'
 STS_PATH="/apps/transfer/bin"
