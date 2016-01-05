@@ -12,10 +12,10 @@
 # description: stssend is the Site Transfer Software send mode daemon
 # processname: stssend 
 
-# Source function library.
+# Source function library
 . /etc/init.d/functions
 
-# Varialbes needed for startup
+# Variables needed for startup
 RETVAL=0
 BINARY='sts'
 STS_PATH="/apps/transfer/bin"
