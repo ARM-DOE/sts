@@ -1,11 +1,11 @@
-cache_file_name:   /data/tmp/sts-in-cache.dat
-staging_directory: /data/transfer/stage_area
-output_directory:  /data/transfer/incoming_from
-logs_directory:    /data/logs/sts/incoming_from
-server_port:        80
-sender_server_port: 80
-tls:                false
-server_ssl_cert:    /apps/transfer/conf/sts-server.pem
-server_ssl_key:     /apps/transfer/conf/sts-server.key
-client_ssl_cert:    /apps/transfer/conf/sts-client.pem
-client_ssl_key:     /apps/transfer/conf/sts-client.key
+cache_file_name    : /data/tmp/sts-in-cache.dat
+staging_directory  : /data/transfer/stage_area
+output_directory   : /data/transfer/incoming_from
+logs_directory     : /data/logs/sts/incoming_from
+server_port        : 80
+sender_server_port : 80
+tls                : false
+server_ssl_cert    : /apps/transfer/conf/sts-server.pem
+server_ssl_key     : /apps/transfer/conf/sts-server.key
+client_ssl_cert    : /apps/transfer/conf/sts-client.pem
+client_ssl_key     : /apps/transfer/conf/sts-client.key
