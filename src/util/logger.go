@@ -131,9 +131,9 @@ func (logger *Logger) LogReceive(s string, md5 string, size int64, hostname stri
 // which must be of length 1 or not supplied. The given hostname will be appended to the log path.
 func getCurrentLogPath(base_path string, mode int, host_name ...string) string {
     if len(host_name) > 0 {
-        return JoinPath(base_path, getDirectory(mode), host_name[0], getMonth(), getDay())
+        return JoinPath(base_path, getDirectory(mode), host_name[0], getYear()+getMonth(), getDay())
     }
-    return JoinPath(base_path, getDirectory(mode), getMonth(), getDay())
+    return JoinPath(base_path, getDirectory(mode), getYear()+getMonth(), getDay())
 }
 
 // getDirectory returns the preset directory name for a type of log.
@@ -162,7 +162,7 @@ func getDay() string {
     return day_string
 }
 
-// getDay gets the current month (1-12) and pads it with a leading 0
+// getMonth gets the current month (1-12) and pads it with a leading 0
 // if it is less than 2 characters long. Ex. 9 becomes 09.
 func getMonth() string {
     month_string := strconv.Itoa(int((time.Now().Month())))
@@ -170,4 +170,9 @@ func getMonth() string {
         return "0" + month_string
     }
     return month_string
+}
+
+// getYear gets the current 4-digit year.
+func getYear() string {
+    return strconv.Itoa(time.Now().Year())
 }
