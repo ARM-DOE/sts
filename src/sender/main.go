@@ -32,7 +32,7 @@ func Main(config_file string) {
     send_log = util.NewLogger(config.Logs_Directory, 1)
     error_log = util.NewLogger(config.Logs_Directory, 4)
     // Create disk manager and attempt to find disk
-    disk_manager := util.CreateDiskManager(config.Directory, config.DiskSwitching)
+    disk_manager := util.CreateDiskManager(config.Directory, config.Disk_Switching)
     // Create the channel through which new bins will be sent from the sender to the receiver.
     bin_channel := make(chan Bin, config.Sender_Threads+5) // Create a bin channel with buffer size large enough to accommodate all sender threads and a little wiggle room.
     // Create and start cache file handler and webserver
