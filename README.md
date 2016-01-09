@@ -37,7 +37,7 @@ Site Transfer Software (STS)
 
 If STS is configured to be a sender, two threads are started for managing the outgoing flow: **File Watcher** and **Outgoing Manager**.  A similar set of threads will exist for any additionally configured target host.  Each target has its own configuration block.  STS does not currently support the sending of files from a single source directory to multiple targets.  In send mode STS will also use a configurable number of threads used for actually making the HTTP requests to the configured target.
 
-STS starts a separate thread that acts as the **Web Server** listening on the configured port.  It is meant to act as the reception point for both send and receive incoming messages but only actively serves for both if configured to do so.
+STS starts a separate thread that acts as the **HTTP Server** listening on the configured port.  It is meant to act as the reception point for both send and receive incoming messages but only actively serves for both if configured to do so.
 
 If STS is configured to run as a receiver, an additional **File Watcher** thread for watching the stage directory is started.
 
@@ -57,22 +57,19 @@ If STS is configured to run as a receiver, an additional **File Watcher** thread
 
   > A sender thread will only work on a given bin for a configured amount of time before it gives up.  The Outgoing Manager also considers a bin recyclable based on this interval.
 
-1. _Target_ **Web Server**: Receives bin from source host and writes data and companion metadata file to configured stage area.
+1. _Target_ **HTTP Server**: Receives bin from source host and writes data and companion metadata file to configured stage area.
 
   > Each file is given a specific extension to indicate the file is not yet complete.  Once the last bin is written (Mutex locks are used to avoid conflict by multiple threads) the file is renamed to remove the previously added extension.
 
-1. _Target_ **Web Server** (?): Validates that written file chunk matches its MD5.  If matched nothing happens unless it is the last bin in which case a validation confirmation request is sent to the source Web Server.  Otherwise it will send a bin invalidation request to the source Web Server.
+1. _Target_ **HTTP Server** (?): Validates that written file chunk matches its MD5.  If matched nothing happens unless it is the last bin in which case a validation confirmation request is sent to the source Web Server.  Otherwise it will send a bin invalidation request to the source Web Server.
 
-1. _Source_ **Web Server**: Both validation and invalidation requests are passed to the Outgoing Manager.
+1. _Source_ **HTTP Server**: Both validation and invalidation requests are passed to the Outgoing Manager.
 
 1. _Source_ **Outgoing Manager**: Removes validated bins from the bin store and updates the queue.
 
 1. _Source_ **Outgoing Manager**: For validated files, queue is updated (entry removed) and file deleted from disk (if configured to do so).  **Q:** if not configured to remove files does the cache never get flushed?
 
 1. _Source_ **Outgoing Manager**: For invalidated bins, the bin is made available to the next avaiable sending thread to be resent.
-
-
----
 
 
 ![Flowchart2](conf/sts-flow.png?raw=true)
