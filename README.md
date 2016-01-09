@@ -43,13 +43,13 @@ If STS is configured to run as a receiver, an additional **File Watcher** thread
 
 ### Logical Flow
 
-1. _Source_ **File Watcher**: File found in configured watch area and added (path, size) to the outgoing queue.
+1. _Source_ **File Watcher**: Files found in configured watch area and added (path, size) to the outgoing queue.
 
   > If the queue file becomes corrupted or if the program crashes unexpectedly, the worst that can happen is the sending of duplicate data, which is obviously preferable to data loss.
   
   > The software is designed such that other technologies could be swapped in for the flat JSON file (e.g. [Redis](http://redis.io/)), which might provide better reliability at the expense of an additional dependency.
 
-1. _Source_ **Outgoing Manager**: Based on configured priority and tagging, files and parts of files are added to bins and bin metadata is cached to disk.
+1. _Source_ **Outgoing Manager**: Based on configured priority and tagging, files or parts of files are added to bins and bin metadata is cached to the bin store.
   
   > The number of bins that exist at a time corresponds to the number of configured sending threads plus a buffer.
 
