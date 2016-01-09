@@ -9,5 +9,7 @@ STS - Golang
 - Web interface config editor
 - Graceful restarting on config change
 
-### Flowchart:
+### Flowcharts:
 ![Flowchart](conf/sts.png?raw=true)
+
+![Flowchart2](conf/sts-flow.png?raw=true)
