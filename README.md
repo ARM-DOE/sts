@@ -43,33 +43,33 @@ If STS is configured to run as a receiver, an additional **File Watcher** thread
 
 ### Logical Flow
 
-1. Source **File Watcher**: File found in configured watch area and added (path, size) to the outgoing queue.
+1. _Source_ **File Watcher**: File found in configured watch area and added (path, size) to the outgoing queue.
 
   > If the queue file becomes corrupted or if the program crashes unexpectedly, the worst that can happen is the sending of duplicate data, which is obviously preferable to data loss.
   
   > The software is designed such that other technologies could be swapped in for the flat JSON file (e.g. [Redis](http://redis.io/)), which might provide better reliability at the expense of an additional dependency.
 
-1. Source **Outgoing Manager**: Based on configured priority and tagging, files and parts of files are added to bins and bin metadata is cached to disk.
+1. _Source_ **Outgoing Manager**: Based on configured priority and tagging, files and parts of files are added to bins and bin metadata is cached to disk.
   
   > The number of bins that exist at a time corresponds to the number of configured sending threads plus a buffer.
 
-1. Source **Sender**: When a sender thread is ready for another bin it gets the next available one from the bin store by asking the Outgoing Manager.
+1. _Source_ **Sender**: When a sender thread is ready for another bin it gets the next available one from the bin store by asking the Outgoing Manager.
 
   > A sender thread will only work on a given bin for a configured amount of time before it gives up.  The Outgoing Manager also considers a bin recyclable based on this interval.
 
-1. Target **Web Server**: Receives bin from source host and writes data and companion metadata file to configured stage area.
+1. _Target_ **Web Server**: Receives bin from source host and writes data and companion metadata file to configured stage area.
 
   > Each file is given a specific extension to indicate the file is not yet complete.  Once the last bin is written (Mutex locks are used to avoid conflict by multiple threads) the file is renamed to remove the previously added extension.
 
-1. Target **Web Server** (?): Validates that written file chunk matches its MD5.  If matched nothing happens unless it is the last bin in which case a validation confirmation request is sent to the source Web Server.  Otherwise it will send a bin invalidation request to the source Web Server.
+1. _Target_ **Web Server** (?): Validates that written file chunk matches its MD5.  If matched nothing happens unless it is the last bin in which case a validation confirmation request is sent to the source Web Server.  Otherwise it will send a bin invalidation request to the source Web Server.
 
-1. Source **Web Server**: Both validation and invalidation requests are passed to the Outgoing Manager.
+1. _Source_ **Web Server**: Both validation and invalidation requests are passed to the Outgoing Manager.
 
-1. Source **Outgoing Manager**: Removes validated bins from the bin store and updates the queue.
+1. _Source_ **Outgoing Manager**: Removes validated bins from the bin store and updates the queue.
 
-1. Source **Outgoing Manager**: For validated files, queue is updated (entry removed) and file deleted from disk (if configured to do so).  **Q:** if not configured to remove files does the cache never get flushed?
+1. _Source_ **Outgoing Manager**: For validated files, queue is updated (entry removed) and file deleted from disk (if configured to do so).  **Q:** if not configured to remove files does the cache never get flushed?
 
-1. Source **Outgoing Manager**: For invalidated bins, the bin is made available to the next avaiable sending thread to be resent.
+1. _Source_ **Outgoing Manager**: For invalidated bins, the bin is made available to the next avaiable sending thread to be resent.
 
 
 ---
