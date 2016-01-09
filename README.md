@@ -53,7 +53,7 @@ If STS is configured to run as a receiver, an additional **File Watcher** thread
   
   > The number of bins that exist at a time corresponds to the number of configured sending threads plus a buffer.
 
-1. **Source Sender**: When a sender thread is ready for another bin it gets the next available one from the bin store by asking the Outgoing Manager.
+1. Source **Sender**: When a sender thread is ready for another bin it gets the next available one from the bin store by asking the Outgoing Manager.
 
   > A sender thread will only work on a given bin for a configured amount of time before it gives up.  The Outgoing Manager also considers a bin recyclable based on this interval.
 
