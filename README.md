@@ -69,7 +69,7 @@ If STS is configured to run as a receiver, an additional **File Watcher** thread
 
 1. Source **Outgoing Manager**: For validated files, queue is updated (entry removed) and file deleted from disk (if configured to do so).  **Q:** if not configured to remove files does the cache never get flushed?
 
-1. Source **Outgoing Manager**: For invalidated bins, the bin is made available to the next avaiable sending thread.
+1. Source **Outgoing Manager**: For invalidated bins, the bin is made available to the next avaiable sending thread to be resent.
 
 
 ---
