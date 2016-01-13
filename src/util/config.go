@@ -54,10 +54,10 @@ type DynamicValues struct {
 
 // TagData contains the priority and transfer method for each tag, loaded from the config.
 type TagData struct {
-    Priority        int
-    Transfer_Method string
-    Sort            string
-    Delete_On_Send  bool
+    Priority         int
+    Transfer_Method  string
+    Sort             string
+    Delete_On_Verify bool
 }
 
 func (tag *TagData) TransferMethod() string {

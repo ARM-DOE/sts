@@ -19,7 +19,7 @@ dynamic:
     DEFAULT:
       priority: 5
       sort: modtime # none, modtime
-      delete_on_send: true
+      delete_on_verify: true
       transfer_method: HTTP # transfer methods: HTTP, Disk, GridFTP
     disk_test:
       priority: 5
