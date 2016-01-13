@@ -40,6 +40,7 @@ func NewSender(disk_manager *util.DiskManager, file_queue chan Bin, compression 
     if client_err != nil {
         error_log.LogError(client_err.Error())
     }
+    new_sender.client.Timeout = time.Second * time.Duration(config.Bin_Timeout)
     return new_sender
 }
 
@@ -97,21 +98,28 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
     response, sending_err := sender.client.Do(request)
     if sending_err != nil {
         error_log.LogError(sending_err.Error())
-        time.Sleep(5 * time.Second) // Wait so you don't choke the Bin queue if it keeps failing in quick succession.
-        sender.queue <- send_bin    // Pass the bin back into the Bin queue.
+        sender.passBackBin(send_bin)
     } else {
         response_code, read_err := ioutil.ReadAll(response.Body)
         if read_err != nil {
             error_log.LogError("Could not read HTTP response from receiver: ", read_err.Error())
-        }
-        if string(response_code) == "200" {
+            sender.passBackBin(send_bin)
+        } else if string(response_code) == "200" {
             send_bin.delete() // Sending is complete, so remove the bin file
         } else {
             error_log.LogError("Send failed with response code: ", string(response_code))
+            sender.passBackBin(send_bin)
         }
         response.Body.Close()
         request.Close = true
     }
+}
+
+// passBackBin should be called when a sender has failed to send a bin and
+// needs to return it to the bin queue to be tried again by other senders.
+func (sender *Sender) passBackBin(send_bin Bin) {
+    time.Sleep(5 * time.Second) // Wait so you don't choke the Bin queue if it keeps failing in quick succession.
+    sender.queue <- send_bin    // Pass the bin back into the Bin queue.
 }
 
 // sendDisk accepts Bins with transfer type Disk, and copies them to a location on the system
@@ -184,8 +192,7 @@ func (sender *Sender) sendDisk(send_bin Bin) {
         send_bin.delete() // Write finished, delete bin.
     } else {
         error_log.LogError("Unexpected response in disk confirmation request:", string(resp_bytes))
-        time.Sleep(5 * time.Second)
-        sender.queue <- send_bin
+        sender.passBackBin(send_bin)
     }
 }
 

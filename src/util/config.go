@@ -24,6 +24,7 @@ type Config struct {
     Staging_Directory  string
     Logs_Directory     string
     TLS                bool
+    Bin_Timeout        int
     Server_SSL_Cert    string
     Server_SSL_Key     string
     Client_SSL_Cert    string
