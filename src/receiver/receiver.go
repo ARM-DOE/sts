@@ -5,10 +5,10 @@ import (
     "fmt"
     "io"
     "io/ioutil"
+    "math/rand"
     "mime/multipart"
     "net"
     "net/http"
-    "net/textproto"
     "os"
     path_util "path"
     "path/filepath"
@@ -30,6 +30,8 @@ var client http.Client
 var error_log util.Logger
 var receiver_log util.Logger
 var disk_log util.Logger
+
+const DEBUG = true
 
 // Main is the entry point of the webserver. It is responsible for registering HTTP
 // handlers, parsing the config file, starting the file listener, and beginning the request serving loop.
@@ -131,7 +133,11 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
         if end_of_file != nil { // Reached end of multipart file
             break
         }
-        handlePart(next_part, boundary, host_name, compression)
+        handle_success := handlePart(next_part, boundary, host_name, compression)
+        if !handle_success {
+            fmt.Fprint(w, http.StatusPartialContent) // respond with a 206
+            return
+        }
     }
     fmt.Fprint(w, http.StatusOK)
 }
@@ -139,11 +145,11 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 // handlePart is called for each part in the multipart file that is sent to sendHandler.
 // It reads from the Part stream and writes the part to a file while calculating the md5.
 // If the file is bad, it will be reacquired and passed back into sendHandler.
-func handlePart(part *multipart.Part, boundary string, host_name string, compressed bool) {
+func handlePart(part *multipart.Part, boundary string, host_name string, compressed bool) bool {
     // Gather data about part from headers
     part_path := util.JoinPath(config.Staging_Directory, part.Header.Get("name"))
     write_path := part_path + ".tmp"
-    part_start, part_end := getPartLocation(part.Header.Get("location"))
+    part_start, _ := getPartLocation(part.Header.Get("location"))
     part_md5 := util.NewStreamMD5()
     // If the file which this part belongs to does not already exist, create a new empty file and companion file.
     _, err := os.Open(write_path)
@@ -187,16 +193,10 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
     }
     part_fi.Close()
     // Validate part
-    if part.Header.Get("md5") != part_md5.SumString() {
+    if (part.Header.Get("md5") != part_md5.SumString()) || debugBinFail() { // If debug is enabled, drop bin 1/5th of the time
         // Validation failed, request this specific part again using part size
         error_log.LogError(fmt.Sprintf("Bad part of %s from bytes %s", part_path, part.Header.Get("location")))
-        new_stream := requestPart(part_path, part.Header, part_start, part_end, boundary)
-        if new_stream.Header.Get("FAILED") == "true" {
-            return // This file failed, but we don't want to try again, so return and say the request was fine.
-        }
-        time.Sleep(5 * time.Second)
-        handlePart(new_stream, boundary, host_name, compressed)
-        return
+        return false
     }
     // Update the companion file of the part, and check if the whole file is done
     add_err := util.AddPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"), part.Header.Get("file_md5"))
@@ -216,6 +216,16 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
         os.Chtimes(rename_path, time.Now(), time.Now()) // Update mtime so that listener will pick up the file
         fmt.Println("Fully assembled ", part_path)
     }
+    return true
+}
+
+func debugBinFail() bool {
+    if DEBUG {
+        if rand.Intn(5) == 3 {
+            return true
+        }
+    }
+    return false
 }
 
 // isFileComplete decodes the companion file of a given path and determines whether the file is complete.
@@ -238,56 +248,6 @@ func isFileComplete(path string) bool {
         is_done = true
     }
     return is_done
-}
-
-// requestPart sends an HTTP request to the sender's get_file API. The sender will
-// reply with the body of a multipart file with the path, start, end, and boundary that
-// is specified. After receiving a file part with associated header data, requestPart will
-// read out the first and only part, and pass it back into handleFile for validation.
-func requestPart(path string, part_header textproto.MIMEHeader, start int64, end int64, boundary string) *multipart.Part {
-    companion, comp_err := util.DecodeCompanion(path)
-    if comp_err != nil {
-        error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", path, comp_err.Error()))
-    }
-    host_name := companion.SenderName
-    post_path := strings.Replace(path, config.Staging_Directory+string(os.PathSeparator), "", 1)
-    post_url := fmt.Sprintf("%s://%s:%s/get_file.go?name=%s&start=%d&end=%d&boundary=%s", config.Protocol(), host_name, config.Sender_Server_Port, post_path, start, end, boundary)
-    request_complete := false
-    var return_part *multipart.Part
-    for !request_complete {
-        request, req_create_err := http.NewRequest("POST", post_url, nil)
-        if req_create_err != nil {
-            error_log.LogError(fmt.Sprintf("Could not create HTTP request object with URL %s: %s", post_url, req_create_err.Error()))
-        }
-        resp, req_err := client.Do(request)
-        if req_err != nil {
-            error_log.LogError(fmt.Sprintf("Failed to re-request part: %s Sender is probably down.", req_err.Error()))
-            time.Sleep(10 * time.Second)
-            continue
-        }
-        if resp.ContentLength < 5 && resp.ContentLength > 0 { // It's an error code, don't try to decode it.
-            error_code, _ := ioutil.ReadAll(resp.Body)
-            if string(error_code) == "410" || string(error_code) == "410\n" {
-                error_log.LogError("Tried to re-obtain file that doesn't exist on sender, transfer failed: " + post_path)
-                // Add a failed header to the part so we know not to try and decode it.
-                return_part = &multipart.Part{}
-                return_part.Header = textproto.MIMEHeader{}
-                return_part.Header.Add("FAILED", "true")
-                break
-            }
-        }
-        reader := multipart.NewReader(resp.Body, boundary)
-        part, part_err := reader.NextPart()
-        if part_err != nil {
-            // Server returned something that isn't a valid multipart file.
-            error_log.LogError(fmt.Sprintf("Error decoding file part in %s: %s", path, part_err.Error()))
-            continue
-        }
-        // Set status as successfully received.
-        return_part = part
-        request_complete = true
-    }
-    return return_part
 }
 
 // createNewFile is called when a multipart part is encountered and the file doesn't exist on the receiver yet.

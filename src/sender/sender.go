@@ -106,6 +106,9 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
             sender.passBackBin(send_bin)
         } else if string(response_code) == "200" {
             send_bin.delete() // Sending is complete, so remove the bin file
+        } else if string(response_code) == "206" {
+            error_log.LogError(fmt.Sprintf("Send of bin %s failed: receiver-end validation failed", send_bin.Name))
+            sender.passBackBin(send_bin) // Bin failed validation on receiving end
         } else {
             error_log.LogError("Send failed with response code: ", string(response_code))
             sender.passBackBin(send_bin)
