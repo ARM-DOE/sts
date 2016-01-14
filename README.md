@@ -61,13 +61,15 @@ If STS is configured to run as a receiver, an additional **File Watcher** thread
 
   > Each file is given a specific extension to indicate the file is not yet complete.  Once the last bin is written (Mutex locks are used to avoid conflict by multiple threads) the file is renamed to remove the previously added extension.
 
-1. _Target_ **HTTP Server** (?): Validates that written file chunk matches its MD5.  If matched nothing happens unless it is the last bin in which case a validation confirmation request is sent to the source Web Server.  Otherwise it will send a bin invalidation request to the source Web Server.
+1. _Target_ **HTTP Server**: Sends validation as response to initial bin POST request.
+
+1. _Source_ **Sender**: Removes validated bin from the bin store and updates the queue.  (Q: Does the Outgoing Manager actually do this?)
+
+1. _Target_ **File Watcher**: Watches for completed file and validates against its MD5.  Validation/invalidation request sent to source HTTP Server.
 
 1. _Source_ **HTTP Server**: Both validation and invalidation requests are passed to the Outgoing Manager.
 
-1. _Source_ **Outgoing Manager**: Removes validated bins from the bin store and updates the queue.
-
-1. _Source_ **Outgoing Manager**: For validated files, queue is updated (entry removed) and file deleted from disk (if configured to do so).  **Q:** if not configured to remove files does the cache never get flushed?
+1. _Source_ **Outgoing Manager**: For validated files, queue is updated (entry removed) and file deleted from disk (if configured to do so).
 
 1. _Source_ **Outgoing Manager**: For invalidated bins, the bin is made available to the next avaiable sending thread to be resent.
 
