@@ -56,7 +56,7 @@ func Main(config_file string) {
     }
     // Setup listener and add ignore patterns.
     addition_channel := make(chan string, 1)
-    listener := util.NewListener(config.Cache_File_Name, error_log, config.Staging_Directory, config.Output_Directory)
+    listener := util.NewListener(config.Cache_File_Name, error_log, config.Cache_Write_Interval, config.Staging_Directory, config.Output_Directory)
     listener.SetOnFinish(onFinish)
     listener.AddIgnored(`\.tmp`)
     listener.AddIgnored(`\.comp`)

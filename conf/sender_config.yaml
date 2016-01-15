@@ -1,6 +1,7 @@
 directory: test_location # Use absolute path
 sender_threads: 10
 cache_file_name: file_cache.dat
+cache_write_interval: 60
 logs_directory: logs
 disk_path: disk
 disk_switching: false # true, false, or auto

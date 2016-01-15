@@ -19,14 +19,14 @@ type Cache struct {
 }
 
 // NewCache creates and returns a new Cache struct with default values.
-func NewCache(cache_file_name string, watch_dir string, bin_size int, bin_channel chan Bin) *Cache {
+func NewCache(cache_file_name string, watch_dir string, cache_write_interval int64, bin_size int, bin_channel chan Bin) *Cache {
     new_cache := &Cache{}
     new_cache.md5s = make(map[string]string)
     new_cache.watch_dir = watch_dir
     new_cache.bin_size = bin_size
     new_cache.bin_channel = bin_channel
     new_cache.senders = nil
-    new_cache.listener = util.NewListener(cache_file_name, error_log, watch_dir)
+    new_cache.listener = util.NewListener(cache_file_name, error_log, cache_write_interval, watch_dir)
     new_cache.channel_lock = sync.Mutex{}
     return new_cache
 }

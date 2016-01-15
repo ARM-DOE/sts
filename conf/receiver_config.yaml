@@ -1,4 +1,5 @@
 cache_file_name: listener_cache.dat
+cache_write_interval: 60
 staging_directory: stage
 output_directory: final
 logs_directory: logs

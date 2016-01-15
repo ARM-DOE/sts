@@ -18,18 +18,20 @@ import (
 // Listener maintains a local file that contains a timestamp for when it last checked a directory.
 // This local cache also has the capacity to store information about files.
 type Listener struct {
-    file_name       string               // Name of the cache file that the listener uses to store timestamp and file data
-    last_update     int64                // Time of last update in seconds since the epoch
-    Files           map[string]CacheFile // Storage for timestamp and any additional file data. This data structure is written to the local cache.
-    watch_dirs      []string             // This is the directory that the cache holds data about
-    update_channel  chan string          // The channel that new and valid file paths will be sent to upon detection
-    onFinish        FinishFunc           // Function called when a scan that detects new files finishes.
-    new_files       bool                 // Set to true if there were new files found in the scan
-    scan_delay      int                  // Delay for how often the listener should scan the file system.
-    ignore_patterns []string             // A list of patterns that each new file name (NOT path) is tested against. If a match is found the file is ignored.
-    recent_files    map[string]bool      // A list of files that were found in the most recent string of updates. Stored as a map for quick lookups.
-    WriteLock       sync.Mutex           // Prevents the cache from being written to disk and modified simultaneously
-    error_log       Logger
+    file_name            string               // Name of the cache file that the listener uses to store timestamp and file data
+    last_update          int64                // Time of last update in seconds since the epoch
+    Files                map[string]CacheFile // Storage for timestamp and any additional file data. This data structure is written to the local cache.
+    watch_dirs           []string             // This is the directory that the cache holds data about
+    update_channel       chan string          // The channel that new and valid file paths will be sent to upon detection
+    onFinish             FinishFunc           // Function called when a scan that detects new files finishes.
+    new_files            bool                 // Set to true if there were new files found in the scan
+    scan_delay           int                  // Delay for how often the listener should scan the file system.
+    ignore_patterns      []string             // A list of patterns that each new file name (NOT path) is tested against. If a match is found the file is ignored.
+    recent_files         map[string]bool      // A list of files that were found in the most recent string of updates. Stored as a map for quick lookups.
+    WriteLock            sync.Mutex           // Prevents the cache from being written to disk and modified simultaneously
+    cache_write_interval int64                // Time in seconds that must elapse before the on-disk cache file can be written again.
+    last_cache_write     time.Time            // The time that the cache was last written to disk.
+    error_log            Logger
 }
 
 // CacheFile is the data structure that is stored on disk and in memory for every file in the cache
@@ -64,12 +66,14 @@ type FinishFunc func()
 
 // NewListener generates and returns a new Listener struct which operates on the provided
 // watch_dir and saves its data to cache_file_name.
-func NewListener(cache_file_name string, error_log Logger, watch_dirs ...string) *Listener {
+func NewListener(cache_file_name string, error_log Logger, cache_write_interval int64, watch_dirs ...string) *Listener {
     new_listener := &Listener{}
     new_listener.error_log = error_log
     new_listener.recent_files = make(map[string]bool)
     new_listener.scan_delay = 3
     new_listener.file_name = cache_file_name
+    new_listener.cache_write_interval = cache_write_interval
+    new_listener.last_cache_write = time.Now()
     new_listener.last_update = -1
     new_listener.watch_dirs = watch_dirs
     new_listener.Files = make(map[string]CacheFile)
@@ -108,14 +112,19 @@ func (listener *Listener) LoadCache() error {
 func (listener *Listener) WriteCache() {
     listener.WriteLock.Lock()
     defer listener.WriteLock.Unlock()
-    listener.Files["__TIMESTAMP__"] = CacheFile{listener.last_update, 0, nil}
-    json_bytes, encode_err := json.Marshal(listener.Files)
-    if encode_err != nil {
-        listener.codingError(encode_err)
+    // Only write to the cache if it hasn't been written for cache_write_interval seconds.
+    if time.Since(listener.last_cache_write).Seconds() > float64(listener.cache_write_interval) {
+        listener.Files["__TIMESTAMP__"] = CacheFile{listener.last_update, 0, nil}
+        json_bytes, encode_err := json.Marshal(listener.Files)
+        if encode_err != nil {
+            listener.codingError(encode_err)
+        }
+        // Create temporary cache file while writing.
+        ioutil.WriteFile(listener.file_name+".tmp", json_bytes, 0644)
+        os.Rename(listener.file_name+".tmp", listener.file_name)
+        // Update last cache timestamp
+        listener.last_cache_write = time.Now()
     }
-    // Create temporary cache file while writing.
-    ioutil.WriteFile(listener.file_name+".tmp", json_bytes, 0644)
-    os.Rename(listener.file_name+".tmp", listener.file_name)
 }
 
 // scanDir recursively checks a directory for files that are newer than the current timestamp.
