@@ -13,7 +13,7 @@ import (
 // Config is the struct that all values from the configuration file are loaded into when it is parsed.
 type Config struct {
     // Static configuration values from file - require restart to change
-    Directory            string
+    Input_Directory      string
     Sender_Threads       int
     Cache_File_Name      string
     Cache_Write_Interval int64
@@ -36,13 +36,6 @@ type Config struct {
     file_name      string
     should_reload  bool
     should_restart bool
-}
-
-func (config Config) Protocol() string {
-    if config.TLS {
-        return "https"
-    }
-    return "http"
 }
 
 // DynamicValues are the values that can be changed without needing a restart.
@@ -117,6 +110,13 @@ func (config *Config) Compression() bool {
 
 func (config *Config) BinSize() int {
     return config.Dynamic.Bin_Size
+}
+
+func (config *Config) Protocol() string {
+    if config.TLS {
+        return "https"
+    }
+    return "http"
 }
 
 // EditConfig can be used as an http.HandleFunc. It should be used to handle a page named

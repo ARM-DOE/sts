@@ -1,14 +1,17 @@
-directory: test_location # Use absolute path
-sender_threads: 10
+# Path config
+input_directory: /Users/dohn898/Desktop/test_location # Use absolute path
 cache_file_name: file_cache.dat
-cache_write_interval: 60
 logs_directory: logs
 disk_path: disk
+# Operating variables
+sender_threads: 10
+cache_write_interval: 60
 disk_switching: false # true, false, or auto
-receiver_address: localhost:8081
-server_port: 8080
-tls: false
 bin_timeout: 3600  # bin sending timeout in seconds
+# HTTP(s) setup
+server_port: 8080
+receiver_address: localhost:8081
+tls: false
 server_ssl_cert: ../../conf/server.pem
 server_ssl_key: ../../conf/server.key
 client_ssl_cert: ../../conf/client.pem

@@ -2,7 +2,6 @@ package sender
 
 import (
     "fmt"
-    "net"
     "os"
     "path/filepath"
     "strings"
@@ -32,17 +31,15 @@ func Main(config_file string) {
     send_log = util.NewLogger(config.Logs_Directory, 1)
     error_log = util.NewLogger(config.Logs_Directory, 4)
     // Create disk manager and attempt to find disk
-    disk_manager := util.CreateDiskManager(config.Directory, config.Disk_Switching)
+    disk_manager := util.CreateDiskManager(config.Input_Directory, config.Disk_Switching)
     // Create the channel through which new bins will be sent from the sender to the receiver.
     bin_channel := make(chan Bin, config.Sender_Threads+5) // Create a bin channel with buffer size large enough to accommodate all sender threads and a little wiggle room.
     // Create and start cache file handler and webserver
-    file_cache := NewCache(config.Cache_File_Name, config.Directory, config.Cache_Write_Interval, config.BinSize(), bin_channel)
+    file_cache := NewCache(config.Cache_File_Name, config.Input_Directory, config.Cache_Write_Interval, config.BinSize(), bin_channel)
     cache_err := file_cache.listener.LoadCache()
     if cache_err != nil {
         error_log.LogError("Could not load cache:", cache_err.Error())
     }
-    server := NewWebserver(file_cache)
-    server_listener := server.startServer()
 
     // Dispatch senders
     senders := make([]*Sender, config.Sender_Threads)
@@ -55,7 +52,7 @@ func Main(config_file string) {
     go file_cache.scan() // Start the file listener thread
     fmt.Println("Ready to send")
     for {
-        checkReload(file_cache, server_listener)
+        checkReload(file_cache)
         time.Sleep(1 * time.Second)
     }
 }
@@ -71,7 +68,7 @@ func getStorePath(full_path string, watch_directory string) string {
 // the config file to the webserver. If changes are detected, checkReload determines whether to reload
 // only dynamic values of whether to perform a full restart. If a full restart is needed, Restart() will
 // be called once all sender threads have finished their current Bin.
-func checkReload(cache *Cache, server_listener net.Listener) {
+func checkReload(cache *Cache) {
     if config.ShouldReload() {
         // Update in-memory config
         old_config := config
@@ -100,8 +97,8 @@ func checkReload(cache *Cache, server_listener net.Listener) {
 // getWholePath returns the absolute path of the file given the path where the file will be stored on the receiver.
 func getWholePath(store_path string) string {
     var abs_path string
-    if filepath.IsAbs(config.Directory) {
-        abs_path = fmt.Sprintf("%s%c%s", filepath.Dir(config.Directory), os.PathSeparator, store_path)
+    if filepath.IsAbs(config.Input_Directory) {
+        abs_path = fmt.Sprintf("%s%c%s", filepath.Dir(config.Input_Directory), os.PathSeparator, store_path)
     } else {
         var abs_err error
         abs_path, abs_err = filepath.Abs(store_path)

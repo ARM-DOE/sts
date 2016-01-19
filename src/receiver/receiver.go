@@ -3,8 +3,6 @@ package receiver
 import (
     "compress/gzip"
     "fmt"
-    "io"
-    "io/ioutil"
     "math/rand"
     "mime/multipart"
     "net"
@@ -278,31 +276,6 @@ func getStorePath(full_path string, watch_directory string) string {
 // removeFromCache removes the specified file from the cache on the Sender.
 // It loops until the Sender confirms that the file has been removed.
 func removeFromCache(path string) {
-    request_complete := false
-    companion, comp_err := util.DecodeCompanion(path)
-    if comp_err != nil {
-        error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", path, comp_err.Error()))
-    }
-    host_name := companion.SenderName
-    post_url := fmt.Sprintf("%s://%s:%s/remove.go?name=%s", config.Protocol(), host_name, config.Sender_Server_Port, getStorePath(path, config.Staging_Directory))
-    for !request_complete {
-        request, req_err := http.NewRequest("POST", post_url, nil)
-        if req_err != nil {
-            error_log.LogError(fmt.Sprintf("Could not create HTTP request object with URL %s: %s", post_url, req_err.Error()))
-        }
-        response, resp_err := client.Do(request)
-        if resp_err != nil {
-            error_log.LogError("Request to remove from cache failed:", resp_err.Error())
-            time.Sleep(5 * time.Second)
-            continue
-        } else {
-            request_complete = true
-        }
-        // Discard request response and close request
-        io.Copy(ioutil.Discard, response.Body)
-        response.Body.Close()
-        response.Close = true
-    }
 }
 
 // finishFile blocks while listening for any additions on addition_channel.
@@ -330,8 +303,8 @@ func finishFile(addition_channel chan string) {
             file_md5 := companion.File_MD5
             // Finally, clean up the file
             removeFromCache(staged_dir)
-            receiver_log.LogReceive(path_util.Base(new_file), file_md5, info.Size(), host_name)
             os.Remove(staged_dir + ".comp")
+            receiver_log.LogReceive(path_util.Base(new_file), file_md5, info.Size(), host_name)
         }()
     }
 }

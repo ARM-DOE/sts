@@ -136,7 +136,7 @@ func (sender *Sender) sendDisk(send_bin Bin) {
     // Let the manager know that we're writing a file
     sender.disk_manager.Writing(bin_part.TotalSize)
     // Prep the directory and create the file
-    dest_path := util.JoinPath(config.Disk_Path, getStorePath(bin_part.Path, config.Directory))
+    dest_path := util.JoinPath(config.Disk_Path, getStorePath(bin_part.Path, config.Input_Directory))
     mkdir_err := os.MkdirAll(filepath.Dir(dest_path), os.ModePerm)
     if mkdir_err != nil {
         error_log.LogError(mkdir_err.Error())
