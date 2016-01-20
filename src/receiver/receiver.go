@@ -2,13 +2,13 @@ package receiver
 
 import (
     "compress/gzip"
+    "encoding/json"
     "fmt"
     "math/rand"
     "mime/multipart"
     "net"
     "net/http"
     "os"
-    path_util "path"
     "path/filepath"
     "regexp"
     "strconv"
@@ -29,7 +29,10 @@ var error_log util.Logger
 var receiver_log util.Logger
 var disk_log util.Logger
 
-const DEBUG = true
+// log_map stores recently completed files, to be accessed by polling
+var log_map map[string]bool
+
+const DEBUG = false
 
 // Main is the entry point of the webserver. It is responsible for registering HTTP
 // handlers, parsing the config file, starting the file listener, and beginning the request serving loop.
@@ -52,6 +55,8 @@ func Main(config_file string) {
     if client_err != nil {
         error_log.LogError(client_err.Error())
     }
+    // Initialize log_map to store validated files
+    log_map = make(map[string]bool)
     // Setup listener and add ignore patterns.
     addition_channel := make(chan string, 1)
     listener := util.NewListener(config.Cache_File_Name, error_log, config.Cache_Write_Interval, config.Staging_Directory, config.Output_Directory)
@@ -69,6 +74,7 @@ func Main(config_file string) {
     // Register request handling functions
     http.HandleFunc("/send.go", sendHandler)
     http.HandleFunc("/disk_add.go", diskWriteHandler)
+    http.HandleFunc("/poll.go", pollHandler)
     http.HandleFunc("/editor.go", config.EditConfigInterface)
     http.HandleFunc("/edit_config.go", config.EditConfig)
     http.HandleFunc("/", errorHandler)
@@ -304,7 +310,8 @@ func finishFile(addition_channel chan string) {
             // Finally, clean up the file
             removeFromCache(staged_dir)
             os.Remove(staged_dir + ".comp")
-            receiver_log.LogReceive(path_util.Base(new_file), file_md5, info.Size(), host_name)
+            log_name := strings.Replace(staged_dir, config.Staging_Directory+string(os.PathSeparator), "", 1)
+            receiver_log.LogReceive(log_name, file_md5, info.Size(), host_name)
         }()
     }
 }
@@ -319,6 +326,21 @@ func diskWriteHandler(w http.ResponseWriter, r *http.Request) {
     }
     disk_log.LogDisk(file_path, md5, size)
     fmt.Fprint(w, http.StatusOK)
+}
+
+// pollHandler is called by the sender to ask the receiver which files have been fully written and validated.
+func pollHandler(w http.ResponseWriter, r *http.Request) {
+    files := strings.Split(r.FormValue("files"), ",")
+    response_map := make(map[string]bool, len(files))
+    for _, path := range files {
+        response_map[path] = isFileMoved(path)
+    }
+    json_response, _ := json.Marshal(response_map)
+    w.Write(json_response)
+}
+
+func isFileMoved(path string) bool {
+    return true
 }
 
 // onFinish will prevent the cache from writing newer timestamps to disk while

@@ -180,6 +180,9 @@ func (bin *Bin) fill() {
                 // Empty file
                 bin.cache.removeFile(path)
             }
+            if cache_file.Allocation == -1 {
+                bin.cache.poller.addFile(path)
+            }
             if cache_file.Allocation < file_size && cache_file.Allocation != -1 {
                 // File passes initial check, do expensive check
                 tag_data := getTag(bin.cache, path)

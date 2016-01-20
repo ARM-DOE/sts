@@ -34,13 +34,15 @@ func Main(config_file string) {
     disk_manager := util.CreateDiskManager(config.Input_Directory, config.Disk_Switching)
     // Create the channel through which new bins will be sent from the sender to the receiver.
     bin_channel := make(chan Bin, config.Sender_Threads+5) // Create a bin channel with buffer size large enough to accommodate all sender threads and a little wiggle room.
-    // Create and start cache file handler and webserver
+    // Create and start cache file handler and poller
     file_cache := NewCache(config.Cache_File_Name, config.Input_Directory, config.Cache_Write_Interval, config.BinSize(), bin_channel)
     cache_err := file_cache.listener.LoadCache()
     if cache_err != nil {
         error_log.LogError("Could not load cache:", cache_err.Error())
     }
-
+    poller := NewPoller(file_cache)
+    file_cache.setPoller(poller)
+    go poller.poll()
     // Dispatch senders
     senders := make([]*Sender, config.Sender_Threads)
     for dispatched_senders := 0; dispatched_senders < config.Sender_Threads; dispatched_senders++ {

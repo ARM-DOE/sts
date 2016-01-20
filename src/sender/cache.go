@@ -10,6 +10,7 @@ import (
 // Cache is a wrapper around Listener that provides extra Bin-filling functionality.
 type Cache struct {
     bin_channel  chan Bin          // The channel that newly filled Bins should be passed into.
+    poller       *Poller           // TODO write something about poller
     bin_size     int               // Default Bin size. Obtained from config.
     watch_dir    string            // Watch directory, used to create listener and new bins.
     listener     *util.Listener    // The instance of listener that the cache uses to store data and get new files.
@@ -113,6 +114,10 @@ func (cache *Cache) anyActiveSender() bool {
         }
     }
     return !senders_resting
+}
+
+func (cache *Cache) setPoller(new_poller *Poller) {
+    cache.poller = new_poller
 }
 
 // allocate is called when a new file is detected and on startup.
