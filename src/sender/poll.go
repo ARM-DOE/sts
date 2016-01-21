@@ -4,6 +4,7 @@ import (
     "encoding/json"
     "fmt"
     "net/http"
+    "net/url"
     "strings"
     "sync"
     "time"
@@ -13,7 +14,7 @@ import (
 // Poller continually asks the receiver to confirm that files allocated as -1 were successfully
 // assembled. Cache constantly feeds Poller new files while allocating bins.
 type Poller struct {
-    validation_map map[string]bool
+    validation_map map[string]int64
     map_mutex      sync.Mutex
     client         http.Client
     cache          *Cache
@@ -22,7 +23,7 @@ type Poller struct {
 // NewPoller creates a new Poller instance with all default variables instantiated.
 func NewPoller(cache *Cache) *Poller {
     new_poller := &Poller{}
-    new_poller.validation_map = make(map[string]bool)
+    new_poller.validation_map = make(map[string]int64)
     new_poller.cache = cache
     new_poller.map_mutex = sync.Mutex{}
     var client_err error
@@ -33,8 +34,9 @@ func NewPoller(cache *Cache) *Poller {
     return new_poller
 }
 
-// addFile safely adds a new file to the Poller's list of files to verify.
-func (poller *Poller) addFile(path string) {
+// addFile safely adds a new file to the Poller's list of files to verify. It requires the start
+// timestamp of the file, so that the receiver knows where in the logs to look for the file
+func (poller *Poller) addFile(path string, start_time int64) {
     store_path := getStorePath(path, config.Input_Directory)
     poller.map_mutex.Lock()
     defer poller.map_mutex.Unlock()
@@ -42,7 +44,7 @@ func (poller *Poller) addFile(path string) {
     if exists {
         return
     } else {
-        poller.validation_map[store_path] = false
+        poller.validation_map[store_path] = start_time
     }
 }
 
@@ -58,13 +60,13 @@ func (poller *Poller) poll() {
         // Create the payload of the verification request
         payload := ""
         poller.map_mutex.Lock()
-        for path, _ := range poller.validation_map {
-            payload += path + ","
+        for path, start_time := range poller.validation_map {
+            payload += fmt.Sprintf("%s;%d,", path, time.Duration(start_time)/time.Second) // Convert timestamp to seconds
         }
         payload = strings.Trim(payload, ",")
         poller.map_mutex.Unlock()
-        url := fmt.Sprintf("%s://%s/poll.go?files=%s", config.Protocol(), config.Receiver_Address, payload)
-        new_request, request_err := http.NewRequest("POST", url, nil)
+        request_url := fmt.Sprintf("%s://%s/poll.go?files=%s", config.Protocol(), config.Receiver_Address, url.QueryEscape(payload))
+        new_request, request_err := http.NewRequest("POST", request_url, nil)
         if request_err != nil {
             error_log.LogError("Could not generate HTTP request object: ", request_err.Error())
         }

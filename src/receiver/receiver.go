@@ -332,14 +332,16 @@ func diskWriteHandler(w http.ResponseWriter, r *http.Request) {
 func pollHandler(w http.ResponseWriter, r *http.Request) {
     files := strings.Split(r.FormValue("files"), ",")
     response_map := make(map[string]bool, len(files))
-    for _, path := range files {
-        response_map[path] = isFileMoved(path)
+    for _, file_data := range files {
+        split_data := strings.Split(file_data, ";")
+        start_time, _ := strconv.ParseInt(split_data[1], 10, 64)
+        response_map[split_data[0]] = isFileMoved(split_data[0], start_time)
     }
     json_response, _ := json.Marshal(response_map)
     w.Write(json_response)
 }
 
-func isFileMoved(path string) bool {
+func isFileMoved(path string, start_time int64) bool {
     return true
 }
 
