@@ -35,11 +35,9 @@ Site Transfer Software (STS)
 
 ### Start-up
 
-If STS is configured to be a sender, two threads are started for managing the outgoing flow: **File Watcher** and **Outgoing Manager**.  A similar set of threads will exist for any additionally configured target host.  Each target has its own configuration block.  STS does not currently support the sending of files from a single source directory to multiple targets.  In send mode STS will also use a configurable number of threads used for actually making the HTTP requests to the configured target.
+If STS is configured to be a sender, three threads are started for managing the outgoing flow: **File Watcher**, **Outgoing Manager**, and **Confirmation Poller**.  A similar set of threads will exist for any additionally configured target host.  Each target has its own configuration block.  STS does not currently support the sending of files from a single source directory to multiple targets.  In send mode STS will also use a configurable number of threads used for actually making the HTTP requests to the configured target.
 
-STS starts a separate thread that acts as the **HTTP Server** listening on the configured port.  It is meant to act as the reception point for both send and receive incoming messages but only actively serves for both if configured to do so.
-
-If STS is configured to run as a receiver, an additional **File Watcher** thread for watching the stage directory is started.
+If STS is configured to run as a receiver, two additional threads are started: 1) **HTTP Server** for receiving files and validation requests and 2) a **File Watcher** thread for watching the stage directory.
 
 ### Logical Flow
 
@@ -63,11 +61,15 @@ If STS is configured to run as a receiver, an additional **File Watcher** thread
 
 1. _Target_ **HTTP Server**: Sends validation as response to initial bin POST request.
 
-1. _Source_ **Sender**: Removes validated bin from the bin store and updates the queue.  (Q: Does the Outgoing Manager actually do this?)
+1. _Source_ **Sender**: Removes validated bin from the bin store and updates the queue.  __(Q: Does the Outgoing Manager actually do this?)__
 
-1. _Target_ **File Watcher**: Watches for completed file and validates against its MD5.  Validation/invalidation request sent to source HTTP Server.
+1. _Target_ **File Watcher**: Watches for completed file and validates against its MD5.  After validation, the file is renamed into the final destination and then logged.
 
-1. _Source_ **HTTP Server**: Both validation and invalidation requests are passed to the Outgoing Manager.
+  > An important note here is that files have to be renamed (moved) in the proper sorted order as determined by the Source Sender.  To accomplish this, a custom HTTP header attribute is used by the sender to indicate which file it must follow.  The Target File Watcher is responsible to make sure that a file gets moved only after its predecessor, if applicable, has been.
+  
+1. _Source_ **Confirmation Poller**: When all parts of a file have been sent, the poller sends regular requests to the Target HTTP Server to confirm the file was received and validated.
+
+  > If, after some amount of time, no validation is confirmed then the file will be put back on the queue.
 
 1. _Source_ **Outgoing Manager**: For validated files, queue is updated (entry removed) and file deleted from disk (if configured to do so).
 
