@@ -14,16 +14,21 @@ import (
 // Poller continually asks the receiver to confirm that files allocated as -1 were successfully
 // assembled. Cache constantly feeds Poller new files while allocating bins.
 type Poller struct {
-    validation_map map[string]int64
+    validation_map map[string]*PollData
     map_mutex      sync.Mutex
     client         http.Client
     cache          *Cache
 }
 
+type PollData struct {
+    start_time  int64
+    retry_count int
+}
+
 // NewPoller creates a new Poller instance with all default variables instantiated.
 func NewPoller(cache *Cache) *Poller {
     new_poller := &Poller{}
-    new_poller.validation_map = make(map[string]int64)
+    new_poller.validation_map = make(map[string]*PollData)
     new_poller.cache = cache
     new_poller.map_mutex = sync.Mutex{}
     var client_err error
@@ -44,7 +49,8 @@ func (poller *Poller) addFile(path string, start_time int64) {
     if exists {
         return
     } else {
-        poller.validation_map[store_path] = start_time
+        new_data := &PollData{start_time, 0}
+        poller.validation_map[store_path] = new_data
     }
 }
 
@@ -60,10 +66,23 @@ func (poller *Poller) poll() {
         // Create the payload of the verification request
         payload := ""
         poller.map_mutex.Lock()
-        for path, start_time := range poller.validation_map {
-            payload += fmt.Sprintf("%s;%d,", path, time.Duration(start_time)/time.Second) // Convert timestamp to seconds
+        for path, poll_data := range poller.validation_map {
+            poll_data.retry_count += 1
+            if poll_data.retry_count > 100 {
+                // Send the file again
+                delete(poller.validation_map, path)
+                cache_path := getWholePath(path)
+                poller.cache.resendFile(cache_path)
+                continue
+            }
+            payload += fmt.Sprintf("%s;%d,", path, time.Duration(poll_data.start_time)/time.Second) // Convert timestamp to seconds
         }
         payload = strings.Trim(payload, ",")
+        // Make sure that the payload is long enough to send. This check would activate if all files in the payload list were set to be resent
+        if len(payload) <= 1 {
+            time.Sleep(1)
+            continue
+        }
         poller.map_mutex.Unlock()
         request_url := fmt.Sprintf("%s://%s/poll.go?files=%s", config.Protocol(), config.Receiver_Address, url.QueryEscape(payload))
         new_request, request_err := http.NewRequest("POST", request_url, nil)
@@ -92,9 +111,12 @@ func (poller *Poller) poll() {
             if response_map[path] {
                 whole_path := getWholePath(path)
                 poller.cache.removeFile(whole_path)
+                poller.validation_map[path] = nil
                 delete(poller.validation_map, path)
             }
         }
         poller.map_mutex.Unlock()
+        // Sleep before next polling request
+        time.Sleep(30 * time.Second)
     }
 }

@@ -1,6 +1,8 @@
 package receiver
 
 import (
+    "bufio"
+    "bytes"
     "compress/gzip"
     "encoding/json"
     "fmt"
@@ -29,8 +31,12 @@ var error_log util.Logger
 var receiver_log util.Logger
 var disk_log util.Logger
 
-// log_map stores recently completed files, to be accessed by polling
+// log_map stores recently completed files, to be accessed by polling. If a key points to a value
+// of -1, that file has been validated and can be removed. If the value is not -1, it will be a
+// positive number that represents how many times the sender has asked about that file. Higher numbers
+// will increase the search width in the logs.
 var log_map map[string]bool
+var log_map_lock sync.Mutex
 
 const DEBUG = false
 
@@ -57,6 +63,7 @@ func Main(config_file string) {
     }
     // Initialize log_map to store validated files
     log_map = make(map[string]bool)
+    log_map_lock = sync.Mutex{}
     // Setup listener and add ignore patterns.
     addition_channel := make(chan string, 1)
     listener := util.NewListener(config.Cache_File_Name, error_log, config.Cache_Write_Interval, config.Staging_Directory, config.Output_Directory)
@@ -279,11 +286,6 @@ func getStorePath(full_path string, watch_directory string) string {
     return store_path
 }
 
-// removeFromCache removes the specified file from the cache on the Sender.
-// It loops until the Sender confirms that the file has been removed.
-func removeFromCache(path string) {
-}
-
 // finishFile blocks while listening for any additions on addition_channel.
 // Once a file that isn't a temp file is found, it removes the file from the sender's cache.
 func finishFile(addition_channel chan string) {
@@ -308,10 +310,16 @@ func finishFile(addition_channel chan string) {
             }
             file_md5 := companion.File_MD5
             // Finally, clean up the file
-            removeFromCache(staged_dir)
             os.Remove(staged_dir + ".comp")
             log_name := strings.Replace(staged_dir, config.Staging_Directory+string(os.PathSeparator), "", 1)
+            log_map_lock.Lock()
+            log_map[log_name] = true
+            if len(log_map) > 10000 {
+                // Dump the log map when it gets too large.
+                log_map = make(map[string]bool)
+            }
             receiver_log.LogReceive(log_name, file_md5, info.Size(), host_name)
+            log_map_lock.Unlock()
         }()
     }
 }
@@ -330,19 +338,62 @@ func diskWriteHandler(w http.ResponseWriter, r *http.Request) {
 
 // pollHandler is called by the sender to ask the receiver which files have been fully written and validated.
 func pollHandler(w http.ResponseWriter, r *http.Request) {
+    // Get host name of request
+    ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+    host_name := util.GetHostname(ip)
     files := strings.Split(r.FormValue("files"), ",")
     response_map := make(map[string]bool, len(files))
     for _, file_data := range files {
         split_data := strings.Split(file_data, ";")
         start_time, _ := strconv.ParseInt(split_data[1], 10, 64)
-        response_map[split_data[0]] = isFileMoved(split_data[0], start_time)
+        response_map[split_data[0]] = isFileMoved(split_data[0], host_name, start_time)
     }
     json_response, _ := json.Marshal(response_map)
     w.Write(json_response)
 }
 
-func isFileMoved(path string, start_time int64) bool {
-    return true
+func isFileMoved(path string, host_name string, start_time int64) bool {
+    log_map_lock.Lock()
+    _, verified := log_map[path]
+    log_map_lock.Unlock()
+    if verified {
+        return true
+    }
+    // Get the path of this file in the
+    temp_path := config.Staging_Directory + string(os.PathSeparator) + path
+    companion_path := temp_path + ".comp"
+    _, file_exists := os.Stat(temp_path + ".tmp")
+    _, comp_exists := os.Stat(companion_path)
+    if os.IsExist(file_exists) || os.IsExist(comp_exists) {
+        // The file is still in the staging area, so no need to check logs
+        return false
+    }
+    // Get paths of logs to search for the file
+    const LOG_SEARCH_WIDTH = 30
+    logs := make([]string, LOG_SEARCH_WIDTH)
+    for index, _ := range logs {
+        timestamp := time.Unix(start_time+int64((3600*24*index)), 0) // Find the next day of logs by adding X days to the timestamp
+        logs[index] = receiver_log.GetLogPath(timestamp, host_name)
+    }
+    // Actually search through the log files for the file info
+    path_bytes := []byte(path + ":")
+    for _, log_path := range logs {
+        log_handle, open_err := os.Open(log_path)
+        if open_err != nil {
+            // The log probably just doesn't exist yet because we're looking in the future, no big deal.
+            continue
+        }
+        // Use a byte scanner to find the path bytes in the log file. Fancy.
+        log_scanner := bufio.NewScanner(log_handle)
+        for log_scanner.Scan() {
+            if bytes.Contains(log_scanner.Bytes(), path_bytes) {
+                log_handle.Close()
+                return true
+            }
+        }
+        log_handle.Close()
+    }
+    return false
 }
 
 // onFinish will prevent the cache from writing newer timestamps to disk while

@@ -59,6 +59,16 @@ func (cache *Cache) updateFile(path string, new_byte_progress int64, info os.Fil
     return finished
 }
 
+func (cache *Cache) resendFile(path string) error {
+    info, stat_err := os.Stat(path)
+    if stat_err != nil {
+        return stat_err
+    }
+    cache.updateFile(path, 0, info)
+    cache.listener.WriteCache()
+    return nil
+}
+
 // removeFile deletes a file and its progress from both the in-memory and local cache.
 // It should only be used when a file has been confirmed to have completely sent.
 // It returns the time that the first chunk of the file was allocated to a bin.
