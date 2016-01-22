@@ -61,7 +61,7 @@ If STS is configured to run as a receiver, two additional threads are started: 1
 
 1. _Target_ **HTTP Server**: Sends validation as response to initial bin POST request.
 
-1. _Source_ **Sender**: Removes validated bin from the bin store and updates the queue.  __(Q: Does the Outgoing Manager actually do this?)__
+1. _Source_ **Sender**: Removes validated bin from the bin store and updates the queue.
 
 1. _Target_ **File Watcher**: Watches for completed file and validates against its MD5.  After validation, the file is renamed into the final destination and then logged.
 
