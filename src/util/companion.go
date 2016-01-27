@@ -20,6 +20,7 @@ type Companion struct {
     SenderName   string   // The hostname and port of the sender that sent the first part of the file.
     CurrentParts []string // A listing of parts received so far. Format for each string: md5;first_byte:last_byte
     File_MD5     string   // The MD5 of the whole file, as reported by the sender.
+    Last_File    string   // The file from this file's tag that came directly before.
 }
 
 // newCompanion creates a new companion file initialized
@@ -65,7 +66,8 @@ func DecodeCompanion(path string) (*Companion, error) {
 // id is the ID that will be added to the JSON data.
 // location is the location header that contains both the start and end bytes of the part.
 // file_md5 is the md5 of the whole file according to the sender.
-func AddPartToCompanion(path string, id string, location string, file_md5 string) error {
+// last_file is the name of the last file that was sent on that tag.
+func AddPartToCompanion(path string, id string, location string, file_md5 string, last_file string) error {
     CompanionLock.Lock()
     defer CompanionLock.Unlock()
     companion, companion_err := DecodeCompanion(path)
@@ -73,6 +75,7 @@ func AddPartToCompanion(path string, id string, location string, file_md5 string
         return companion_err
     }
     companion.File_MD5 = file_md5
+    companion.Last_File = last_file
     companion_addition := id + ";" + location
     if !IsStringInArray(companion.CurrentParts, companion_addition) {
         companion.CurrentParts = append(companion.CurrentParts, companion_addition)

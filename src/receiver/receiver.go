@@ -158,7 +158,7 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 // If the file is bad, it will be reacquired and passed back into sendHandler.
 func handlePart(part *multipart.Part, boundary string, host_name string, compressed bool) bool {
     // Gather data about part from headers
-    part_path := util.JoinPath(config.Staging_Directory, part.Header.Get("name"))
+    part_path := util.JoinPath(config.Staging_Directory, host_name, part.Header.Get("name"))
     write_path := part_path + ".tmp"
     part_start, _ := getPartLocation(part.Header.Get("location"))
     part_md5 := util.NewStreamMD5()
@@ -210,16 +210,15 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
         return false
     }
     // Update the companion file of the part, and check if the whole file is done
-    add_err := util.AddPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"), part.Header.Get("file_md5"))
+    add_err := util.AddPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"), part.Header.Get("file_md5"), part.Header.Get("last_file"))
     if add_err != nil {
         error_log.LogError("Failed to add part to companion:", add_err.Error())
     }
     if isFileComplete(part_path) {
-        // Finish file by moving it to the final directory and removing the .tmp extension.
+        // Finish file by updating the modtime and removing the .tmp extension.
         tmp := util.JoinPath(config.Output_Directory, host_name, part_path)
         rename_path := getStorePath(tmp, config.Staging_Directory)
-        os.MkdirAll(filepath.Dir(rename_path), os.ModePerm) // Make containing directories for the file.
-        rename_err := os.Rename(write_path, rename_path)
+        rename_err := os.Rename(write_path, part_path)
         if rename_err != nil {
             error_log.LogError(rename_err.Error())
             panic("Fatal error")
@@ -287,31 +286,56 @@ func getStorePath(full_path string, watch_directory string) string {
 }
 
 // finishFile blocks while listening for any additions on addition_channel.
-// Once a file that isn't a temp file is found, it removes the file from the sender's cache.
+// Once a file that isn't a temp file is found, it renames and cleans up the file,
+// making sure to rename the files for a specific tag in order.
 func finishFile(addition_channel chan string) {
     for {
         new_file := <-addition_channel
+        if strings.HasPrefix(new_file, config.Output_Directory) {
+            continue // Don't process files that have already been finished.
+        }
         // Acquire the mutex while working with new files so that the cache will re-detect unprocessed files in the event of a crash.
-        finalize_mutex.Lock()
-        func() { // Create inline function so we can defer the release of the mutex lock.
+        go func() { // Create inline function so we can defer the release of the mutex lock.
+            finalize_mutex.Lock()
             defer finalize_mutex.Unlock()
             // Recreate the staging directory path so the companion can be taken care of.
-            host_name := strings.Split(getStorePath(new_file, config.Output_Directory), string(os.PathSeparator))[0]
-            staged_dir := util.JoinPath(config.Staging_Directory, getStorePath(new_file, util.JoinPath(config.Output_Directory, host_name)))
+            host_name := strings.Split(strings.SplitN(new_file, config.Staging_Directory+string(os.PathSeparator), 2)[1], string(os.PathSeparator))[0]
             // Get file size & md5
             info, stat_err := os.Stat(new_file)
             if stat_err != nil {
                 error_log.LogError("Couldn't stat file: ", stat_err.Error())
             }
-            companion, comp_err := util.DecodeCompanion(staged_dir)
+            companion, comp_err := util.DecodeCompanion(new_file)
             if comp_err != nil {
-                error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", staged_dir, comp_err.Error()))
+                error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", new_file, comp_err.Error()))
                 return
             }
             file_md5 := companion.File_MD5
-            // Finally, clean up the file
-            os.Remove(staged_dir + ".comp")
-            log_name := strings.Replace(staged_dir, config.Staging_Directory+string(os.PathSeparator), "", 1)
+            // If the companion has records of a last file, check to make sure we've already renamed it.
+            if len(companion.Last_File) > 1 {
+                start_time := time.Now().Second() - 3600*24 // This is a hack, we don't know when the last file began sending, so look back one day, for every failure, increase search width.
+                // We'll look up to a month in either direction for the file, but we won't be happy about it.
+                if !isFileMoved(util.JoinPath(companion.Last_File), companion.SenderName, int64(start_time)) {
+                    addition_channel <- new_file
+                    //time.Sleep(100 * time.Millisecond)
+                    return
+                }
+            }
+            // Finally, rename and clean up the file
+            final_path := strings.Replace(new_file, config.Staging_Directory, config.Output_Directory, 1)
+            os.MkdirAll(filepath.Dir(final_path), os.ModePerm) // Make containing directories for the file.
+            rename_err := os.Rename(new_file, final_path)
+            if rename_err != nil {
+                error_log.LogError(fmt.Sprintf("Couldn't rename file while moving %s to output directory: %s", new_file, rename_err.Error()))
+            }
+            // Remove companion file
+            companion_name := new_file + ".comp"
+            remove_err := os.Remove(companion_name)
+            if remove_err != nil {
+                error_log.LogError(fmt.Sprintf("Couldn't remove companion file %s: %s", companion_name, remove_err.Error()))
+            }
+            replace_portion := config.Staging_Directory + string(os.PathSeparator)
+            log_name := strings.Replace(new_file, replace_portion, "", 1)
             log_map_lock.Lock()
             log_map[log_name] = true
             if len(log_map) > 10000 {
@@ -353,8 +377,9 @@ func pollHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func isFileMoved(path string, host_name string, start_time int64) bool {
+    log_map_path := util.JoinPath(host_name, path)
     log_map_lock.Lock()
-    _, verified := log_map[path]
+    _, verified := log_map[log_map_path]
     log_map_lock.Unlock()
     if verified {
         return true

@@ -22,6 +22,7 @@ type Part struct {
     TotalSize int64  // Total size of the file that the Part represents
     MD5       string // MD5 of the data in the part file from Start:End
     File_MD5  string // The MD5 of the entire file that the part came from.
+    Last_File string // The file that was allocated before this one
 }
 
 // NewPart creates and returns a new instance of a Part.
@@ -186,9 +187,7 @@ func (bin *Bin) fill() {
             if cache_file.Allocation < file_size && cache_file.Allocation != -1 {
                 // File passes initial check, do expensive check
                 tag_data := getTag(bin.cache, path)
-                if !shouldAllocate(bin.cache, tag_data, path) {
-                    // File didn't pass check, stop here.
-                } else {
+                if shouldAllocate(bin.cache, tag_data, path) {
                     // File should be allocated, add to Bin
                     if tag_data.TransferMethod() != TRANSFER_HTTP && bin.Empty {
                         // If the Bin is empty, add any non-standard transfer method files.
@@ -198,12 +197,12 @@ func (bin *Bin) fill() {
                     added_bytes := bin.fitBytes(cache_file.Allocation, file_size)
                     bin.BytesLeft = bin.BytesLeft - added_bytes
                     new_allocation := cache_file.Allocation + int64(added_bytes)
-                    bin.addPart(path, cache_file.Allocation, new_allocation, info)
+                    bin.addPart(path, tag_data, cache_file.Allocation, new_allocation, info)
                     update_startstamp := false
                     if cache_file.Allocation == 0 {
                         update_startstamp = true // If the first chunk is being allocated, mark the start stamp.
                     }
-                    bin.cache.updateFile(path, new_allocation, info, update_startstamp)
+                    bin.cache.updateFile(path, new_allocation, tag_data, info, update_startstamp)
                 }
             }
             if cache_file.Allocation != -1 {
@@ -222,7 +221,7 @@ func (bin *Bin) fill() {
 // been allocated yet, or if it isn't the oldest file in the cache with the same tag.
 func shouldAllocate(cache *Cache, tag_data *util.TagData, path string) bool {
     highest_priority := highestPriority(cache, tag_data)
-    oldest_file := tag_data.Sort != "modtime" || oldestFileInTag(cache, path)
+    oldest_file := tag_data.Sort == "none" || oldestFileInTag(cache, path)
     should_send := highest_priority && oldest_file
     return should_send
 }
@@ -256,7 +255,7 @@ func oldestFileInTag(cache *Cache, path string) bool {
                 error_log.LogError(stat_err.Error())
             }
             cache_modtime := cache_stat.ModTime()
-            if modtime.Before(cache_modtime) {
+            if !modtime.Before(cache_modtime) && path != cache_path {
                 return false
             }
         }
@@ -325,7 +324,7 @@ func (bin *Bin) handleExternalTransferMethod(path string, tag_data *util.TagData
         error_log.LogError("Transfer method", tag_data.TransferMethod(), "not recognized")
         panic("Fatal error")
     }
-    bin.cache.updateFile(path, -1, info)
+    bin.cache.updateFile(path, -1, tag_data, info)
 }
 
 // handleDisk is called to prep bins for files with transfer method disk.
@@ -337,7 +336,7 @@ func (bin *Bin) handleDisk(path string, tag_data *util.TagData) {
     }
     bin.Size = -1
     bin.BytesLeft = 0
-    bin.addPart(path, 0, info.Size(), info)
+    bin.addPart(path, tag_data, 0, info.Size(), info)
 }
 
 // handleGridFTP is called to prep bins for files with transfer method GridFTP.
@@ -349,7 +348,7 @@ func (bin *Bin) handleGridFTP(path string, tag_data *util.TagData) {
     }
     bin.Size = -1
     bin.BytesLeft = 0
-    bin.addPart(path, 0, info.Size(), info)
+    bin.addPart(path, tag_data, 0, info.Size(), info)
 }
 
 // fitBytes checks a file to see how much of that file can fit inside a Bin.
@@ -368,9 +367,10 @@ func (bin *Bin) fitBytes(allocation int64, file_size int64) int {
 
 // addPart calls NewPart and appends the new part to the Bin.
 // See documentation for NewPart for an in-depth explanation of addParts arguments.
-func (bin *Bin) addPart(path string, start int64, end int64, info os.FileInfo) Part {
+func (bin *Bin) addPart(path string, tag_data *util.TagData, start int64, end int64, info os.FileInfo) Part {
     new_part := NewPart(path, start, end, info.Size())
     new_part.File_MD5 = bin.cache.getFileMD5(path)
+    new_part.Last_File = tag_data.LastFile()
     bin.Files = append(bin.Files, new_part)
     bin.Empty = false
     return new_part

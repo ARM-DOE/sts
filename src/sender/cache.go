@@ -37,9 +37,10 @@ func NewCache(cache_file_name string, watch_dir string, cache_write_interval int
 // updateFile takes an optional argument new_timestamp, which should be either true or false,
 // depending whether or not a new timestamp should be stored with the file.
 // Generally, this would only happen when the file is being updated for the first time.
-func (cache *Cache) updateFile(path string, new_byte_progress int64, info os.FileInfo, new_timestamp ...bool) bool {
+func (cache *Cache) updateFile(path string, new_byte_progress int64, tag_data *util.TagData, info os.FileInfo, new_timestamp ...bool) bool {
     finished := false
     if new_byte_progress == info.Size() || new_byte_progress == -1 {
+        tag_data.SetLastFile(getStorePath(path, config.Input_Directory))
         new_byte_progress = -1
         finished = true
     }
@@ -64,7 +65,7 @@ func (cache *Cache) resendFile(path string) error {
     if stat_err != nil {
         return stat_err
     }
-    cache.updateFile(path, 0, info)
+    cache.updateFile(path, 0, nil, info)
     cache.listener.WriteCache()
     return nil
 }

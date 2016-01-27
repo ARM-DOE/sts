@@ -53,10 +53,23 @@ type TagData struct {
     Transfer_Method  string
     Sort             string
     Delete_On_Verify bool
+    Last_File        string // Name of the last file sent from this tag. Used for linked list sorting on receiving end.
 }
 
 func (tag *TagData) TransferMethod() string {
     return strings.ToLower(tag.Transfer_Method)
+}
+
+func (tag *TagData) SetLastFile(last_file string) {
+    if tag.Sort == "none" {
+        // Don't set the last file for tags that don't have ordering configured.
+        return
+    }
+    tag.Last_File = last_file
+}
+
+func (tag *TagData) LastFile() string {
+    return tag.Last_File
 }
 
 // parseConfig parses the config.yaml file and returns the parsed results as an instance of the Config struct.

@@ -64,7 +64,7 @@ func (sender *Sender) run() {
         case TRANSFER_GRIDFTP:
             sender.sendGridFTP(send_bin)
         default:
-            error_log.LogError("Unknown Bin.TransferMethod", send_bin.TransferMethod, "in", send_bin.Name)
+            error_log.LogError("Unknown Bin transfer method", send_bin.TransferMethod, "in", send_bin.Name)
             panic("Fatal error")
         }
         sender.Busy = false
@@ -171,7 +171,7 @@ func (sender *Sender) sendDisk(send_bin Bin) {
     if comp_err != nil {
         error_log.LogError("Could not create new companion:", comp_err.Error())
     }
-    add_err := util.AddPartToCompanion(dest_path, stream_md5.SumString(), getPartLocation(0, bin_part.TotalSize), stream_md5.SumString())
+    add_err := util.AddPartToCompanion(dest_path, stream_md5.SumString(), getPartLocation(0, bin_part.TotalSize), stream_md5.SumString(), bin_part.Last_File)
     if add_err != nil {
         error_log.LogError("Failed to add part to companion:", add_err.Error())
     }
@@ -273,6 +273,7 @@ func (body *BinBody) startNextPart() {
     new_header.Add("total_size", fmt.Sprintf("%d", body.bin_part.TotalSize))
     new_header.Add("location", getPartLocation(body.bin_part.Start, body.bin_part.End))
     new_header.Add("file_md5", body.bin_part.File_MD5)
+    new_header.Add("last_file", body.bin_part.Last_File)
     body.writer.CreatePart(new_header)
     body.unsent_header = body.writer_buffer.Bytes()
     body.file_index++
