@@ -5,6 +5,7 @@ import (
     "fmt"
     "net/http"
     "net/url"
+    "os"
     "strings"
     "sync"
     "time"
@@ -110,6 +111,14 @@ func (poller *Poller) poll() {
         for path, _ := range response_map {
             if response_map[path] {
                 whole_path := getWholePath(path)
+                tag_data := getTag(poller.cache, whole_path)
+                if tag_data.Delete_On_Verify {
+                    // Delete the file if the tag says we should.
+                    remove_err := os.Remove(whole_path)
+                    if remove_err != nil {
+                        error_log.LogError(fmt.Sprintf("Couldn't remove %s file after send confirmation: %s", whole_path, remove_err.Error()))
+                    }
+                }
                 poller.cache.removeFile(whole_path)
                 poller.validation_map[path] = nil
                 delete(poller.validation_map, path)

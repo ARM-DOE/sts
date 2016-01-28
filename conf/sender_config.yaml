@@ -12,8 +12,6 @@ bin_timeout: 3600  # bin sending timeout in seconds
 server_port: 8080
 receiver_address: localhost:8081
 tls: false
-server_ssl_cert: ../../conf/server.pem
-server_ssl_key: ../../conf/server.key
 client_ssl_cert: ../../conf/client.pem
 client_ssl_key: ../../conf/client.key
 
