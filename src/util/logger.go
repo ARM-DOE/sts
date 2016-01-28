@@ -55,9 +55,9 @@ func (logger *Logger) updateFileHandle(host_names ...string) {
     }
     var current_path string
     if host_flag {
-        current_path = getCurrentLogPath(logger.base_path, logger.mode, host_names[0])
+        current_path = GetCurrentLogPath(logger.base_path, logger.mode, host_names[0])
     } else {
-        current_path = getCurrentLogPath(logger.base_path, logger.mode)
+        current_path = GetCurrentLogPath(logger.base_path, logger.mode)
     }
     _, stat_err := os.Stat(current_path)
     if logger.log_path != current_path || os.IsNotExist(stat_err) || logger.file_handle == nil {
@@ -124,16 +124,26 @@ func (logger *Logger) LogReceive(s string, md5 string, size int64, hostname stri
     logger.updateFileHandle(hostname)
     log_string := fmt.Sprintf("%s:%s:%d:%d:", s, md5, size, time.Now().Unix())
     logger.internal_logger.Println(log_string)
+    logger.file_handle.Sync()
 }
 
 // getCurrentLogPath returns what should be the path of the current log file. It is  used to
 // detect when a day has passed, and a new log file should be opened. It takes optional argument host_name
 // which must be of length 1 or not supplied. The given hostname will be appended to the log path.
-func getCurrentLogPath(base_path string, mode int, host_name ...string) string {
+func GetCurrentLogPath(base_path string, mode int, host_name ...string) string {
+    now := time.Now()
+    return GetLogPath(base_path, mode, now, host_name...)
+}
+
+func GetLogPath(base_path string, mode int, log_time time.Time, host_name ...string) string {
     if len(host_name) > 0 {
-        return JoinPath(base_path, getDirectory(mode), host_name[0], getMonth(), getDay())
+        return JoinPath(base_path, getDirectory(mode), host_name[0], getYear(log_time)+getMonth(log_time), getDay(log_time))
     }
-    return JoinPath(base_path, getDirectory(mode), getMonth(), getDay())
+    return JoinPath(base_path, getDirectory(mode), getYear(log_time)+getMonth(log_time), getDay(log_time))
+}
+
+func (logger *Logger) GetLogPath(log_time time.Time, host_name string) string {
+    return GetLogPath(logger.base_path, logger.mode, log_time, host_name)
 }
 
 // getDirectory returns the preset directory name for a type of log.
@@ -154,20 +164,25 @@ func getDirectory(mode int) string {
 
 // getDay gets the current day (1-31) and pads it with a leading 0
 // if it is less than 2 characters long. Ex. 9 becomes 09.
-func getDay() string {
-    day_string := strconv.Itoa(time.Now().Day())
+func getDay(log_time time.Time) string {
+    day_string := strconv.Itoa(log_time.Day())
     if len(day_string) == 1 {
         return "0" + day_string
     }
     return day_string
 }
 
-// getDay gets the current month (1-12) and pads it with a leading 0
+// getMonth gets the current month (1-12) and pads it with a leading 0
 // if it is less than 2 characters long. Ex. 9 becomes 09.
-func getMonth() string {
-    month_string := strconv.Itoa(int((time.Now().Month())))
+func getMonth(log_time time.Time) string {
+    month_string := strconv.Itoa(int((log_time.Month())))
     if len(month_string) == 1 {
         return "0" + month_string
     }
     return month_string
+}
+
+// getYear gets the current 4-digit year.
+func getYear(log_time time.Time) string {
+    return strconv.Itoa(log_time.Year())
 }

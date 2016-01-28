@@ -1,16 +1,16 @@
 package receiver
 
 import (
+    "bufio"
+    "bytes"
     "compress/gzip"
+    "encoding/json"
     "fmt"
-    "io"
-    "io/ioutil"
+    "math/rand"
     "mime/multipart"
     "net"
     "net/http"
-    "net/textproto"
     "os"
-    path_util "path"
     "path/filepath"
     "regexp"
     "strconv"
@@ -30,6 +30,15 @@ var client http.Client
 var error_log util.Logger
 var receiver_log util.Logger
 var disk_log util.Logger
+
+// log_map stores recently completed files, to be accessed by polling. If a key points to a value
+// of -1, that file has been validated and can be removed. If the value is not -1, it will be a
+// positive number that represents how many times the sender has asked about that file. Higher numbers
+// will increase the search width in the logs.
+var log_map map[string]bool
+var log_map_lock sync.Mutex
+
+const DEBUG = false
 
 // Main is the entry point of the webserver. It is responsible for registering HTTP
 // handlers, parsing the config file, starting the file listener, and beginning the request serving loop.
@@ -52,9 +61,12 @@ func Main(config_file string) {
     if client_err != nil {
         error_log.LogError(client_err.Error())
     }
+    // Initialize log_map to store validated files
+    log_map = make(map[string]bool)
+    log_map_lock = sync.Mutex{}
     // Setup listener and add ignore patterns.
     addition_channel := make(chan string, 1)
-    listener := util.NewListener(config.Cache_File_Name, error_log, config.Staging_Directory, config.Output_Directory)
+    listener := util.NewListener(config.Cache_File_Name, error_log, config.Cache_Write_Interval, config.Staging_Directory, config.Output_Directory)
     listener.SetOnFinish(onFinish)
     listener.AddIgnored(`\.tmp`)
     listener.AddIgnored(`\.comp`)
@@ -69,6 +81,7 @@ func Main(config_file string) {
     // Register request handling functions
     http.HandleFunc("/send.go", sendHandler)
     http.HandleFunc("/disk_add.go", diskWriteHandler)
+    http.HandleFunc("/poll.go", pollHandler)
     http.HandleFunc("/editor.go", config.EditConfigInterface)
     http.HandleFunc("/edit_config.go", config.EditConfig)
     http.HandleFunc("/", errorHandler)
@@ -131,7 +144,11 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
         if end_of_file != nil { // Reached end of multipart file
             break
         }
-        handlePart(next_part, boundary, host_name, compression)
+        handle_success := handlePart(next_part, boundary, host_name, compression)
+        if !handle_success {
+            fmt.Fprint(w, http.StatusPartialContent) // respond with a 206
+            return
+        }
     }
     fmt.Fprint(w, http.StatusOK)
 }
@@ -139,11 +156,11 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 // handlePart is called for each part in the multipart file that is sent to sendHandler.
 // It reads from the Part stream and writes the part to a file while calculating the md5.
 // If the file is bad, it will be reacquired and passed back into sendHandler.
-func handlePart(part *multipart.Part, boundary string, host_name string, compressed bool) {
+func handlePart(part *multipart.Part, boundary string, host_name string, compressed bool) bool {
     // Gather data about part from headers
-    part_path := util.JoinPath(config.Staging_Directory, part.Header.Get("name"))
+    part_path := util.JoinPath(config.Staging_Directory, host_name, part.Header.Get("name"))
     write_path := part_path + ".tmp"
-    part_start, part_end := getPartLocation(part.Header.Get("location"))
+    part_start, _ := getPartLocation(part.Header.Get("location"))
     part_md5 := util.NewStreamMD5()
     // If the file which this part belongs to does not already exist, create a new empty file and companion file.
     _, err := os.Open(write_path)
@@ -187,28 +204,21 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
     }
     part_fi.Close()
     // Validate part
-    if part.Header.Get("md5") != part_md5.SumString() {
+    if (part.Header.Get("md5") != part_md5.SumString()) || debugBinFail() { // If debug is enabled, drop bin 1/5th of the time
         // Validation failed, request this specific part again using part size
         error_log.LogError(fmt.Sprintf("Bad part of %s from bytes %s", part_path, part.Header.Get("location")))
-        new_stream := requestPart(part_path, part.Header, part_start, part_end, boundary)
-        if new_stream.Header.Get("FAILED") == "true" {
-            return // This file failed, but we don't want to try again, so return and say the request was fine.
-        }
-        time.Sleep(5 * time.Second)
-        handlePart(new_stream, boundary, host_name, compressed)
-        return
+        return false
     }
     // Update the companion file of the part, and check if the whole file is done
-    add_err := util.AddPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"), part.Header.Get("file_md5"))
+    add_err := util.AddPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"), part.Header.Get("file_md5"), part.Header.Get("last_file"))
     if add_err != nil {
         error_log.LogError("Failed to add part to companion:", add_err.Error())
     }
     if isFileComplete(part_path) {
-        // Finish file by moving it to the final directory and removing the .tmp extension.
+        // Finish file by updating the modtime and removing the .tmp extension.
         tmp := util.JoinPath(config.Output_Directory, host_name, part_path)
         rename_path := getStorePath(tmp, config.Staging_Directory)
-        os.MkdirAll(filepath.Dir(rename_path), os.ModePerm) // Make containing directories for the file.
-        rename_err := os.Rename(write_path, rename_path)
+        rename_err := os.Rename(write_path, part_path)
         if rename_err != nil {
             error_log.LogError(rename_err.Error())
             panic("Fatal error")
@@ -216,6 +226,16 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
         os.Chtimes(rename_path, time.Now(), time.Now()) // Update mtime so that listener will pick up the file
         fmt.Println("Fully assembled ", part_path)
     }
+    return true
+}
+
+func debugBinFail() bool {
+    if DEBUG {
+        if rand.Intn(5) == 3 {
+            return true
+        }
+    }
+    return false
 }
 
 // isFileComplete decodes the companion file of a given path and determines whether the file is complete.
@@ -238,56 +258,6 @@ func isFileComplete(path string) bool {
         is_done = true
     }
     return is_done
-}
-
-// requestPart sends an HTTP request to the sender's get_file API. The sender will
-// reply with the body of a multipart file with the path, start, end, and boundary that
-// is specified. After receiving a file part with associated header data, requestPart will
-// read out the first and only part, and pass it back into handleFile for validation.
-func requestPart(path string, part_header textproto.MIMEHeader, start int64, end int64, boundary string) *multipart.Part {
-    companion, comp_err := util.DecodeCompanion(path)
-    if comp_err != nil {
-        error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", path, comp_err.Error()))
-    }
-    host_name := companion.SenderName
-    post_path := strings.Replace(path, config.Staging_Directory+string(os.PathSeparator), "", 1)
-    post_url := fmt.Sprintf("%s://%s:%s/get_file.go?name=%s&start=%d&end=%d&boundary=%s", config.Protocol(), host_name, config.Sender_Server_Port, post_path, start, end, boundary)
-    request_complete := false
-    var return_part *multipart.Part
-    for !request_complete {
-        request, req_create_err := http.NewRequest("POST", post_url, nil)
-        if req_create_err != nil {
-            error_log.LogError(fmt.Sprintf("Could not create HTTP request object with URL %s: %s", post_url, req_create_err.Error()))
-        }
-        resp, req_err := client.Do(request)
-        if req_err != nil {
-            error_log.LogError(fmt.Sprintf("Failed to re-request part: %s Sender is probably down.", req_err.Error()))
-            time.Sleep(10 * time.Second)
-            continue
-        }
-        if resp.ContentLength < 5 && resp.ContentLength > 0 { // It's an error code, don't try to decode it.
-            error_code, _ := ioutil.ReadAll(resp.Body)
-            if string(error_code) == "410" || string(error_code) == "410\n" {
-                error_log.LogError("Tried to re-obtain file that doesn't exist on sender, transfer failed: " + post_path)
-                // Add a failed header to the part so we know not to try and decode it.
-                return_part = &multipart.Part{}
-                return_part.Header = textproto.MIMEHeader{}
-                return_part.Header.Add("FAILED", "true")
-                break
-            }
-        }
-        reader := multipart.NewReader(resp.Body, boundary)
-        part, part_err := reader.NextPart()
-        if part_err != nil {
-            // Server returned something that isn't a valid multipart file.
-            error_log.LogError(fmt.Sprintf("Error decoding file part in %s: %s", path, part_err.Error()))
-            continue
-        }
-        // Set status as successfully received.
-        return_part = part
-        request_complete = true
-    }
-    return return_part
 }
 
 // createNewFile is called when a multipart part is encountered and the file doesn't exist on the receiver yet.
@@ -315,63 +285,65 @@ func getStorePath(full_path string, watch_directory string) string {
     return store_path
 }
 
-// removeFromCache removes the specified file from the cache on the Sender.
-// It loops until the Sender confirms that the file has been removed.
-func removeFromCache(path string) {
-    request_complete := false
-    companion, comp_err := util.DecodeCompanion(path)
-    if comp_err != nil {
-        error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", path, comp_err.Error()))
-    }
-    host_name := companion.SenderName
-    post_url := fmt.Sprintf("%s://%s:%s/remove.go?name=%s", config.Protocol(), host_name, config.Sender_Server_Port, getStorePath(path, config.Staging_Directory))
-    for !request_complete {
-        request, req_err := http.NewRequest("POST", post_url, nil)
-        if req_err != nil {
-            error_log.LogError(fmt.Sprintf("Could not create HTTP request object with URL %s: %s", post_url, req_err.Error()))
-        }
-        response, resp_err := client.Do(request)
-        if resp_err != nil {
-            error_log.LogError("Request to remove from cache failed:", resp_err.Error())
-            time.Sleep(5 * time.Second)
-            continue
-        } else {
-            request_complete = true
-        }
-        // Discard request response and close request
-        io.Copy(ioutil.Discard, response.Body)
-        response.Body.Close()
-        response.Close = true
-    }
-}
-
 // finishFile blocks while listening for any additions on addition_channel.
-// Once a file that isn't a temp file is found, it removes the file from the sender's cache.
+// Once a file that isn't a temp file is found, it renames and cleans up the file,
+// making sure to rename the files for a specific tag in order.
 func finishFile(addition_channel chan string) {
     for {
         new_file := <-addition_channel
+        if strings.HasPrefix(new_file, config.Output_Directory) {
+            continue // Don't process files that have already been finished.
+        }
         // Acquire the mutex while working with new files so that the cache will re-detect unprocessed files in the event of a crash.
-        finalize_mutex.Lock()
-        func() { // Create inline function so we can defer the release of the mutex lock.
+        go func() { // Create inline function so we can defer the release of the mutex lock.
+            finalize_mutex.Lock()
             defer finalize_mutex.Unlock()
             // Recreate the staging directory path so the companion can be taken care of.
-            host_name := strings.Split(getStorePath(new_file, config.Output_Directory), string(os.PathSeparator))[0]
-            staged_dir := util.JoinPath(config.Staging_Directory, getStorePath(new_file, util.JoinPath(config.Output_Directory, host_name)))
+            host_name := strings.Split(strings.SplitN(new_file, config.Staging_Directory+string(os.PathSeparator), 2)[1], string(os.PathSeparator))[0]
             // Get file size & md5
             info, stat_err := os.Stat(new_file)
             if stat_err != nil {
                 error_log.LogError("Couldn't stat file: ", stat_err.Error())
             }
-            companion, comp_err := util.DecodeCompanion(staged_dir)
+            companion, comp_err := util.DecodeCompanion(new_file)
             if comp_err != nil {
-                error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", staged_dir, comp_err.Error()))
+                error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", new_file, comp_err.Error()))
                 return
             }
             file_md5 := companion.File_MD5
-            // Finally, clean up the file
-            removeFromCache(staged_dir)
-            receiver_log.LogReceive(path_util.Base(new_file), file_md5, info.Size(), host_name)
-            os.Remove(staged_dir + ".comp")
+            // If the companion has records of a last file, check to make sure we've already renamed it.
+            if len(companion.Last_File) > 1 {
+                start_time := time.Now().Second() - 3600*24 // This is a hack, we don't know when the last file began sending, so look back one day, for every failure, increase search width.
+                // We'll look up to a month in either direction for the file, but we won't be happy about it.
+                if !isFileMoved(util.JoinPath(companion.Last_File), companion.SenderName, int64(start_time)) {
+                    addition_channel <- new_file
+                    //time.Sleep(100 * time.Millisecond)
+                    return
+                }
+            }
+            // Finally, rename and clean up the file
+            final_path := strings.Replace(new_file, config.Staging_Directory, config.Output_Directory, 1)
+            os.MkdirAll(filepath.Dir(final_path), os.ModePerm) // Make containing directories for the file.
+            rename_err := os.Rename(new_file, final_path)
+            if rename_err != nil {
+                error_log.LogError(fmt.Sprintf("Couldn't rename file while moving %s to output directory: %s", new_file, rename_err.Error()))
+            }
+            // Remove companion file
+            companion_name := new_file + ".comp"
+            remove_err := os.Remove(companion_name)
+            if remove_err != nil {
+                error_log.LogError(fmt.Sprintf("Couldn't remove companion file %s: %s", companion_name, remove_err.Error()))
+            }
+            replace_portion := config.Staging_Directory + string(os.PathSeparator)
+            log_name := strings.Replace(new_file, replace_portion, "", 1)
+            log_map_lock.Lock()
+            log_map[log_name] = true
+            if len(log_map) > 10000 {
+                // Dump the log map when it gets too large.
+                log_map = make(map[string]bool)
+            }
+            receiver_log.LogReceive(log_name, file_md5, info.Size(), host_name)
+            log_map_lock.Unlock()
         }()
     }
 }
@@ -386,6 +358,67 @@ func diskWriteHandler(w http.ResponseWriter, r *http.Request) {
     }
     disk_log.LogDisk(file_path, md5, size)
     fmt.Fprint(w, http.StatusOK)
+}
+
+// pollHandler is called by the sender to ask the receiver which files have been fully written and validated.
+func pollHandler(w http.ResponseWriter, r *http.Request) {
+    // Get host name of request
+    ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+    host_name := util.GetHostname(ip)
+    files := strings.Split(r.FormValue("files"), ",")
+    response_map := make(map[string]bool, len(files))
+    for _, file_data := range files {
+        split_data := strings.Split(file_data, ";")
+        start_time, _ := strconv.ParseInt(split_data[1], 10, 64)
+        response_map[split_data[0]] = isFileMoved(split_data[0], host_name, start_time)
+    }
+    json_response, _ := json.Marshal(response_map)
+    w.Write(json_response)
+}
+
+func isFileMoved(path string, host_name string, start_time int64) bool {
+    log_map_path := util.JoinPath(host_name, path)
+    log_map_lock.Lock()
+    _, verified := log_map[log_map_path]
+    log_map_lock.Unlock()
+    if verified {
+        return true
+    }
+    // Get the path of this file in the
+    temp_path := config.Staging_Directory + string(os.PathSeparator) + path
+    companion_path := temp_path + ".comp"
+    _, file_exists := os.Stat(temp_path + ".tmp")
+    _, comp_exists := os.Stat(companion_path)
+    if os.IsExist(file_exists) || os.IsExist(comp_exists) {
+        // The file is still in the staging area, so no need to check logs
+        return false
+    }
+    // Get paths of logs to search for the file
+    const LOG_SEARCH_WIDTH = 30
+    logs := make([]string, LOG_SEARCH_WIDTH)
+    for index, _ := range logs {
+        timestamp := time.Unix(start_time+int64((3600*24*index)), 0) // Find the next day of logs by adding X days to the timestamp
+        logs[index] = receiver_log.GetLogPath(timestamp, host_name)
+    }
+    // Actually search through the log files for the file info
+    path_bytes := []byte(path + ":")
+    for _, log_path := range logs {
+        log_handle, open_err := os.Open(log_path)
+        if open_err != nil {
+            // The log probably just doesn't exist yet because we're looking in the future, no big deal.
+            continue
+        }
+        // Use a byte scanner to find the path bytes in the log file. Fancy.
+        log_scanner := bufio.NewScanner(log_handle)
+        for log_scanner.Scan() {
+            if bytes.Contains(log_scanner.Bytes(), path_bytes) {
+                log_handle.Close()
+                return true
+            }
+        }
+        log_handle.Close()
+    }
+    return false
 }
 
 // onFinish will prevent the cache from writing newer timestamps to disk while

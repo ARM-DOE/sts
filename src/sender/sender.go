@@ -40,6 +40,7 @@ func NewSender(disk_manager *util.DiskManager, file_queue chan Bin, compression 
     if client_err != nil {
         error_log.LogError(client_err.Error())
     }
+    new_sender.client.Timeout = time.Second * time.Duration(config.Bin_Timeout)
     return new_sender
 }
 
@@ -63,7 +64,7 @@ func (sender *Sender) run() {
         case TRANSFER_GRIDFTP:
             sender.sendGridFTP(send_bin)
         default:
-            error_log.LogError("Unknown Bin.TransferMethod", send_bin.TransferMethod, "in", send_bin.Name)
+            error_log.LogError("Unknown Bin transfer method", send_bin.TransferMethod, "in", send_bin.Name)
             panic("Fatal error")
         }
         sender.Busy = false
@@ -97,21 +98,31 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
     response, sending_err := sender.client.Do(request)
     if sending_err != nil {
         error_log.LogError(sending_err.Error())
-        time.Sleep(5 * time.Second) // Wait so you don't choke the Bin queue if it keeps failing in quick succession.
-        sender.queue <- send_bin    // Pass the bin back into the Bin queue.
+        sender.passBackBin(send_bin)
     } else {
         response_code, read_err := ioutil.ReadAll(response.Body)
         if read_err != nil {
             error_log.LogError("Could not read HTTP response from receiver: ", read_err.Error())
-        }
-        if string(response_code) == "200" {
+            sender.passBackBin(send_bin)
+        } else if string(response_code) == "200" {
             send_bin.delete() // Sending is complete, so remove the bin file
+        } else if string(response_code) == "206" {
+            error_log.LogError(fmt.Sprintf("Send of bin %s failed: receiver-end validation failed", send_bin.Name))
+            sender.passBackBin(send_bin) // Bin failed validation on receiving end
         } else {
             error_log.LogError("Send failed with response code: ", string(response_code))
+            sender.passBackBin(send_bin)
         }
         response.Body.Close()
         request.Close = true
     }
+}
+
+// passBackBin should be called when a sender has failed to send a bin and
+// needs to return it to the bin queue to be tried again by other senders.
+func (sender *Sender) passBackBin(send_bin Bin) {
+    time.Sleep(5 * time.Second) // Wait so you don't choke the Bin queue if it keeps failing in quick succession.
+    sender.queue <- send_bin    // Pass the bin back into the Bin queue.
 }
 
 // sendDisk accepts Bins with transfer type Disk, and copies them to a location on the system
@@ -125,7 +136,7 @@ func (sender *Sender) sendDisk(send_bin Bin) {
     // Let the manager know that we're writing a file
     sender.disk_manager.Writing(bin_part.TotalSize)
     // Prep the directory and create the file
-    dest_path := util.JoinPath(config.Disk_Path, getStorePath(bin_part.Path, config.Directory))
+    dest_path := util.JoinPath(config.Disk_Path, getStorePath(bin_part.Path, config.Input_Directory))
     mkdir_err := os.MkdirAll(filepath.Dir(dest_path), os.ModePerm)
     if mkdir_err != nil {
         error_log.LogError(mkdir_err.Error())
@@ -160,7 +171,7 @@ func (sender *Sender) sendDisk(send_bin Bin) {
     if comp_err != nil {
         error_log.LogError("Could not create new companion:", comp_err.Error())
     }
-    add_err := util.AddPartToCompanion(dest_path, stream_md5.SumString(), getPartLocation(0, bin_part.TotalSize), stream_md5.SumString())
+    add_err := util.AddPartToCompanion(dest_path, stream_md5.SumString(), getPartLocation(0, bin_part.TotalSize), stream_md5.SumString(), bin_part.Last_File)
     if add_err != nil {
         error_log.LogError("Failed to add part to companion:", add_err.Error())
     }
@@ -184,8 +195,7 @@ func (sender *Sender) sendDisk(send_bin Bin) {
         send_bin.delete() // Write finished, delete bin.
     } else {
         error_log.LogError("Unexpected response in disk confirmation request:", string(resp_bytes))
-        time.Sleep(5 * time.Second)
-        sender.queue <- send_bin
+        sender.passBackBin(send_bin)
     }
 }
 
@@ -263,6 +273,7 @@ func (body *BinBody) startNextPart() {
     new_header.Add("total_size", fmt.Sprintf("%d", body.bin_part.TotalSize))
     new_header.Add("location", getPartLocation(body.bin_part.Start, body.bin_part.End))
     new_header.Add("file_md5", body.bin_part.File_MD5)
+    new_header.Add("last_file", body.bin_part.Last_File)
     body.writer.CreatePart(new_header)
     body.unsent_header = body.writer_buffer.Bytes()
     body.file_index++

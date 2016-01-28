@@ -13,34 +13,29 @@ import (
 // Config is the struct that all values from the configuration file are loaded into when it is parsed.
 type Config struct {
     // Static configuration values from file - require restart to change
-    Directory          string
-    Sender_Threads     int
-    Cache_File_Name    string
-    Disk_Path          string
-    Output_Directory   string
-    Server_Port        string
-    Sender_Server_Port string
-    Receiver_Address   string
-    Staging_Directory  string
-    Logs_Directory     string
-    TLS                bool
-    Server_SSL_Cert    string
-    Server_SSL_Key     string
-    Client_SSL_Cert    string
-    Client_SSL_Key     string
-    DiskSwitching      string
-    Dynamic            DynamicValues
+    Input_Directory      string
+    Sender_Threads       int
+    Cache_File_Name      string
+    Cache_Write_Interval int64
+    Disk_Path            string
+    Bin_Store            string
+    Output_Directory     string
+    Server_Port          string
+    Receiver_Address     string
+    Staging_Directory    string
+    Logs_Directory       string
+    TLS                  bool
+    Bin_Timeout          int
+    Server_SSL_Cert      string
+    Server_SSL_Key       string
+    Client_SSL_Cert      string
+    Client_SSL_Key       string
+    Disk_Switching       string
+    Dynamic              DynamicValues
     // Internal config values
     file_name      string
     should_reload  bool
     should_restart bool
-}
-
-func (config Config) Protocol() string {
-    if config.TLS {
-        return "https"
-    }
-    return "http"
 }
 
 // DynamicValues are the values that can be changed without needing a restart.
@@ -54,14 +49,27 @@ type DynamicValues struct {
 
 // TagData contains the priority and transfer method for each tag, loaded from the config.
 type TagData struct {
-    Priority        int
-    Transfer_Method string
-    Sort            string
-    Delete_On_Send  bool
+    Priority         int
+    Transfer_Method  string
+    Sort             string
+    Delete_On_Verify bool
+    Last_File        string // Name of the last file sent from this tag. Used for linked list sorting on receiving end.
 }
 
 func (tag *TagData) TransferMethod() string {
     return strings.ToLower(tag.Transfer_Method)
+}
+
+func (tag *TagData) SetLastFile(last_file string) {
+    if tag.Sort == "none" {
+        // Don't set the last file for tags that don't have ordering configured.
+        return
+    }
+    tag.Last_File = last_file
+}
+
+func (tag *TagData) LastFile() string {
+    return tag.Last_File
 }
 
 // parseConfig parses the config.yaml file and returns the parsed results as an instance of the Config struct.
@@ -115,6 +123,13 @@ func (config *Config) Compression() bool {
 
 func (config *Config) BinSize() int {
     return config.Dynamic.Bin_Size
+}
+
+func (config *Config) Protocol() string {
+    if config.TLS {
+        return "https"
+    }
+    return "http"
 }
 
 // EditConfig can be used as an http.HandleFunc. It should be used to handle a page named

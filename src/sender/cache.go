@@ -10,6 +10,7 @@ import (
 // Cache is a wrapper around Listener that provides extra Bin-filling functionality.
 type Cache struct {
     bin_channel  chan Bin          // The channel that newly filled Bins should be passed into.
+    poller       *Poller           // TODO write something about poller
     bin_size     int               // Default Bin size. Obtained from config.
     watch_dir    string            // Watch directory, used to create listener and new bins.
     listener     *util.Listener    // The instance of listener that the cache uses to store data and get new files.
@@ -19,14 +20,14 @@ type Cache struct {
 }
 
 // NewCache creates and returns a new Cache struct with default values.
-func NewCache(cache_file_name string, watch_dir string, bin_size int, bin_channel chan Bin) *Cache {
+func NewCache(cache_file_name string, watch_dir string, cache_write_interval int64, bin_size int, bin_channel chan Bin) *Cache {
     new_cache := &Cache{}
     new_cache.md5s = make(map[string]string)
     new_cache.watch_dir = watch_dir
     new_cache.bin_size = bin_size
     new_cache.bin_channel = bin_channel
     new_cache.senders = nil
-    new_cache.listener = util.NewListener(cache_file_name, error_log, watch_dir)
+    new_cache.listener = util.NewListener(cache_file_name, error_log, cache_write_interval, watch_dir)
     new_cache.channel_lock = sync.Mutex{}
     return new_cache
 }
@@ -36,9 +37,10 @@ func NewCache(cache_file_name string, watch_dir string, bin_size int, bin_channe
 // updateFile takes an optional argument new_timestamp, which should be either true or false,
 // depending whether or not a new timestamp should be stored with the file.
 // Generally, this would only happen when the file is being updated for the first time.
-func (cache *Cache) updateFile(path string, new_byte_progress int64, info os.FileInfo, new_timestamp ...bool) bool {
+func (cache *Cache) updateFile(path string, new_byte_progress int64, tag_data *util.TagData, info os.FileInfo, new_timestamp ...bool) bool {
     finished := false
     if new_byte_progress == info.Size() || new_byte_progress == -1 {
+        tag_data.SetLastFile(getStorePath(path, config.Input_Directory))
         new_byte_progress = -1
         finished = true
     }
@@ -56,6 +58,16 @@ func (cache *Cache) updateFile(path string, new_byte_progress int64, info os.Fil
     }
     cache.listener.Files[path] = cache_file
     return finished
+}
+
+func (cache *Cache) resendFile(path string) error {
+    info, stat_err := os.Stat(path)
+    if stat_err != nil {
+        return stat_err
+    }
+    cache.updateFile(path, 0, nil, info)
+    cache.listener.WriteCache()
+    return nil
 }
 
 // removeFile deletes a file and its progress from both the in-memory and local cache.
@@ -113,6 +125,10 @@ func (cache *Cache) anyActiveSender() bool {
         }
     }
     return !senders_resting
+}
+
+func (cache *Cache) setPoller(new_poller *Poller) {
+    cache.poller = new_poller
 }
 
 // allocate is called when a new file is detected and on startup.
