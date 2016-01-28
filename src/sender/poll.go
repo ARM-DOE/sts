@@ -6,6 +6,7 @@ import (
     "net/http"
     "net/url"
     "os"
+    path_util "path"
     "strings"
     "sync"
     "time"
@@ -112,8 +113,17 @@ func (poller *Poller) poll() {
             if response_map[path] {
                 whole_path := getWholePath(path)
                 tag_data := getTag(poller.cache, whole_path)
+                // Get info for logging the send confirmation
+                stat, stat_err := os.Stat(whole_path)
+                if stat_err != nil {
+                    error_log.LogError(fmt.Sprintf("Couldn't stat file %s during cleanup: %s", whole_path, stat_err.Error()))
+                } else {
+                    send_duration := (time.Now().UnixNano() - poller.cache.listener.Files[whole_path].StartTime) / int64(time.Millisecond)
+                    reciever_host := strings.Split(config.Receiver_Address, ":")[0]
+                    send_log.LogSend(path_util.Base(whole_path), poller.cache.getFileMD5(whole_path), stat.Size(), reciever_host, send_duration)
+                }
+                // Delete the file if the tag says we should.
                 if tag_data.Delete_On_Verify {
-                    // Delete the file if the tag says we should.
                     remove_err := os.Remove(whole_path)
                     if remove_err != nil {
                         error_log.LogError(fmt.Sprintf("Couldn't remove %s file after send confirmation: %s", whole_path, remove_err.Error()))
