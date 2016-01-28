@@ -45,6 +45,7 @@ func NewPart(path string, start int64, end int64, total_size int64) Part {
 // Part instance refers to and return its MD5.
 func (part *Part) getMD5() (string, error) {
     fi, open_err := os.Open(part.Path)
+    defer fi.Close()
     if open_err != nil {
         return "", open_err
     }
