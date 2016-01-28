@@ -21,7 +21,6 @@ type Config struct {
     Bin_Store            string
     Output_Directory     string
     Server_Port          string
-    Sender_Server_Port   string
     Receiver_Address     string
     Staging_Directory    string
     Logs_Directory       string
