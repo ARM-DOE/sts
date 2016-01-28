@@ -255,7 +255,7 @@ func oldestFileInTag(cache *Cache, path string) bool {
                 error_log.LogError(stat_err.Error())
             }
             cache_modtime := cache_stat.ModTime()
-            if !modtime.Before(cache_modtime) && path != cache_path {
+            if !modtime.Before(cache_modtime) && modtime != cache_modtime {
                 return false
             }
         }
