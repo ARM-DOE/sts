@@ -18,6 +18,7 @@ type Config struct {
     Cache_File_Name      string
     Cache_Write_Interval int64
     Disk_Path            string
+    Bin_Store            string
     Output_Directory     string
     Server_Port          string
     Sender_Server_Port   string

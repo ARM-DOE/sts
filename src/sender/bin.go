@@ -107,7 +107,7 @@ func NewBin(cache *Cache, size int, watch_dir string) Bin {
 // On startup, all Bin files are read, and any unfinished Bins are loaded into memory, after which
 // the Senders may continue to process them.
 func (cache *Cache) loadBins() {
-    filepath.Walk("bins", cache.walkBin)
+    filepath.Walk(config.Bin_Store, cache.walkBin)
 }
 
 // walkBin is called by loadBins for every file in the "bins" directory.
@@ -136,10 +136,10 @@ func (cache *Cache) loadBin(bin_bytes []byte) Bin {
     return decoded_bin
 }
 
-// save dumps an in-memory Bin to a local file in the directory "bins" with filename Bin.Name+.bin
+// save dumps an in-memory Bin to a local file in the bin store directory with filename Bin.MD5+.bin
 func (bin *Bin) save() {
     bin_md5 := util.GenerateMD5([]byte(fmt.Sprintf("%v", bin.Files)))
-    bin.Name = "bins/" + bin_md5 + ".bin"
+    bin.Name = util.JoinPath(config.Bin_Store, bin_md5+".bin")
     json_bytes, encode_err := json.Marshal(bin)
     if encode_err != nil {
         error_log.LogError(encode_err.Error())
