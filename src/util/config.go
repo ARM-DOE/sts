@@ -7,6 +7,8 @@ import (
     "net/http"
     "os"
     "path/filepath"
+    "reflect"
+    "strconv"
     "strings"
 )
 
@@ -21,7 +23,6 @@ type Config struct {
     Bin_Store            string
     Output_Directory     string
     Server_Port          string
-    Sender_Server_Port   string
     Receiver_Address     string
     Staging_Directory    string
     Logs_Directory       string
@@ -43,12 +44,23 @@ type Config struct {
 // Every Dynamic value needs a get method and must be used in a safe-to-reload way
 // Changes to dynamic values will not trigger a restart, changes to any other values will.
 type DynamicValues struct {
-    Tags        map[string]*TagData
+    Tags        map[string]*ConfigTagData // The values parsed directly from the config, the initial stage. Shouldn't be used anywhere in the program. Any changes to fields here will need to be reflected in ConvertParsedTag().
+    parsed_tags map[string]*TagData       // Tags that have been reflected and parsed to contain correct data. Should be accessed via config.Tags().
     Compression bool
     Bin_Size    int
 }
 
-// TagData contains the priority and transfer method for each tag, loaded from the config.
+// ConfigTagData contains the config values for each tag, every field must be a string so it can
+// be tested against the default config values.
+type ConfigTagData struct {
+    Priority         string
+    Transfer_Method  string
+    Sort             string
+    Delete_On_Verify string
+    Last_File        string // Name of the last file sent from this tag. Used for linked list sorting on receiving end.
+}
+
+// TagData is the parsed version of ConfigTagData. Data types have been converted to their real types via ConvertParseTag()
 type TagData struct {
     Priority         int
     Transfer_Method  string
@@ -96,8 +108,51 @@ func ParseConfig(file_name string) (Config, error) {
         fmt.Println(err.Error())
         os.Exit(1)
     }
+    loaded_config.ParseTags()
     loaded_config.file_name = abs_path
     return loaded_config, nil
+}
+
+// ParseTags iterates over every ConfigTagData parsed from the config and sets any empty values
+// to the value found in the default ConfigTagData. After this, every ConfigTagData is converted
+// to a TagData struct.
+func (config *Config) ParseTags() {
+    // Use reflection to set all empty-string tag fields to the value of the default field.
+    default_tag := config.Dynamic.Tags["DEFAULT"]
+    for tag_string, config_tag := range config.Dynamic.Tags {
+        if tag_string == "DEFAULT" {
+            continue
+        }
+        field_count := reflect.TypeOf(config_tag).Elem().NumField()
+        weird_slice_arg := []int{0}
+        for field_index := 0; field_index < field_count; field_index++ {
+            weird_slice_arg[0] = field_index
+            tag_field := reflect.TypeOf(config_tag).Elem().FieldByIndex(weird_slice_arg)
+            tag_value := reflect.Indirect(reflect.ValueOf(config_tag)).FieldByName(tag_field.Name)
+            default_field := reflect.TypeOf(default_tag).Elem().FieldByIndex(weird_slice_arg)
+            default_value := reflect.Indirect(reflect.ValueOf(default_tag)).FieldByName(default_field.Name)
+            if tag_value.String() == "" {
+                tag_value.SetString(default_value.String())
+            }
+        }
+    }
+    // Convert ConfigTagData to TagData.
+    config.Dynamic.parsed_tags = make(map[string]*TagData)
+    for tag_string, config_tag := range config.Dynamic.Tags {
+        config.Dynamic.parsed_tags[tag_string] = ConvertParsedTag(config_tag)
+    }
+}
+
+// ConvertParsedTag takes a ConfigTagData and converts it to a normal TagData, parsing all
+// string values to their proper types. THIS FUNCTION WILL NEED TO BE UPDATED IF THE VALUES OF
+// ConfigTagData CHANGE.
+func ConvertParsedTag(config_tag *ConfigTagData) *TagData {
+    tag_data := &TagData{}
+    tag_data.Delete_On_Verify, _ = strconv.ParseBool(config_tag.Delete_On_Verify)
+    tag_data.Priority, _ = strconv.Atoi(config_tag.Priority)
+    tag_data.Sort = config_tag.Sort
+    tag_data.Transfer_Method = config_tag.Transfer_Method
+    return tag_data
 }
 
 func (config *Config) ShouldReload() bool {
@@ -115,7 +170,7 @@ func (config *Config) FileName() string {
 
 // AccessTags is the access method for
 func (config *Config) Tags() map[string]*TagData {
-    return config.Dynamic.Tags
+    return config.Dynamic.parsed_tags
 }
 
 func (config *Config) Compression() bool {

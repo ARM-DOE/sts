@@ -10,7 +10,6 @@ cache_write_interval: 60
 disk_switching: false # true, false, or auto
 bin_timeout: 3600  # bin sending timeout in seconds
 # HTTP(s) setup
-server_port: 8080
 receiver_address: localhost:8081
 tls: false
 client_ssl_cert: ../../conf/client.pem
