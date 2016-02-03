@@ -21,7 +21,7 @@ e.g. `<logs_directory>/outgoing_to/<host>/<yyyy><mm>/<dd>.log`
 
 Full path to bin store directory.
 ```yaml
-bin_store: bins
+bin_store: /full/path/to/bin/dir
 ```
 
 Number of threads sending data concurrently.
@@ -47,8 +47,8 @@ receiver_address: c1.dmf.arm.gov:8000
 Use HTTP over TLS.  Specify certificate parameters if applicable.
 ```yaml
 tls: false
-client_ssl_cert: ../../conf/client.pem
-client_ssl_key: ../../conf/client.key
+client_ssl_cert: /apps/transfer/conf/client.pem
+client_ssl_key: /apps/transfer/conf/client.key
 ```
 
 Everything under `dynamic` represents configuration that can change without requiring a server restart.
@@ -118,6 +118,6 @@ server_port: 8081
 Use HTTP over TLS.  Specify certificate parameters if applicable.
 ```yaml
 tls: false
-server_ssl_cert: ../../conf/server.pem
-server_ssl_key: ../../conf/server.key
+server_ssl_cert: /apps/transfer/conf/server.pem
+server_ssl_key: /apps/transfer/conf/server.key
 ```
