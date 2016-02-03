@@ -83,9 +83,9 @@ dynamic:
 Target (Receiver) Configuration
 -------------------------------
 
-Full path to the cache file used for outgoing file queue.
+Full path to the cache file used for caching incoming file queue.
 ```yaml
-cache_file_name: listener_cache.dat
+cache_file_name: /full/path/to/listener_cache.dat
 ```
 
 How often to cache the file queue to disk (in seconds).
