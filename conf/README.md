@@ -57,7 +57,7 @@ The `bin_size` is the target number of bytes of data to be sent in a single HTTP
 
 When `compression` set to `true` the data payload is gzipped.
 
-Under `tags` are keys that represent a tag pattern (except `DEFAULT` which houses the default parameters not overriden).
+Under `tags` are keys that represent a tag pattern (except `DEFAULT` which houses the default tag parameters).
 A tag is simply the part of the file path between the outgoing root and the first dot.
 
 Tags with a lower `priority` integer value have higher priority.
