@@ -95,7 +95,7 @@ staging_directory: /full/path/to/data/root
 
 Full path to the directory where files are moved after validation.  The sending `hostname` will be appended to avoid collisions.
 ```yaml
-output_directory: final
+output_directory: /full/path/to/output/root
 ```
 
 Full path to root of logs directory.
