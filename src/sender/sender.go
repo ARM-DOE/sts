@@ -85,6 +85,7 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
     bin_body.compression = config.Compression()
     request_url := fmt.Sprintf("%s://%s/send.go", config.Protocol(), config.Receiver_Address)
     request, err := http.NewRequest("PUT", request_url, bin_body)
+    request.Header.Add("sender_name", config.Sender_Name)
     request.Header.Add("Transfer-Encoding", "chunked")
     request.Header.Add("Boundary", bin_body.Boundary())
     request.Header.Set("Connection", "close") // Prevents persistent connections opening too many file handles
@@ -178,6 +179,7 @@ func (sender *Sender) sendDisk(send_bin Bin) {
     // Tell receiver that we wrote a file to disk
     post_url := fmt.Sprintf("%s://%s/disk_add.go?name=%s&md5=%s&size=%d", config.Protocol(), config.Receiver_Address, dest_path, stream_md5.SumString(), bin_part.TotalSize)
     request, req_err := http.NewRequest("POST", post_url, nil)
+    request.Header.Add("sender_name", config.Sender_Name)
     if req_err != nil {
         error_log.LogError("Could not generate HTTP request object: ", req_err.Error())
     }

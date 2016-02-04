@@ -4,6 +4,7 @@ package util
 import (
     "fmt"
     "net"
+    "net/http"
     "os"
     "strings"
     "syscall"
@@ -72,7 +73,13 @@ func Restart() {
 
 // GetHostname does a lookup on an IP address. If the IP has already been successfully looked up,
 // a cached copy is returned. If the resulting hostname has a trailing dot, it is removed.
-func GetHostname(ip string) string {
+func GetHostname(r *http.Request) string {
+    var host_name string
+    if len(r.Header.Get("sender_name")) > 0 {
+        host_name = r.Header.Get("sender_name")
+        return host_name
+    }
+    ip, _, _ := net.SplitHostPort(r.RemoteAddr)
     if host_names == nil {
         // Host names map hasn't been initialized yet.
         host_names = make(map[string]string)
@@ -87,7 +94,7 @@ func GetHostname(ip string) string {
         // Could not complete lookup
         return ip
     }
-    host_name := strings.TrimSuffix(found_hosts[0], ".")
+    host_name = strings.TrimSuffix(found_hosts[0], ".")
     host_names[ip] = host_name
     return host_name
 }

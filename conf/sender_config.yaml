@@ -5,6 +5,7 @@ logs_directory: logs
 disk_path: disk
 bin_store: bins
 # Operating variables
+sender_name: test_sender
 sender_threads: 10
 cache_write_interval: 60
 disk_switching: false # true, false, or auto

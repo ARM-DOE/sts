@@ -126,8 +126,7 @@ func getPartLocation(location string) (int64, int64) {
 // its directory structure as it was on the sender, and writing the file to disk.
 func sendHandler(w http.ResponseWriter, r *http.Request) {
     defer r.Body.Close()
-    ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-    host_name := util.GetHostname(ip)
+    host_name := util.GetHostname(r)
     compression := false
     if r.Header.Get("Content-Encoding") == "gzip" {
         compression = true
@@ -371,8 +370,7 @@ func diskWriteHandler(w http.ResponseWriter, r *http.Request) {
 // pollHandler is called by the sender to ask the receiver which files have been fully written and validated.
 func pollHandler(w http.ResponseWriter, r *http.Request) {
     // Get host name of request
-    ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-    host_name := util.GetHostname(ip)
+    host_name := util.GetHostname(r)
     files := strings.Split(r.FormValue("files"), ",")
     response_map := make(map[string]bool, len(files))
     for _, file_data := range files {

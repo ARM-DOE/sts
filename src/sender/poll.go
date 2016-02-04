@@ -88,6 +88,7 @@ func (poller *Poller) poll() {
         poller.map_mutex.Unlock()
         request_url := fmt.Sprintf("%s://%s/poll.go?files=%s", config.Protocol(), config.Receiver_Address, url.QueryEscape(payload))
         new_request, request_err := http.NewRequest("POST", request_url, nil)
+        new_request.Header.Add("sender_name", config.Sender_Name)
         if request_err != nil {
             error_log.LogError("Could not generate HTTP request object: ", request_err.Error())
         }
