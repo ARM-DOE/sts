@@ -62,7 +62,7 @@ func Main(config_file string) {
 // getStorePath returns the path that the receiver should use to store a file.
 // Given parameters full_path and watch_directory, it will remove watch directory from the full path.
 func getStorePath(full_path string, watch_directory string) string {
-    store_path := strings.Replace(full_path, filepath.Dir(watch_directory)+string(os.PathSeparator), "", 1)
+    store_path := strings.Replace(full_path, filepath.Dir(watch_directory)+util.Sep, "", 1)
     return store_path
 }
 

@@ -12,6 +12,8 @@ import (
 
 var host_names map[string]string
 
+const Sep = string(os.PathSeparator)
+
 // Default block size for the sender and receiver to use when reading/writing files.
 const DEFAULT_BLOCK_SIZE = 8192
 
@@ -52,7 +54,7 @@ func IsIntInArray(array []int, value int) bool {
 // PathJoin takes a list of params and joins them with os.PathSeparator
 // to create a valid path on any OS.
 func JoinPath(params ...string) string {
-    return strings.Join(params, string(os.PathSeparator))
+    return strings.Join(params, Sep)
 }
 
 // PrintDebug is a wrapper over fmt.Println that can be used to write debug messages which can be

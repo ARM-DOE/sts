@@ -38,6 +38,7 @@ var log_map map[string]bool
 var log_map_lock sync.Mutex
 
 const DEBUG = false
+const LOG_SEARCH_WIDTH = 30
 
 // Main is the entry point of the webserver. It is responsible for registering HTTP
 // handlers, parsing the config file, starting the file listener, and beginning the request serving loop.
@@ -210,15 +211,13 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
     }
     if isFileComplete(part_path) {
         // Finish file by updating the modtime and removing the .tmp extension.
-        tmp := util.JoinPath(config.Output_Directory, host_name, part_path)
-        rename_path := getStorePath(tmp, config.Staging_Directory)
         rename_err := os.Rename(write_path, part_path)
         if rename_err != nil {
             error_log.LogError(rename_err.Error())
             panic("Fatal error")
         }
-        os.Chtimes(rename_path, time.Now(), time.Now()) // Update mtime so that listener will pick up the file
-        fmt.Println("Fully assembled ", part_path)
+        os.Chtimes(part_path, time.Now(), time.Now()) // Update mtime so that listener will pick up the file
+        fmt.Println("Fully assembled", part_path)
     }
     return true
 }
@@ -275,7 +274,7 @@ func createEmptyFile(path string, size int64, host_name string) {
 // Given parameters full_path and watch_directory, it will remove watch directory from the full path.
 // This function differs from getStorePath() on the sender because the receiver watches its containing directory.
 func getStorePath(full_path string, watch_directory string) string {
-    store_path := strings.Replace(full_path, watch_directory+string(os.PathSeparator), "", 1)
+    store_path := strings.Replace(full_path, watch_directory+util.Sep, "", 1)
     return store_path
 }
 
@@ -284,6 +283,7 @@ func getStorePath(full_path string, watch_directory string) string {
 // making sure to rename the files for a specific tag in order.
 func finishFile(addition_channel chan string) {
     for {
+        moved_map := make(map[string]int) // Create a map to count how many times we've tried to finish each file.
         new_file := <-addition_channel
         if strings.HasPrefix(new_file, config.Output_Directory) {
             continue // Don't process files that have already been finished.
@@ -293,7 +293,7 @@ func finishFile(addition_channel chan string) {
             finalize_mutex.Lock()
             defer finalize_mutex.Unlock()
             // Recreate the staging directory path so the companion can be taken care of.
-            host_name := strings.Split(strings.SplitN(new_file, config.Staging_Directory+string(os.PathSeparator), 2)[1], string(os.PathSeparator))[0]
+            host_name := strings.Split(strings.SplitN(new_file, config.Staging_Directory+util.Sep, 2)[1], util.Sep)[0]
             // Get file size & md5
             info, stat_err := os.Stat(new_file)
             if stat_err != nil {
@@ -307,16 +307,29 @@ func finishFile(addition_channel chan string) {
             file_md5 := companion.File_MD5
             // If the companion has records of a last file, check to make sure we've already renamed it.
             if len(companion.Last_File) > 1 {
-                start_time := time.Now().Second() - 3600*24 // This is a hack, we don't know when the last file began sending, so look back one day, for every failure, increase search width.
+                time_multiplier := 1
+                stored_multiplier, ok := moved_map[new_file]
+                if ok {
+                    time_multiplier = stored_multiplier
+                    if time_multiplier > LOG_SEARCH_WIDTH {
+                        time_multiplier = LOG_SEARCH_WIDTH
+                    }
+                }
+                start_time := time.Now().Second() - 3600*24*time_multiplier // This is a hack, we don't know when the last file began sending, so look back one day, for every failure, increase search width.
                 // We'll look up to a month in either direction for the file, but we won't be happy about it.
                 if !isFileMoved(util.JoinPath(companion.Last_File), companion.SenderName, int64(start_time)) {
+                    moved_map[new_file] += 1
                     addition_channel <- new_file
-                    //time.Sleep(100 * time.Millisecond)
                     return
                 }
             }
             // Finally, rename and clean up the file
-            final_path := strings.Replace(new_file, config.Staging_Directory, config.Output_Directory, 1)
+            root_pattern := fmt.Sprintf("%s/%s/[^/]*/", config.Staging_Directory, host_name)
+
+            compiled_pattern := regexp.MustCompile(root_pattern)
+            remove_part := compiled_pattern.FindString(new_file)
+            removed_root := strings.Replace(new_file, remove_part, "", 1)
+            final_path := util.JoinPath(config.Output_Directory, host_name, removed_root)
             os.MkdirAll(filepath.Dir(final_path), os.ModePerm) // Make containing directories for the file.
             rename_err := os.Rename(new_file, final_path)
             if rename_err != nil {
@@ -328,9 +341,10 @@ func finishFile(addition_channel chan string) {
             if remove_err != nil {
                 error_log.LogError(fmt.Sprintf("Couldn't remove companion file %s: %s", companion_name, remove_err.Error()))
             }
-            replace_portion := config.Staging_Directory + string(os.PathSeparator)
+            replace_portion := config.Staging_Directory + util.Sep
             log_name := strings.Replace(new_file, replace_portion, "", 1)
             log_map_lock.Lock()
+            delete(moved_map, new_file)
             log_map[log_name] = true
             if len(log_map) > 10000 {
                 // Dump the log map when it gets too large.
@@ -379,7 +393,7 @@ func isFileMoved(path string, host_name string, start_time int64) bool {
         return true
     }
     // Get the path of this file in the
-    temp_path := config.Staging_Directory + string(os.PathSeparator) + path
+    temp_path := config.Staging_Directory + util.Sep + path
     companion_path := temp_path + ".comp"
     _, file_exists := os.Stat(temp_path + ".tmp")
     _, comp_exists := os.Stat(companion_path)
@@ -388,7 +402,6 @@ func isFileMoved(path string, host_name string, start_time int64) bool {
         return false
     }
     // Get paths of logs to search for the file
-    const LOG_SEARCH_WIDTH = 30
     logs := make([]string, LOG_SEARCH_WIDTH)
     for index, _ := range logs {
         timestamp := time.Unix(start_time+int64((3600*24*index)), 0) // Find the next day of logs by adding X days to the timestamp
