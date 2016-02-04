@@ -34,7 +34,7 @@ func NewPoller(cache *Cache) *Poller {
     new_poller.cache = cache
     new_poller.map_mutex = sync.Mutex{}
     var client_err error
-    new_poller.client, client_err = util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key)
+    new_poller.client, client_err = util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key, config.TLS)
     if client_err != nil {
         error_log.LogError(client_err.Error())
     }

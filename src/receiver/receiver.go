@@ -25,7 +25,6 @@ import (
 var finalize_mutex sync.Mutex
 
 var config util.Config
-var client http.Client
 
 var error_log util.Logger
 var receiver_log util.Logger
@@ -55,12 +54,7 @@ func Main(config_file string) {
     receiver_log = util.NewLogger(config.Logs_Directory, util.LOGGING_RECEIVE)
     error_log = util.NewLogger(config.Logs_Directory, util.LOGGING_ERROR)
     disk_log = util.NewLogger(config.Logs_Directory, util.LOGGING_DISK)
-    // Create HTTP client
-    var client_err error
-    client, client_err = util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key)
-    if client_err != nil {
-        error_log.LogError(client_err.Error())
-    }
+
     // Initialize log_map to store validated files
     log_map = make(map[string]bool)
     log_map_lock = sync.Mutex{}

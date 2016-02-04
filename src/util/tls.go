@@ -90,15 +90,20 @@ func getCertKey(cert string, key string) string {
 }
 
 // GetTLSClient returns an http.Client with the given cert in its configuration.
-func GetTLSClient(client_cert string, client_key string) (http.Client, error) {
-    cert, cert_err := LoadCert(client_cert, client_key)
-    if cert_err != nil {
-        return http.Client{}, cert_err
+func GetTLSClient(client_cert string, client_key string, load_certs bool) (http.Client, error) {
+    var tls_config tls.Config
+    if load_certs {
+        cert, cert_err := LoadCert(client_cert, client_key)
+        if cert_err != nil {
+            return http.Client{}, cert_err
+        }
+        tls_config = tls.Config{
+            Certificates:       []tls.Certificate{cert},
+            InsecureSkipVerify: true} // Remove InsecureSkipVerify in production - for self-signed keys
+    } else {
+        tls_config = tls.Config{}
     }
-    tls_config := tls.Config{
-        Certificates:       []tls.Certificate{cert},
-        InsecureSkipVerify: true} // Remove InsecureSkipVerify in production - for self-signed keys
-    // Create new client using cert
+    // Create new client using tls config
     client_transport := http.Transport{}
     client_transport.TLSClientConfig = &tls_config
     client_transport.DisableKeepAlives = true

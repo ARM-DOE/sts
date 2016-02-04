@@ -36,7 +36,7 @@ func NewSender(disk_manager *util.DiskManager, file_queue chan Bin, compression 
     new_sender.queue = file_queue
     new_sender.compression = compression
     var client_err error
-    new_sender.client, client_err = util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key)
+    new_sender.client, client_err = util.GetTLSClient(config.Client_SSL_Cert, config.Client_SSL_Key, config.TLS)
     if client_err != nil {
         error_log.LogError(client_err.Error())
     }
