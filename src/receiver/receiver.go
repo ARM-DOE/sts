@@ -303,7 +303,6 @@ func finishFile(addition_channel chan string) {
                 error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", new_file, comp_err.Error()))
                 return
             }
-            file_md5 := companion.File_MD5
             // If the companion has records of a last file, check to make sure we've already renamed it.
             if len(companion.Last_File) > 1 {
                 time_multiplier := 1
@@ -316,11 +315,26 @@ func finishFile(addition_channel chan string) {
                 }
                 start_time := time.Now().Second() - 3600*24*time_multiplier // This is a hack, we don't know when the last file began sending, so look back one day, for every failure, increase search width.
                 // We'll look up to a month in either direction for the file, but we won't be happy about it.
-                if !isFileMoved(util.JoinPath(companion.Last_File), companion.SenderName, int64(start_time)) {
+                if isFileMoved(util.JoinPath(companion.Last_File), companion.SenderName, int64(start_time)) == 0 {
                     moved_map[new_file] += 1
                     addition_channel <- new_file
                     return
                 }
+            }
+            // Validate the whole file MD5.
+            file_md5 := companion.File_MD5
+            computed_md5, md5_err := util.FileMD5(new_file)
+            if md5_err != nil {
+                error_log.LogError(fmt.Sprintf("Error while calculating MD5 of %s: %s", new_file, md5_err))
+            }
+            replace_portion := config.Staging_Directory + util.Sep
+            log_name := strings.Replace(new_file, replace_portion, "", 1)
+            if computed_md5 != file_md5 {
+                // Welp, somehow the whole file didn't validate. Let's ask for it again.
+                error_log.LogError(fmt.Sprintf("File %s failed whole file validation, asking sender to resend", new_file))
+                log_map_lock.Lock()
+                log_map[log_name] = false
+                log_map_lock.Unlock()
             }
             // Finally, rename and clean up the file
             root_pattern := fmt.Sprintf("%s/%s/[^/]*/", config.Staging_Directory, host_name)
@@ -340,8 +354,6 @@ func finishFile(addition_channel chan string) {
             if remove_err != nil {
                 error_log.LogError(fmt.Sprintf("Couldn't remove companion file %s: %s", companion_name, remove_err.Error()))
             }
-            replace_portion := config.Staging_Directory + util.Sep
-            log_name := strings.Replace(new_file, replace_portion, "", 1)
             log_map_lock.Lock()
             delete(moved_map, new_file)
             log_map[log_name] = true
@@ -372,7 +384,7 @@ func pollHandler(w http.ResponseWriter, r *http.Request) {
     // Get host name of request
     host_name := util.GetHostname(r)
     files := strings.Split(r.FormValue("files"), ",")
-    response_map := make(map[string]bool, len(files))
+    response_map := make(map[string]int, len(files))
     for _, file_data := range files {
         split_data := strings.Split(file_data, ";")
         start_time, _ := strconv.ParseInt(split_data[1], 10, 64)
@@ -382,13 +394,19 @@ func pollHandler(w http.ResponseWriter, r *http.Request) {
     w.Write(json_response)
 }
 
-func isFileMoved(path string, host_name string, start_time int64) bool {
+// isFileMoved returns the completion status of the file. Possible states:
+//  0 - If the file hasn't been processed yet.
+//  1 - If the file has sent successfully.
+// -1 - If the file sending failed.
+func isFileMoved(path string, host_name string, start_time int64) int {
     log_map_path := util.JoinPath(host_name, path)
     log_map_lock.Lock()
-    _, verified := log_map[log_map_path]
+    success, verified := log_map[log_map_path]
     log_map_lock.Unlock()
-    if verified {
-        return true
+    if verified && success {
+        return 1
+    } else if verified && !success {
+        return -1
     }
     // Get the path of this file in the
     temp_path := config.Staging_Directory + util.Sep + path
@@ -397,7 +415,7 @@ func isFileMoved(path string, host_name string, start_time int64) bool {
     _, comp_exists := os.Stat(companion_path)
     if os.IsExist(file_exists) || os.IsExist(comp_exists) {
         // The file is still in the staging area, so no need to check logs
-        return false
+        return 0
     }
     // Get paths of logs to search for the file
     logs := make([]string, LOG_SEARCH_WIDTH)
@@ -418,12 +436,12 @@ func isFileMoved(path string, host_name string, start_time int64) bool {
         for log_scanner.Scan() {
             if bytes.Contains(log_scanner.Bytes(), path_bytes) {
                 log_handle.Close()
-                return true
+                return 1
             }
         }
         log_handle.Close()
     }
-    return false
+    return 0
 }
 
 // onFinish will prevent the cache from writing newer timestamps to disk while

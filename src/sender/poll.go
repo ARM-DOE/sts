@@ -99,44 +99,55 @@ func (poller *Poller) poll() {
             error_log.LogError("Poll request failed, receiver is probably down:", response_err.Error())
             continue
         }
-        response_map := make(map[string]bool)
-        json_decoder := json.NewDecoder(response.Body)
-        decode_err := json_decoder.Decode(&response_map)
-        if decode_err != nil {
-            // Json response may have been corrupted in transit, wait and try again
-            error_log.LogError("Receiver returned malformed JSON in response to polling request, trying again:", decode_err.Error())
-            time.Sleep(time.Second * 5)
-            continue
+        unpack_err := poller.unpackResponse(response)
+        if unpack_err != nil {
+            error_log.LogError("Error unpacking response to polling request:", unpack_err.Error())
         }
-        // Update the validation_map with response info
-        poller.map_mutex.Lock()
-        for path, _ := range response_map {
-            if response_map[path] {
-                whole_path := getWholePath(path)
-                tag_data := getTag(poller.cache, whole_path)
-                // Get info for logging the send confirmation
-                stat, stat_err := os.Stat(whole_path)
-                if stat_err != nil {
-                    error_log.LogError(fmt.Sprintf("Couldn't stat file %s during cleanup: %s", whole_path, stat_err.Error()))
-                } else {
-                    send_duration := (time.Now().UnixNano() - poller.cache.listener.Files[whole_path].StartTime) / int64(time.Millisecond)
-                    reciever_host := strings.Split(config.Receiver_Address, ":")[0]
-                    send_log.LogSend(path_util.Base(whole_path), poller.cache.getFileMD5(whole_path), stat.Size(), reciever_host, send_duration)
-                }
-                // Delete the file if the tag says we should.
-                if tag_data.Delete_On_Verify {
-                    remove_err := os.Remove(whole_path)
-                    if remove_err != nil {
-                        error_log.LogError(fmt.Sprintf("Couldn't remove %s file after send confirmation: %s", whole_path, remove_err.Error()))
-                    }
-                }
-                poller.cache.removeFile(whole_path)
-                poller.validation_map[path] = nil
-                delete(poller.validation_map, path)
-            }
-        }
-        poller.map_mutex.Unlock()
         // Sleep before next polling request
         time.Sleep(30 * time.Second)
     }
+}
+
+func (poller *Poller) unpackResponse(response *http.Response) error {
+    response_map := make(map[string]int)
+    json_decoder := json.NewDecoder(response.Body)
+    decode_err := json_decoder.Decode(&response_map)
+    if decode_err != nil {
+        return decode_err
+    }
+    // Update the validation_map with response info
+    poller.map_mutex.Lock()
+    for path, _ := range response_map {
+        // Get info you need to address the file in the cache
+        whole_path := getWholePath(path)
+        tag_data := getTag(poller.cache, whole_path)
+        stat, stat_err := os.Stat(whole_path)
+        if stat_err != nil {
+            error_log.LogError(fmt.Sprintf("Couldn't stat file %s during cleanup: %s", whole_path, stat_err.Error()))
+            continue
+        }
+        if response_map[path] == 1 {
+            // Log the send confirmation
+            send_duration := (time.Now().UnixNano() - poller.cache.listener.Files[whole_path].StartTime) / int64(time.Millisecond)
+            reciever_host := strings.Split(config.Receiver_Address, ":")[0]
+            send_log.LogSend(path_util.Base(whole_path), poller.cache.getFileMD5(whole_path), stat.Size(), reciever_host, send_duration)
+            // Delete the file if the tag says we should.
+            if tag_data.Delete_On_Verify {
+                remove_err := os.Remove(whole_path)
+                if remove_err != nil {
+                    error_log.LogError(fmt.Sprintf("Couldn't remove %s file after send confirmation: %s", whole_path, remove_err.Error()))
+                }
+            }
+            poller.cache.removeFile(whole_path)
+            poller.validation_map[path] = nil
+            delete(poller.validation_map, path)
+        } else if response_map[path] == -1 {
+            // File failed whole-file validation, set for re-allocation.
+            error_log.LogError(fmt.Sprintf("File %s failed whole-file validation, sending again", path))
+            poller.cache.updateFile(whole_path, 0, tag_data, stat)
+            poller.cache.listener.WriteCache()
+        }
+    }
+    poller.map_mutex.Unlock()
+    return nil
 }
