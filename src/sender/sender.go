@@ -83,7 +83,7 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
 	}
 	bin_body := NewBinBody(send_bin)
 	bin_body.compression = config.Compression()
-	request_url := fmt.Sprintf("%s://%s/send.go", config.Protocol(), config.Receiver_Address)
+	request_url := fmt.Sprintf("%s://%s/data", config.Protocol(), config.Receiver_Address)
 	request, err := http.NewRequest("PUT", request_url, bin_body)
 	request.Header.Add("sender_name", config.Sender_Name)
 	request.Header.Add("Transfer-Encoding", "chunked")
@@ -177,7 +177,7 @@ func (sender *Sender) sendDisk(send_bin Bin) {
 		util.LogError("Failed to add part to companion:", add_err.Error())
 	}
 	// Tell receiver that we wrote a file to disk
-	post_url := fmt.Sprintf("%s://%s/disk_add.go?name=%s&md5=%s&size=%d", config.Protocol(), config.Receiver_Address, dest_path, stream_md5.SumString(), bin_part.TotalSize)
+	post_url := fmt.Sprintf("%s://%s/disknotify?name=%s&md5=%s&size=%d", config.Protocol(), config.Receiver_Address, dest_path, stream_md5.SumString(), bin_part.TotalSize)
 	request, req_err := http.NewRequest("POST", post_url, nil)
 	request.Header.Add("sender_name", config.Sender_Name)
 	if req_err != nil {
@@ -270,12 +270,12 @@ func (body *BinBody) startNextPart() {
 	new_header := textproto.MIMEHeader{}
 	new_header.Add("Content-Disposition", "form-data")
 	new_header.Add("Content-Type", "application/octet-stream")
-	new_header.Add("md5", body.bin_part.MD5)
-	new_header.Add("name", getStorePath(body.bin_part.Path, body.bin.WatchDir))
-	new_header.Add("total_size", fmt.Sprintf("%d", body.bin_part.TotalSize))
-	new_header.Add("location", getPartLocation(body.bin_part.Start, body.bin_part.End))
-	new_header.Add("file_md5", body.bin_part.File_MD5)
-	new_header.Add("last_file", body.bin_part.Last_File)
+	new_header.Add("X-STS-FileName", getStorePath(body.bin_part.Path, body.bin.WatchDir))
+	new_header.Add("X-STS-FileSize", fmt.Sprintf("%d", body.bin_part.TotalSize))
+	new_header.Add("X-STS-PartLocation", getPartLocation(body.bin_part.Start, body.bin_part.End))
+	new_header.Add("X-STS-PartHash", body.bin_part.MD5)
+	new_header.Add("X-STS-FileHash", body.bin_part.File_MD5)
+	new_header.Add("X-STS-PrevFileName", body.bin_part.Last_File)
 	body.writer.CreatePart(new_header)
 	body.unsent_header = body.writer_buffer.Bytes()
 	body.file_index++

@@ -88,7 +88,7 @@ func (poller *Poller) poll() {
 		}
 		poller.map_mutex.Unlock()
         util.LogDebug("POLLER Request:", payload)
-		request_url := fmt.Sprintf("%s://%s/poll.go?files=%s", config.Protocol(), config.Receiver_Address, url.QueryEscape(payload))
+		request_url := fmt.Sprintf("%s://%s/validate?files=%s", config.Protocol(), config.Receiver_Address, url.QueryEscape(payload))
 		new_request, request_err := http.NewRequest("POST", request_url, nil)
 		new_request.Header.Add("sender_name", config.Sender_Name)
 		if request_err != nil {

@@ -74,11 +74,11 @@ func Main(in_config *util.Config) {
 	go listener.Listen(addition_channel)
 
 	// Register request handling functions
-	http.HandleFunc("/send.go", sendHandler)
-	http.HandleFunc("/disk_add.go", diskWriteHandler)
-	http.HandleFunc("/poll.go", pollHandler)
-	http.HandleFunc("/editor.go", config.EditConfigInterface)
-	http.HandleFunc("/edit_config.go", config.EditConfig)
+	http.HandleFunc("/data", sendHandler)
+	http.HandleFunc("/disknotify", diskWriteHandler)
+	http.HandleFunc("/validate", pollHandler)
+	//http.HandleFunc("/config", config.EditConfigInterface)
+	//http.HandleFunc("/config/edit", config.EditConfig)
 	http.HandleFunc("/", errorHandler)
 
 	// Setup server with correct HTTP protocol
@@ -154,16 +154,16 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 // It reads from the Part stream and writes the part to a file while calculating the md5.
 // If the file is bad, it will be reacquired and passed back into sendHandler.
 func handlePart(part *multipart.Part, boundary string, host_name string, compressed bool) bool {
-    util.LogDebug("RECEIVER Process Part:", part.Header.Get("name"))
+    util.LogDebug("RECEIVER Process Part:", part.Header.Get("X-STS-FileName"))
 	// Gather data about part from headers
-	part_path := util.JoinPath(config.Staging_Directory, host_name, part.Header.Get("name"))
+	part_path := util.JoinPath(config.Staging_Directory, host_name, part.Header.Get("X-STS-FileName"))
 	write_path := part_path + ".tmp"
-	part_start, _ := getPartLocation(part.Header.Get("location"))
+	part_start, _ := getPartLocation(part.Header.Get("X-STS-PartLocation"))
 	part_md5 := util.NewStreamMD5()
 	// If the file which this part belongs to does not already exist, create a new empty file and companion file.
 	_, err := os.Open(write_path)
 	if os.IsNotExist(err) {
-		size_header := part.Header.Get("total_size")
+		size_header := part.Header.Get("X-STS-FileSize")
 		total_size, parse_err := strconv.ParseInt(size_header, 10, 64)
 		if parse_err != nil {
 			util.LogError(fmt.Sprintf("Could not parse %s to int64: %s", size_header, parse_err.Error()))
@@ -202,13 +202,13 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
 	}
 	part_fi.Close()
 	// Validate part
-	if (part.Header.Get("md5") != part_md5.SumString()) || debugBinFail() { // If debug is enabled, drop bin 1/5th of the time
+	if (part.Header.Get("X-STS-FileHash") != part_md5.SumString()) || debugBinFail() { // If debug is enabled, drop bin 1/5th of the time
 		// Validation failed, request this specific part again using part size
-		util.LogError(fmt.Sprintf("Bad part of %s from bytes %s", part_path, part.Header.Get("location")))
+		util.LogError(fmt.Sprintf("Bad part of %s from bytes %s", part_path, part.Header.Get("X-STS-PartLocation")))
 		return false
 	}
 	// Update the companion file of the part, and check if the whole file is done
-	add_err := util.AddPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"), part.Header.Get("file_md5"), part.Header.Get("last_file"))
+	add_err := util.AddPartToCompanion(part_path, part.Header.Get("X-STS-PartHash"), part.Header.Get("X-STS-PartLocation"), part.Header.Get("X-STS-FileHash"), part.Header.Get("X-STS-PrevFileName"))
 	if add_err != nil {
 		util.LogError("Failed to add part to companion:", add_err.Error())
 	}
@@ -372,7 +372,7 @@ func diskWriteHandler(w http.ResponseWriter, r *http.Request) {
 	md5 := r.FormValue("md5")
 	size, parse_err := strconv.ParseInt(r.FormValue("size"), 10, 64)
 	if parse_err != nil {
-		util.LogError(fmt.Sprintf("Couldn't parse int64 from %s: %s", r.FormValue("size"), parse_err.Error()))
+		util.LogError(fmt.Sprintf("Failed to parse int64 from %s: %s", r.FormValue("size"), parse_err.Error()))
 	}
 	disk_log.LogDisk(file_path, md5, size)
 	fmt.Fprint(w, http.StatusOK)
