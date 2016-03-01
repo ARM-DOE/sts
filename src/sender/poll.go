@@ -87,7 +87,7 @@ func (poller *Poller) poll() {
 			continue
 		}
 		poller.map_mutex.Unlock()
-        util.LogDebug("POLLER Request:", payload)
+		util.LogDebug("POLLER Request:", payload)
 		request_url := fmt.Sprintf("%s://%s/validate?files=%s", config.Protocol(), config.Receiver_Address, url.QueryEscape(payload))
 		new_request, request_err := http.NewRequest("POST", request_url, nil)
 		new_request.Header.Add("sender_name", config.Sender_Name)
@@ -129,7 +129,7 @@ func (poller *Poller) unpackResponse(response *http.Response) error {
 			continue
 		}
 		if response_map[path] == 1 {
-            util.LogDebug("POLLER Confirmation:", path)
+			util.LogDebug("POLLER Confirmation:", path)
 			// Log the send confirmation
 			send_duration := (time.Now().UnixNano() - poller.cache.listener.Files[whole_path].StartTime) / int64(time.Millisecond)
 			receiver_host := config.Receiver_Name
@@ -143,8 +143,8 @@ func (poller *Poller) unpackResponse(response *http.Response) error {
 				if remove_err != nil {
 					util.LogError(fmt.Sprintf("Failed to remove %s after confirmation: %s", whole_path, remove_err.Error()))
 				} else {
-                    util.LogDebug("POLLER Delete:", path)
-                }
+					util.LogDebug("POLLER Delete:", path)
+				}
 			}
 			poller.cache.removeFile(whole_path)
 			poller.validation_map[path] = nil

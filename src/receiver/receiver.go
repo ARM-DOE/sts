@@ -154,7 +154,7 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 // It reads from the Part stream and writes the part to a file while calculating the md5.
 // If the file is bad, it will be reacquired and passed back into sendHandler.
 func handlePart(part *multipart.Part, boundary string, host_name string, compressed bool) bool {
-    util.LogDebug("RECEIVER Process Part:", part.Header.Get("X-STS-FileName"))
+	util.LogDebug("RECEIVER Process Part:", part.Header.Get("X-STS-FileName"))
 	// Gather data about part from headers
 	part_path := util.JoinPath(config.Staging_Directory, host_name, part.Header.Get("X-STS-FileName"))
 	write_path := part_path + ".tmp"
@@ -291,7 +291,7 @@ func finishFile(addition_channel chan string) {
 		if strings.HasPrefix(new_file, config.Output_Directory) {
 			continue // Don't process files that have already been finished.
 		}
-        util.LogDebug("RECEIVER Finalizing:", new_file)
+		util.LogDebug("RECEIVER Finalizing:", new_file)
 		// Acquire the mutex while working with new files so that the cache will re-detect unprocessed files in the event of a crash.
 		go func() { // Create inline function so we can defer the release of the mutex lock.
 			finalize_mutex.Lock()
@@ -341,7 +341,7 @@ func finishFile(addition_channel chan string) {
 				log_map[store_name] = false
 				log_map_lock.Unlock()
 			}
-            final_path := util.JoinPath(config.Output_Directory, host_name, store_name)
+			final_path := util.JoinPath(config.Output_Directory, host_name, store_name)
 			os.MkdirAll(filepath.Dir(final_path), os.ModePerm) // Make containing directories for the file.
 			rename_err := os.Rename(new_file, final_path)
 			if rename_err != nil {
