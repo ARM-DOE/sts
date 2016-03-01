@@ -2,10 +2,10 @@
 
 basedir=$(dirname $0)
 
-if [ -z "$GOPATH" ]
-  then
+# if [ -z "$GOPATH" ]
+#   then
     export GOPATH=$PWD/$basedir
-fi
+# fi
 
 if [ -f $GOPATH/bin/sts ]
   then
@@ -19,6 +19,9 @@ mkdir -p $GOPATH/bin
 
 echo "-- Building Dependencies"
 go get gopkg.in/yaml.v2
+go get util
+go get sender
+go get receiver
 
 echo "-- Building STS"
 go build -o $GOPATH/bin/sts src/sts/sts.go

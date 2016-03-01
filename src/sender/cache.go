@@ -168,6 +168,7 @@ func (cache *Cache) scan() {
 		new_path := <-update_channel
 		cache.channel_lock.Lock()
 		cache.listener.WriteLock.Lock()
+        util.LogDebug("CACHE Found:", new_path)
 		cache.listener.Files[new_path] = util.CacheFile{}
 		cache.listener.WriteLock.Unlock()
 		cache.channel_lock.Unlock()

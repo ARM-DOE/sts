@@ -97,7 +97,7 @@ func Main(in_config *util.Config) {
 	}
 
 	// Enter mainloop to check for config changes
-	util.LogDebug("Receiver ready")
+	util.LogDebug("RECEIVER Ready")
 	for {
 		checkReload(serv)
 		time.Sleep(1 * time.Second)
@@ -219,7 +219,7 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
 			panic("Fatal error")
 		}
 		os.Chtimes(part_path, time.Now(), time.Now()) // Update mtime so that listener will pick up the file
-		util.LogDebug("Fully assembled", part_path)
+		util.LogDebug("RECEIVER File Done:", part_path)
 	}
 	return true
 }

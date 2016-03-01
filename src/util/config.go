@@ -129,7 +129,7 @@ func initPath(path *string, isdir bool) {
 	}
 	_, err = os.Stat(pdir)
 	if os.IsNotExist(err) {
-		LogDebug("Initializing path: ", pdir)
+		LogDebug("CONFIG Make Path:", pdir)
 		os.MkdirAll(pdir, os.ModePerm)
 	}
 }

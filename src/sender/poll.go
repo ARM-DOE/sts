@@ -44,7 +44,7 @@ func NewPoller(cache *Cache) *Poller {
 // addFile safely adds a new file to the Poller's list of files to verify. It requires the start
 // timestamp of the file, so that the receiver knows where in the logs to look for the file
 func (poller *Poller) addFile(path string, start_time int64) {
-	util.LogDebug("POLLER: Found file: ", path)
+	util.LogDebug("POLLER Found:", path)
 	store_path := getStorePath(path, config.Input_Directory)
 	poller.map_mutex.Lock()
 	defer poller.map_mutex.Unlock()
@@ -87,11 +87,12 @@ func (poller *Poller) poll() {
 			continue
 		}
 		poller.map_mutex.Unlock()
+        util.LogDebug("POLLER Request:", payload)
 		request_url := fmt.Sprintf("%s://%s/poll.go?files=%s", config.Protocol(), config.Receiver_Address, url.QueryEscape(payload))
 		new_request, request_err := http.NewRequest("POST", request_url, nil)
 		new_request.Header.Add("sender_name", config.Sender_Name)
 		if request_err != nil {
-			util.LogError("Could not generate HTTP request object: ", request_err.Error())
+			util.LogError("Failed to generate HTTP request object: ", request_err.Error())
 		}
 		response, response_err := poller.client.Do(new_request)
 		if response_err != nil {
@@ -124,10 +125,11 @@ func (poller *Poller) unpackResponse(response *http.Response) error {
 		tag_data := getTag(poller.cache, whole_path)
 		stat, stat_err := os.Stat(whole_path)
 		if stat_err != nil {
-			util.LogError(fmt.Sprintf("Couldn't stat file %s during cleanup: %s", whole_path, stat_err.Error()))
+			util.LogError(fmt.Sprintf("Failed to stat file %s during cleanup: %s", whole_path, stat_err.Error()))
 			continue
 		}
 		if response_map[path] == 1 {
+            util.LogDebug("POLLER Confirmation:", path)
 			// Log the send confirmation
 			send_duration := (time.Now().UnixNano() - poller.cache.listener.Files[whole_path].StartTime) / int64(time.Millisecond)
 			reciever_host := strings.Split(config.Receiver_Address, ":")[0]
@@ -136,15 +138,17 @@ func (poller *Poller) unpackResponse(response *http.Response) error {
 			if tag_data.Delete_On_Verify {
 				remove_err := os.Remove(whole_path)
 				if remove_err != nil {
-					util.LogError(fmt.Sprintf("Couldn't remove %s file after send confirmation: %s", whole_path, remove_err.Error()))
-				}
+					util.LogError(fmt.Sprintf("Failed to remove %s after confirmation: %s", whole_path, remove_err.Error()))
+				} else {
+                    util.LogDebug("POLLER Delete:", path)
+                }
 			}
 			poller.cache.removeFile(whole_path)
 			poller.validation_map[path] = nil
 			delete(poller.validation_map, path)
 		} else if response_map[path] == -1 {
 			// File failed whole-file validation, set for re-allocation.
-			util.LogError(fmt.Sprintf("File %s failed whole-file validation, sending again", path))
+			util.LogError(fmt.Sprintf("Failed to send %s correctly, sending again ...", path))
 			poller.cache.updateFile(whole_path, 0, tag_data, stat)
 			poller.cache.listener.WriteCache()
 		}

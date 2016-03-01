@@ -55,7 +55,7 @@ func (sender *Sender) run() {
 		}
 		send_bin := <-sender.queue
 		sender.Busy = true
-		util.LogDebug("Sending bin of size ", send_bin.Size, "and name", send_bin.Name)
+		util.LogDebug("SENDER Bin:", send_bin.Name, send_bin.Size)
 		switch send_bin.TransferMethod {
 		case TRANSFER_HTTP:
 			sender.sendHTTP(send_bin)

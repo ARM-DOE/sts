@@ -52,7 +52,7 @@ func Main(in_config *util.Config) {
 	go file_cache.scan() // Start the file listener thread
 
 	// Start loop
-	util.LogDebug("Sender ready")
+	util.LogDebug("SENDER Ready")
 	for {
 		checkReload(file_cache)
 		time.Sleep(1 * time.Second)
