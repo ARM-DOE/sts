@@ -132,8 +132,11 @@ func (poller *Poller) unpackResponse(response *http.Response) error {
             util.LogDebug("POLLER Confirmation:", path)
 			// Log the send confirmation
 			send_duration := (time.Now().UnixNano() - poller.cache.listener.Files[whole_path].StartTime) / int64(time.Millisecond)
-			reciever_host := strings.Split(config.Receiver_Address, ":")[0]
-			send_log.LogSend(path_util.Base(whole_path), poller.cache.getFileMD5(whole_path), stat.Size(), reciever_host, send_duration)
+			receiver_host := config.Receiver_Name
+			if receiver_host == "" {
+				receiver_host = strings.Split(config.Receiver_Address, ":")[0]
+			}
+			send_log.LogSend(path_util.Base(whole_path), poller.cache.getFileMD5(whole_path), stat.Size(), receiver_host, send_duration)
 			// Delete the file if the tag says we should.
 			if tag_data.Delete_On_Verify {
 				remove_err := os.Remove(whole_path)

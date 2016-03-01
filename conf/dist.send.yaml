@@ -1,4 +1,4 @@
-# Path config
+# Paths (either absolute or relative to $STS_DATA)
 input_directory: data/out
 cache_file_name: .sts/cache.send.dat
 logs_directory:  logs
@@ -6,13 +6,14 @@ disk_path:       data/disk
 bin_store:       .sts/bins
 
 # Operating variables
-sender_name:          STSTEST
+sender_name:          ststest-out
 sender_threads:       10
 cache_write_interval: 60
 disk_switching:       false # true, false, or auto
 bin_timeout:          3600  # bin sending timeout in seconds
 
-# HTTP(s) setup
+# Receiver
+receiver_name:    ststest-in
 receiver_address: localhost:8081
 tls:              true
 client_ssl_cert:  conf/client.pem

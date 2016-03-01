@@ -1,8 +1,11 @@
+# Paths (either absolute or relative to $STS_DATA)
 cache_file_name:      .sts/cache.receive.dat
-cache_write_interval: 60
 staging_directory:    data/stage
 output_directory:     data/in
 logs_directory:       logs
+
+# Operating variables
+cache_write_interval: 60
 server_port:          8081
 tls:                  true
 server_ssl_cert:      conf/server.pem
