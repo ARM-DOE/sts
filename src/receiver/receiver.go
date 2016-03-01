@@ -154,6 +154,7 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 // It reads from the Part stream and writes the part to a file while calculating the md5.
 // If the file is bad, it will be reacquired and passed back into sendHandler.
 func handlePart(part *multipart.Part, boundary string, host_name string, compressed bool) bool {
+    util.LogDebug("RECEIVER Process Part:", part.Header.Get("name"))
 	// Gather data about part from headers
 	part_path := util.JoinPath(config.Staging_Directory, host_name, part.Header.Get("name"))
 	write_path := part_path + ".tmp"
@@ -172,7 +173,7 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
 	// Start reading and iterating over the part
 	part_fi, open_err := os.OpenFile(write_path, os.O_WRONLY, 0600)
 	if open_err != nil {
-		util.LogError("Could not open file while trying to write part:", open_err.Error())
+		util.LogError("Failed to open file while trying to write part:", open_err.Error())
 	}
 	part_fi.Seek(part_start, 0)
 	part_bytes := make([]byte, part_md5.BlockSize)
@@ -181,14 +182,14 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
 		var gzip_err error
 		gzip_reader, gzip_err = gzip.NewReader(part)
 		if gzip_err != nil {
-			util.LogError("Could not create new gzip reader while parsing sent part:", gzip_err.Error())
+			util.LogError("Failed to create new gzip reader while parsing sent part:", gzip_err.Error())
 		}
 	}
 	for {
 		var err error
 		var bytes_read int
 		// The number of bytes read can often be less than the size of the passed buffer.
-		if compressed {
+		if gzip_reader != nil {
 			bytes_read, err = gzip_reader.Read(part_bytes)
 		} else {
 			bytes_read, err = part.Read(part_bytes)
@@ -290,6 +291,7 @@ func finishFile(addition_channel chan string) {
 		if strings.HasPrefix(new_file, config.Output_Directory) {
 			continue // Don't process files that have already been finished.
 		}
+        util.LogDebug("RECEIVER Finalizing:", new_file)
 		// Acquire the mutex while working with new files so that the cache will re-detect unprocessed files in the event of a crash.
 		go func() { // Create inline function so we can defer the release of the mutex lock.
 			finalize_mutex.Lock()
@@ -299,7 +301,7 @@ func finishFile(addition_channel chan string) {
 			// Get file size & md5
 			info, stat_err := os.Stat(new_file)
 			if stat_err != nil {
-				util.LogError("Couldn't stat file: ", stat_err.Error())
+				util.LogError("Failed to stat file: ", stat_err.Error())
 			}
 			companion, comp_err := util.DecodeCompanion(new_file)
 			if comp_err != nil {
@@ -328,43 +330,37 @@ func finishFile(addition_channel chan string) {
 			file_md5 := companion.File_MD5
 			computed_md5, md5_err := util.FileMD5(new_file)
 			if md5_err != nil {
-				util.LogError(fmt.Sprintf("Error while calculating MD5 of %s: %s", new_file, md5_err))
+				util.LogError(fmt.Sprintf("Failed to calculate MD5 of %s: %s", new_file, md5_err))
 			}
-			replace_portion := config.Staging_Directory + util.Sep
-			log_name := strings.Replace(new_file, replace_portion, "", 1)
+			replace_portion := util.JoinPath(config.Staging_Directory, host_name) + util.Sep
+			store_name := strings.Replace(new_file, replace_portion, "", 1)
 			if computed_md5 != file_md5 {
 				// Welp, somehow the whole file didn't validate. Let's ask for it again.
 				util.LogError(fmt.Sprintf("File %s failed whole file validation, asking sender to resend", new_file))
 				log_map_lock.Lock()
-				log_map[log_name] = false
+				log_map[store_name] = false
 				log_map_lock.Unlock()
 			}
-			// Finally, rename and clean up the file
-			root_pattern := fmt.Sprintf("%s/%s/[^/]*/", config.Staging_Directory, host_name)
-
-			compiled_pattern := regexp.MustCompile(root_pattern)
-			remove_part := compiled_pattern.FindString(new_file)
-			removed_root := strings.Replace(new_file, remove_part, "", 1)
-			final_path := util.JoinPath(config.Output_Directory, host_name, removed_root)
+            final_path := util.JoinPath(config.Output_Directory, host_name, store_name)
 			os.MkdirAll(filepath.Dir(final_path), os.ModePerm) // Make containing directories for the file.
 			rename_err := os.Rename(new_file, final_path)
 			if rename_err != nil {
-				util.LogError(fmt.Sprintf("Couldn't rename file while moving %s to output directory: %s", new_file, rename_err.Error()))
+				util.LogError(fmt.Sprintf("Failed to rename file while moving %s to output directory: %s", new_file, rename_err.Error()))
 			}
 			// Remove companion file
 			companion_name := new_file + ".comp"
 			remove_err := os.Remove(companion_name)
 			if remove_err != nil {
-				util.LogError(fmt.Sprintf("Couldn't remove companion file %s: %s", companion_name, remove_err.Error()))
+				util.LogError(fmt.Sprintf("Failed to remove companion file %s: %s", companion_name, remove_err.Error()))
 			}
 			log_map_lock.Lock()
 			delete(moved_map, new_file)
-			log_map[log_name] = true
+			log_map[store_name] = true
 			if len(log_map) > 10000 {
 				// Dump the log map when it gets too large.
 				log_map = make(map[string]bool)
 			}
-			receiver_log.LogReceive(log_name, file_md5, info.Size(), host_name)
+			receiver_log.LogReceive(store_name, file_md5, info.Size(), host_name)
 			log_map_lock.Unlock()
 		}()
 	}
@@ -402,9 +398,8 @@ func pollHandler(w http.ResponseWriter, r *http.Request) {
 //  1 - If the file has sent successfully.
 // -1 - If the file sending failed.
 func isFileMoved(path string, host_name string, start_time int64) int {
-	log_map_path := util.JoinPath(host_name, path)
 	log_map_lock.Lock()
-	success, verified := log_map[log_map_path]
+	success, verified := log_map[path]
 	log_map_lock.Unlock()
 	if verified && success {
 		return 1
@@ -412,7 +407,7 @@ func isFileMoved(path string, host_name string, start_time int64) int {
 		return -1
 	}
 	// Get the path of this file in the
-	temp_path := config.Staging_Directory + util.Sep + path
+	temp_path := util.JoinPath(config.Staging_Directory, host_name, path)
 	companion_path := temp_path + ".comp"
 	_, file_exists := os.Stat(temp_path + ".tmp")
 	_, comp_exists := os.Stat(companion_path)

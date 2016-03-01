@@ -201,7 +201,7 @@ func (sender *Sender) sendDisk(send_bin Bin) {
 	}
 }
 
-// sendGridFTP accepts Bins with transfer type GridFTP, and does nothing with them.
+// sendGridFTP accepts Bins with transfer type GridFTP, and does nothing with them yet.
 func (sender *Sender) sendGridFTP(send_bin Bin) {
 
 }

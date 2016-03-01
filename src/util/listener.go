@@ -226,7 +226,7 @@ func (listener *Listener) WatchDir(dir_slice int) (string, error) {
 // This would probably only be called if the local copy of the cache has been corrupted.
 // Because of this, codingError tries to provide a meaningful dump of data in regards to the status of the cache.
 func (listener *Listener) codingError(err error) {
-	LogError("Cache corruption in " + listener.file_name)
+	LogError("Cache corruption:", listener.file_name)
 	LogError("Cache contents dump:", listener.Files)
 	LogError(err)
 	panic("Fatal error")

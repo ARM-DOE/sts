@@ -1,9 +1,6 @@
 package sender
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 	"util"
@@ -59,13 +56,6 @@ func Main(in_config *util.Config) {
 	}
 }
 
-// getStorePath returns the path that the receiver should use to store a file.
-// Given parameters full_path and watch_directory, it will remove watch directory from the full path.
-func getStorePath(full_path string, watch_directory string) string {
-	store_path := strings.Replace(full_path, filepath.Dir(watch_directory)+util.Sep, "", 1)
-	return store_path
-}
-
 // checkReload is called by the main thread every second to check if any changes have been made to
 // the config file to the webserver. If changes are detected, checkReload determines whether to reload
 // only dynamic values of whether to perform a full restart. If a full restart is needed, Restart() will
@@ -76,7 +66,7 @@ func checkReload(cache *Cache) {
 		old_config := config
 		temp_config, parse_err := util.ParseConfig(config.FileName())
 		if parse_err != nil {
-			util.LogError("Couldn't parse config file, changes not accepted:", parse_err.Error())
+			util.LogError("Failed to parse config file, changes not accepted:", parse_err.Error())
 			config.Reloaded()
 			return
 		}
@@ -96,38 +86,14 @@ func checkReload(cache *Cache) {
 	}
 }
 
-// getWholePath returns the absolute path of the file given the path where the file will be stored on the receiver.
-func getWholePath(store_path string) string {
-	var abs_path string
-	if filepath.IsAbs(config.Input_Directory) {
-		abs_path = fmt.Sprintf("%s%c%s", filepath.Dir(config.Input_Directory), os.PathSeparator, store_path)
-	} else {
-		var abs_err error
-		abs_path, abs_err = filepath.Abs(store_path)
-		if abs_err != nil {
-			util.LogError(abs_err.Error())
-		}
-	}
-	return abs_path
+// getStorePath returns the path that the receiver should use to store a file.
+// Given parameters full_path and watch_directory, it will remove watch directory from the full path.
+func getStorePath(full_path string, watch_directory string) string {
+	store_path := strings.Replace(full_path, watch_directory+util.Sep, "", 1)
+	return store_path
 }
 
-// checkWatchDir is called on the directory to be watched.
-// It validates that the directory exists, and returns the absolute path.
-func checkWatchDir(watch_dir string) string {
-	_, err := os.Stat(watch_dir)
-	var abs_dir string
-	if os.IsNotExist(err) {
-		util.LogError("Watch directory does not exist")
-		os.Exit(1)
-	}
-	if !filepath.IsAbs(watch_dir) {
-		var abs_err error
-		abs_dir, abs_err = filepath.Abs(watch_dir)
-		if abs_err != nil {
-			util.LogError(fmt.Sprintf("Could not generate abs path for watch directory %s: %s", watch_dir, abs_err.Error()))
-		}
-	} else {
-		abs_dir = watch_dir
-	}
-	return abs_dir
+// getWholePath returns the absolute path of the file given the path where the file will be stored on the receiver.
+func getWholePath(store_path string) string {
+	return util.JoinPath(config.Input_Directory, store_path)
 }
