@@ -9,14 +9,15 @@ import (
 
 // Cache is a wrapper around Listener that provides extra Bin-filling functionality.
 type Cache struct {
-    bin_channel  chan Bin          // The channel that newly filled Bins should be passed into.
-    poller       *Poller           // TODO write something about poller
-    bin_size     int               // Default Bin size. Obtained from config.
-    watch_dir    string            // Watch directory, used to create listener and new bins.
-    listener     *util.Listener    // The instance of listener that the cache uses to store data and get new files.
-    senders      []*Sender         // A list of all the active senders that the cache can query when creating new Bins.
-    md5s         map[string]string // A list of all the pre-calculated md5s
-    channel_lock sync.Mutex        // As soon as a new file is obtained from the listener, this lock is applied. It stops calls to cache.allocate coming too early.
+    allocation_lock sync.Mutex        // Lock in place during bin allocation. Keeps files from being deleted during allocation.
+    bin_channel     chan Bin          // The channel that newly filled Bins should be passed into.
+    poller          *Poller           // TODO write something about poller
+    bin_size        int               // Default Bin size. Obtained from config.
+    watch_dir       string            // Watch directory, used to create listener and new bins.
+    listener        *util.Listener    // The instance of listener that the cache uses to store data and get new files.
+    senders         []*Sender         // A list of all the active senders that the cache can query when creating new Bins.
+    md5s            map[string]string // A list of all the pre-calculated md5s
+    channel_lock    sync.Mutex        // As soon as a new file is obtained from the listener, this lock is applied. It stops calls to cache.allocate coming too early.
 }
 
 // NewCache creates and returns a new Cache struct with default values.
@@ -24,6 +25,7 @@ func NewCache(cache_file_name string, watch_dir string, cache_write_interval int
     new_cache := &Cache{}
     new_cache.md5s = make(map[string]string)
     new_cache.watch_dir = watch_dir
+    new_cache.allocation_lock = sync.Mutex{}
     new_cache.bin_size = bin_size
     new_cache.bin_channel = bin_channel
     new_cache.senders = nil
@@ -72,6 +74,7 @@ func (cache *Cache) resendFile(path string) error {
 // removeFile deletes a file and its progress from both the in-memory and local cache.
 // It should only be used when a file has been confirmed to have completely sent.
 // It returns the time that the first chunk of the file was allocated to a bin.
+// You allocation_lock should be locked when this function is called.
 func (cache *Cache) removeFile(path string) int64 {
     cache.listener.WriteLock.Lock()
     item_start := cache.listener.Files[path].StartTime

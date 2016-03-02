@@ -162,15 +162,13 @@ func (bin *Bin) delete() {
 // It repeats this process until either the Bin runs out of room, or there are no more valid & unallocated files.
 // After a bin is filled, the local cache will be updated.
 func (bin *Bin) fill() {
-    // Make copy of cache contents before beginning allocation.
-    bin.cache.listener.WriteLock.Lock()
-    cache_copy := bin.cache.copyFileData()
-    bin.cache.listener.WriteLock.Unlock()
-
+    // Don't let the poller delete files while we're iterating over the cache.
+    bin.cache.allocation_lock.Lock()
+    defer bin.cache.allocation_lock.Unlock()
     keep_trying := true // There may still some files in the cache that have been passed over due to selecting of higher priority data
     for keep_trying {   // This outer for loop keeps looping until no unallocated data can be found.
         keep_trying = false // Set keep_trying to false until a file is found that will allow the loop to continue.
-        for path, cache_file := range cache_copy {
+        for path, cache_file := range bin.cache.listener.Files {
             if bin.BytesLeft == 0 {
                 break // Bin is full
             }

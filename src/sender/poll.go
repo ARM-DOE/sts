@@ -116,7 +116,6 @@ func (poller *Poller) unpackResponse(response *http.Response) error {
         return decode_err
     }
     // Update the validation_map with response info
-    poller.map_mutex.Lock()
     for path, _ := range response_map {
         // Get info you need to address the file in the cache
         whole_path := getWholePath(path)
@@ -138,9 +137,15 @@ func (poller *Poller) unpackResponse(response *http.Response) error {
                     error_log.LogError(fmt.Sprintf("Couldn't remove %s file after send confirmation: %s", whole_path, remove_err.Error()))
                 }
             }
+            // Make sure we don't remove files in the middle of allocation.
+            poller.cache.allocation_lock.Lock()
             poller.cache.removeFile(whole_path)
+            poller.cache.allocation_lock.Unlock()
+            // Lock the log map while removing items
+            poller.map_mutex.Lock()
             poller.validation_map[path] = nil
             delete(poller.validation_map, path)
+            poller.map_mutex.Unlock()
         } else if response_map[path] == -1 {
             // File failed whole-file validation, set for re-allocation.
             error_log.LogError(fmt.Sprintf("File %s failed whole-file validation, sending again", path))
@@ -148,6 +153,5 @@ func (poller *Poller) unpackResponse(response *http.Response) error {
             poller.cache.listener.WriteCache()
         }
     }
-    poller.map_mutex.Unlock()
     return nil
 }

@@ -6,7 +6,9 @@ import (
     "net"
     "net/http"
     "os"
+    "runtime"
     "strings"
+    "sync"
     "syscall"
     "time"
 )
@@ -97,4 +99,34 @@ func GetHostname(r *http.Request) string {
     host_name = strings.TrimSuffix(found_hosts[0], ".")
     host_names[ip] = host_name
     return host_name
+}
+
+func NewNamedMutex(name string) *NamedMutex {
+    new_mutex := &NamedMutex{}
+    new_mutex.name = name
+    new_mutex.mutex = sync.Mutex{}
+    return new_mutex
+}
+
+// NamedMutex is a debug struct which provides useful information about the state of a mutex lock.
+type NamedMutex struct {
+    name  string
+    mutex sync.Mutex
+}
+
+// Lock calls the Lock() function of the underlying mutex lock. It prints an attempted/successful
+// acquisition message with caller name and line number information.
+func (mutex *NamedMutex) Lock() {
+    _, file_name, line, _ := runtime.Caller(1)
+    fmt.Println(fmt.Sprintf("%s blocked: %s:%d", mutex.name, file_name, line))
+    mutex.mutex.Lock()
+    fmt.Println(fmt.Sprintf("%s locked: %s:%d", mutex.name, file_name, line))
+}
+
+// Unlock calls the Unlock() function of the underlying mutex lock. It prints an "unlocked" message
+// with caller name and line number information.
+func (mutex *NamedMutex) Unlock() {
+    mutex.mutex.Unlock()
+    _, file_name, line, _ := runtime.Caller(1)
+    fmt.Println(fmt.Sprintf("%s unlocked: %s:%d", mutex.name, file_name, line))
 }
