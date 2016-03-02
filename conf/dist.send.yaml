@@ -11,6 +11,8 @@ sender_threads:       10
 cache_write_interval: 60
 disk_switching:       false # true, false, or auto
 bin_timeout:          3600  # bin sending timeout in seconds
+poll_delay:           5 # How many seconds to wait after file sent before final validation
+poll_interval:        1 # Hoa many seconds to wait between polling requests
 
 # Receiver
 receiver_name:    ststest-in

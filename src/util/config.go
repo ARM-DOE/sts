@@ -22,6 +22,9 @@ type Config struct {
 	Cache_Write_Interval int64
 	Disk_Path            string
 	Bin_Store            string
+	Bin_Timeout          int
+	Poll_Interval        int
+	Poll_Delay           int
 	Output_Directory     string
 	Server_Port          string
 	Receiver_Name        string
@@ -29,7 +32,6 @@ type Config struct {
 	Staging_Directory    string
 	Logs_Directory       string
 	TLS                  bool
-	Bin_Timeout          int
 	Server_SSL_Cert      string
 	Server_SSL_Key       string
 	Client_SSL_Cert      string

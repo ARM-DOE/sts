@@ -19,12 +19,13 @@ import (
 // When an available Bin is found, Sender converts the Bin to a multipart file,
 // which it then transmits to the receiver.
 type Sender struct {
-	queue        chan Bin          // Channel that new bins are pulled from.
-	compression  bool              // Bool that controls whether compression is turned on. Obtained from config file.
 	Busy         bool              // Set to true when the sender is currently sending a file.
 	Active       bool              // Set Active to true if the sender is allowed to accept new Bins.
+	queue        chan Bin          // Channel that new bins are pulled from.
+	compression  bool              // Bool that controls whether compression is turned on. Obtained from config file.
 	disk_manager *util.DiskManager // Disk manager for linux, keeps the disk from overfilling & controls disk mounting
 	client       http.Client
+	nfailures    int // Number of sequential failures used to gauge thrashing.
 }
 
 // NewSender creates and returns a new instance of the Sender struct.
@@ -85,7 +86,7 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
 	bin_body.compression = config.Compression()
 	request_url := fmt.Sprintf("%s://%s/data", config.Protocol(), config.Receiver_Address)
 	request, err := http.NewRequest("PUT", request_url, bin_body)
-	request.Header.Add("sender_name", config.Sender_Name)
+	request.Header.Add("X-STS-SenderName", config.Sender_Name)
 	request.Header.Add("Transfer-Encoding", "chunked")
 	request.Header.Add("Boundary", bin_body.Boundary())
 	request.Header.Set("Connection", "close") // Prevents persistent connections opening too many file handles
@@ -103,15 +104,16 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
 	} else {
 		response_code, read_err := ioutil.ReadAll(response.Body)
 		if read_err != nil {
-			util.LogError("Could not read HTTP response from receiver: ", read_err.Error())
+			util.LogError("Could not read HTTP response from receiver:", read_err.Error())
 			sender.passBackBin(send_bin)
 		} else if string(response_code) == "200" {
-			send_bin.delete() // Sending is complete, so remove the bin file
+			sender.nfailures = 0 // Reset the sequential failures counter
+			send_bin.done()
 		} else if string(response_code) == "206" {
-			util.LogError(fmt.Sprintf("Send of bin %s failed: receiver-end validation failed", send_bin.Name))
+			util.LogError("Bin failed validation:", send_bin.Name)
 			sender.passBackBin(send_bin) // Bin failed validation on receiving end
 		} else {
-			util.LogError("Send failed with response code: ", string(response_code))
+			util.LogError("Send failed with response code:", string(response_code))
 			sender.passBackBin(send_bin)
 		}
 		response.Body.Close()
@@ -122,8 +124,11 @@ func (sender *Sender) sendHTTP(send_bin Bin) {
 // passBackBin should be called when a sender has failed to send a bin and
 // needs to return it to the bin queue to be tried again by other senders.
 func (sender *Sender) passBackBin(send_bin Bin) {
-	time.Sleep(5 * time.Second) // Wait so you don't choke the Bin queue if it keeps failing in quick succession.
-	sender.queue <- send_bin    // Pass the bin back into the Bin queue.
+	sender.nfailures += 1
+	if sender.nfailures > 3 {
+		time.Sleep(time.Duration(sender.nfailures) * time.Second)
+	}
+	sender.queue <- send_bin // Pass the bin back into the Bin queue.
 }
 
 // sendDisk accepts Bins with transfer type Disk, and copies them to a location on the system
@@ -179,7 +184,7 @@ func (sender *Sender) sendDisk(send_bin Bin) {
 	// Tell receiver that we wrote a file to disk
 	post_url := fmt.Sprintf("%s://%s/disknotify?name=%s&md5=%s&size=%d", config.Protocol(), config.Receiver_Address, dest_path, stream_md5.SumString(), bin_part.TotalSize)
 	request, req_err := http.NewRequest("POST", post_url, nil)
-	request.Header.Add("sender_name", config.Sender_Name)
+	request.Header.Add("X-STS-SenderName", config.Sender_Name)
 	if req_err != nil {
 		util.LogError("Could not generate HTTP request object: ", req_err.Error())
 	}

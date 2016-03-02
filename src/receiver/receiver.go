@@ -20,6 +20,11 @@ import (
 	"util"
 )
 
+type PollData struct {
+	Path       string
+	Start_Time int64
+}
+
 // finalize_mutex prevents the cache from updating its timestamp while files
 // from its addition channel are being processed.
 var finalize_mutex sync.Mutex
@@ -74,7 +79,7 @@ func Main(in_config *util.Config) {
 	go listener.Listen(addition_channel)
 
 	// Register request handling functions
-	http.HandleFunc("/data", sendHandler)
+	http.HandleFunc("/data", dataHandler)
 	http.HandleFunc("/disknotify", diskWriteHandler)
 	http.HandleFunc("/validate", pollHandler)
 	//http.HandleFunc("/config", config.EditConfigInterface)
@@ -124,10 +129,10 @@ func getPartLocation(location string) (int64, int64) {
 	return start, end
 }
 
-// sendHandler receives a multipart file from the sender via PUT request.
+// dataHandler receives a multipart file from the sender via PUT request.
 // It is responsible for verifying the md5 of each part in the file, replicating
 // its directory structure as it was on the sender, and writing the file to disk.
-func sendHandler(w http.ResponseWriter, r *http.Request) {
+func dataHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	host_name := util.GetHostname(r)
 	compression := false
@@ -150,9 +155,9 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, http.StatusOK)
 }
 
-// handlePart is called for each part in the multipart file that is sent to sendHandler.
+// handlePart is called for each part in the multipart file that is sent to dataHandler.
 // It reads from the Part stream and writes the part to a file while calculating the md5.
-// If the file is bad, it will be reacquired and passed back into sendHandler.
+// If the file is bad, it will be reacquired and passed back into dataHandler.
 func handlePart(part *multipart.Part, boundary string, host_name string, compressed bool) bool {
 	util.LogDebug("RECEIVER Process Part:", part.Header.Get("X-STS-FileName"))
 	// Gather data about part from headers
@@ -382,14 +387,23 @@ func diskWriteHandler(w http.ResponseWriter, r *http.Request) {
 func pollHandler(w http.ResponseWriter, r *http.Request) {
 	// Get host name of request
 	host_name := util.GetHostname(r)
-	files := strings.Split(r.FormValue("files"), ",")
+	files := []*PollData{}
+	decoder := json.NewDecoder(r.Body)
+	err := decoder.Decode(&files)
+	if err != nil {
+		fmt.Fprint(w, http.StatusBadRequest) // respond with a 400
+		return
+	}
+	// files := strings.Split(r.FormValue("files"), ",")
 	response_map := make(map[string]int, len(files))
-	for _, file_data := range files {
-		split_data := strings.Split(file_data, ";")
-		start_time, _ := strconv.ParseInt(split_data[1], 10, 64)
-		response_map[split_data[0]] = isFileMoved(split_data[0], host_name, start_time)
+	for _, pd := range files {
+		// split_data := strings.Split(file_data, ";")
+		// start_time, _ := strconv.ParseInt(split_data[1], 10, 64)
+		// response_map[split_data[0]] = isFileMoved(split_data[0], host_name, start_time)
+		response_map[pd.Path] = isFileMoved(pd.Path, host_name, pd.Start_Time)
 	}
 	json_response, _ := json.Marshal(response_map)
+	w.WriteHeader(http.StatusOK)
 	w.Write(json_response)
 }
 

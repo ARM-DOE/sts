@@ -108,8 +108,8 @@ func Restart() {
 // a cached copy is returned. If the resulting hostname has a trailing dot, it is removed.
 func GetHostname(r *http.Request) string {
 	var host_name string
-	if len(r.Header.Get("sender_name")) > 0 {
-		host_name = r.Header.Get("sender_name")
+	if len(r.Header.Get("X-STS-SenderName")) > 0 {
+		host_name = r.Header.Get("X-STS-SenderName")
 		return host_name
 	}
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)

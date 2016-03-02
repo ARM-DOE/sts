@@ -153,8 +153,15 @@ func (bin *Bin) save() {
 func (bin *Bin) delete() {
 	err := os.Remove(bin.Name)
 	if err != nil {
-		util.LogError("Failed to remove bin", bin.Name)
+		util.LogError("Failed to remove bin:", bin.Name)
 	}
+}
+
+func (bin *Bin) done() {
+	for _, part := range bin.Files {
+		bin.cache.updateFileProgress(part.Path, part.End-part.Start)
+	}
+	bin.delete()
 }
 
 // fill iterates through files in the cache until it finds one that is not completely allocated.
@@ -174,16 +181,13 @@ func (bin *Bin) fill() {
 			}
 			info, info_err := os.Stat(path)
 			if info_err != nil {
-				util.LogError("File:", path, "registered in cache, but does not exist")
+				util.LogError("Cached file not found:", path)
 				bin.cache.removeFile(path)
 			}
 			file_size := info.Size()
 			if file_size == 0 {
 				// Empty file
 				bin.cache.removeFile(path)
-			}
-			if cache_file.Allocation == -1 {
-				bin.cache.poller.addFile(path, cache_file.StartTime)
 			}
 			if cache_file.Allocation < file_size && cache_file.Allocation != -1 {
 				// File passes initial check, do expensive check
@@ -203,7 +207,7 @@ func (bin *Bin) fill() {
 					if cache_file.Allocation == 0 {
 						update_startstamp = true // If the first chunk is being allocated, mark the start stamp.
 					}
-					bin.cache.updateFile(path, new_allocation, tag_data, info, update_startstamp)
+					bin.cache.updateFileAlloc(path, new_allocation, tag_data, info, update_startstamp)
 				}
 			}
 			if cache_file.Allocation != -1 {
@@ -325,7 +329,7 @@ func (bin *Bin) handleExternalTransferMethod(path string, tag_data *util.TagData
 		util.LogError("Transfer method", tag_data.TransferMethod(), "not recognized")
 		panic("Fatal error")
 	}
-	bin.cache.updateFile(path, -1, tag_data, info)
+	bin.cache.updateFileAlloc(path, -1, tag_data, info)
 }
 
 // handleDisk is called to prep bins for files with transfer method disk.

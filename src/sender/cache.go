@@ -2,6 +2,7 @@ package sender
 
 import (
 	"os"
+	"strings"
 	"sync"
 	"time"
 	"util"
@@ -32,27 +33,31 @@ func NewCache(cache_file_name string, watch_dir string, cache_write_interval int
 	return new_cache
 }
 
-// updateFile updates the record of bytes that have been allocated to a Bin.
+// updateFileAlloc updates the record of bytes that have been allocated to a Bin.
 // Take note that updateFile does NOT update the local cache.
 // updateFile takes an optional argument new_timestamp, which should be either true or false,
 // depending whether or not a new timestamp should be stored with the file.
 // Generally, this would only happen when the file is being updated for the first time.
-func (cache *Cache) updateFile(path string, new_byte_progress int64, tag_data *util.TagData, info os.FileInfo, new_timestamp ...bool) bool {
+func (cache *Cache) updateFileAlloc(path string, new_byte_alloc int64, tag_data *util.TagData, info os.FileInfo, new_timestamp ...bool) bool {
 	finished := false
-	if new_byte_progress == info.Size() || new_byte_progress == -1 {
+	if new_byte_alloc == info.Size() || new_byte_alloc == -1 {
 		tag_data.SetLastFile(getStorePath(path, config.Input_Directory))
-		new_byte_progress = -1
+		new_byte_alloc = -1
 		finished = true
 	}
-	if new_byte_progress > info.Size() {
-		util.LogError("Bin tried to store too many bytes of", path)
+	if new_byte_alloc > info.Size() {
+		util.LogError("Bin tried to store too many bytes:", path)
+		// TODO: Should we do something about this? What if a file changes in the middle of being sent?
 	}
 	// Lock cache so it won't be written or loaded during file update.
 	cache.listener.WriteLock.Lock()
 	defer cache.listener.WriteLock.Unlock()
 	// Update cache file with new byte progress
 	cache_file := cache.listener.Files[path]
-	cache_file.Allocation = new_byte_progress
+	if cache_file.Bytes != info.Size() {
+		util.LogError("File changed:", path) // TODO: Delete the file from the cache?
+	}
+	cache_file.Allocation = new_byte_alloc
 	if len(new_timestamp) > 0 && new_timestamp[0] == true {
 		cache_file.StartTime = util.GetTimestampNS()
 	}
@@ -60,12 +65,31 @@ func (cache *Cache) updateFile(path string, new_byte_progress int64, tag_data *u
 	return finished
 }
 
+func (cache *Cache) updateFileProgress(path string, bytes_sent int64) bool {
+	cache.listener.WriteLock.Lock()
+	defer cache.listener.WriteLock.Unlock()
+	cache_file := cache.listener.Files[path]
+	cache_file.SentBytes += bytes_sent
+	if cache_file.SentBytes == cache_file.Bytes {
+		// Add to poller for validation/cleanup.
+		cache.poller.addFile(path, cache_file.StartTime)
+		// Log the sent file.
+		send_duration := (time.Now().UnixNano() - cache_file.StartTime) / int64(time.Millisecond)
+		receiver_host := config.Receiver_Name
+		if receiver_host == "" {
+			receiver_host = strings.Split(config.Receiver_Address, ":")[0]
+		}
+		send_log.LogSend(getStorePath(path, config.Input_Directory), cache.getFileMD5(path), cache_file.Bytes, receiver_host, send_duration)
+	}
+	return false
+}
+
 func (cache *Cache) resendFile(path string) error {
 	info, stat_err := os.Stat(path)
 	if stat_err != nil {
 		return stat_err
 	}
-	cache.updateFile(path, 0, nil, info)
+	cache.updateFileAlloc(path, 0, nil, info)
 	cache.listener.WriteCache()
 	return nil
 }
@@ -166,13 +190,24 @@ func (cache *Cache) scan() {
 	go cache.listener.Listen(update_channel)
 	for {
 		new_path := <-update_channel
-		cache.channel_lock.Lock()
-		cache.listener.WriteLock.Lock()
-		util.LogDebug("CACHE Found:", new_path)
-		cache.listener.Files[new_path] = util.CacheFile{}
-		cache.listener.WriteLock.Unlock()
-		cache.channel_lock.Unlock()
+		cache.addPath(new_path)
 	}
+}
+
+func (cache *Cache) addPath(path string) {
+	cache.channel_lock.Lock()
+	cache.listener.WriteLock.Lock()
+	defer cache.channel_lock.Unlock()
+	defer cache.listener.WriteLock.Unlock()
+	util.LogDebug("CACHE Found File:", path)
+	stat, err := os.Stat(path)
+	if err != nil {
+		util.LogError("Failed to stat:", path, err.Error())
+		return
+	}
+	fc := util.CacheFile{}
+	fc.Bytes = stat.Size()
+	cache.listener.Files[path] = fc
 }
 
 func (cache *Cache) BinSize() int {

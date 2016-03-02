@@ -19,6 +19,9 @@ var send_log *util.Logger
 func Main(in_config *util.Config) {
 	config = in_config
 
+	// Set some defaults.
+	setDefaults(config)
+
 	// Create "send" logger
 	send_log = util.NewLogger(config.Logs_Directory, util.LOGGING_SEND, false)
 
@@ -53,6 +56,15 @@ func Main(in_config *util.Config) {
 	for {
 		checkReload(file_cache)
 		time.Sleep(1 * time.Second)
+	}
+}
+
+func setDefaults(config *util.Config) {
+	if config.Poll_Interval == 0 {
+		config.Poll_Interval = 60
+	}
+	if config.Poll_Delay == 0 {
+		config.Poll_Delay = 10
 	}
 }
 

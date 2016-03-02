@@ -39,6 +39,8 @@ type CacheFile struct {
 	Allocation int64    // An int64 that represents the number of bytes from this file that have been allocated to a Bin.
 	StartTime  int64    // A unix timestamp that is taken when the first part of a file is allocated. Used to calculate time taken for send.
 	tag        *TagData // Value used to cache tag lookups. Isn't written to disk.
+	Bytes      int64    // The file size when cached.
+	SentBytes  int64    // The number of bytes sent (updated as bins for this file are deleted).
 }
 
 func (file *CacheFile) SetAllocation(new_allocation int64) {
@@ -112,7 +114,7 @@ func (listener *Listener) WriteCache() {
 	defer listener.WriteLock.Unlock()
 	// Only write to the cache if it hasn't been written for cache_write_interval seconds.
 	if time.Since(listener.last_cache_write).Seconds() > float64(listener.cache_write_interval) {
-		listener.Files["__TIMESTAMP__"] = CacheFile{listener.last_update, 0, nil}
+		listener.Files["__TIMESTAMP__"] = CacheFile{listener.last_update, 0, nil, 0, 0}
 		json_bytes, encode_err := json.Marshal(listener.Files)
 		if encode_err != nil {
 			listener.codingError(encode_err)
