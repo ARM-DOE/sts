@@ -5,7 +5,6 @@ output_directory:     data/in
 logs_directory:       logs
 
 # Operating variables
-cache_write_interval: 60
 server_port:          8081
 tls:                  true
 server_ssl_cert:      conf/server.pem
