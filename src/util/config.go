@@ -17,19 +17,23 @@ import (
 type Config struct {
 	// Static configuration values from file - require restart to change
 	Input_Directory      string
+	Input_Age            int
 	Sender_Threads       int
 	Sender_Name          string
 	Cache_File_Name      string
 	Cache_Write_Interval int64
 	Disk_Path            string
 	Bin_Store            string
+	Bin_Timeout          int
+	Poll_Interval        int
+	Poll_Delay           int
 	Output_Directory     string
 	Server_Port          string
+	Receiver_Name        string
 	Receiver_Address     string
 	Staging_Directory    string
 	Logs_Directory       string
 	TLS                  bool
-	Bin_Timeout          int
 	Server_SSL_Cert      string
 	Server_SSL_Key       string
 	Client_SSL_Cert      string
@@ -89,31 +93,62 @@ func (tag *TagData) LastFile(new_last string) string {
 }
 
 // parseConfig parses the config.yaml file and returns the parsed results as an instance of the Config struct.
-func ParseConfig(file_name string) (Config, error) {
+func ParseConfig(file_name string) (*Config, error) {
 	var loaded_config Config
 	var abs_path string
 	if !filepath.IsAbs(file_name) {
 		var abs_err error
 		abs_path, abs_err = filepath.Abs(file_name)
 		if abs_err != nil {
-			return Config{}, abs_err
+			return &Config{}, abs_err
 		}
 	} else {
 		abs_path = file_name
 	}
 	config_fi, config_err := ioutil.ReadFile(abs_path)
 	if config_err != nil {
-		fmt.Println("config file", file_name, "not found")
+		LogError("Configuration file not found: ", file_name)
 		os.Exit(1)
 	}
 	err := yaml.Unmarshal(config_fi, &loaded_config)
 	if err != nil {
-		fmt.Println(err.Error())
+		LogError(err.Error())
 		os.Exit(1)
 	}
 	loaded_config.ParseTags()
 	loaded_config.file_name = abs_path
-	return loaded_config, nil
+	return &loaded_config, nil
+}
+
+func initPath(path *string, isdir bool) {
+	var err error
+	if !filepath.IsAbs(*path) {
+		root := GetRootPath()
+		*path, err = filepath.Abs(JoinPath(root, *path))
+		if err != nil {
+			LogError("Failed to initialize: ", *path, err.Error())
+		}
+	}
+	pdir := *path
+	if !isdir {
+		pdir = filepath.Dir(pdir)
+	}
+	_, err = os.Stat(pdir)
+	if os.IsNotExist(err) {
+		LogDebug("CONFIG Make Path:", pdir)
+		os.MkdirAll(pdir, os.ModePerm)
+	}
+}
+
+// InitPaths iterates over the configuration options that represent either a file or directory
+// on disk and initializes it.
+func (config *Config) InitPaths() {
+	initPath(&config.Cache_File_Name, false)
+	initPath(&config.Bin_Store, true)
+	initPath(&config.Input_Directory, true)
+	initPath(&config.Output_Directory, true)
+	initPath(&config.Staging_Directory, true)
+	initPath(&config.Logs_Directory, true)
 }
 
 // ParseTags iterates over every ConfigTagData parsed from the config and sets any empty values
@@ -225,7 +260,7 @@ func (config *Config) EditConfig(w http.ResponseWriter, r *http.Request) {
 // StaticDiff takes two configs and checks if their static variables are the same by nulling
 // all dynamic/runtime variables in the config. Could potentially need updates if new variables
 // are added to Config.
-func (config Config) StaticDiff(old_config Config) bool {
+func (config *Config) StaticDiff(old_config *Config) bool {
 	static_values_changed := false
 	// Set everything but static values to default
 	config.Dynamic = DynamicValues{}
@@ -262,7 +297,7 @@ func (config *Config) EditConfigInterface(w http.ResponseWriter, r *http.Request
 html { visibility:hidden; }
 </style>
 <style type="text/css" media="screen">
-    #editor { 
+    #editor {
         position: center;
         height: 450px;
         width: 60%;

@@ -15,7 +15,7 @@ import (
 const LOGGING_SEND = 1
 const LOGGING_RECEIVE = 2
 const LOGGING_DISK = 3
-const LOGGING_ERROR = 4
+const LOGGING_MSG = 4
 
 // Logger contains data necessary to create the logging directory structure and write
 // logs to files
@@ -26,22 +26,26 @@ type Logger struct {
 	log_path        string
 	base_path       string
 	mode            int
+	debug           bool
 }
 
 // NewLogger creates a file with the specified mode and base path from the config.
 // The mode changes the behavior of Logger.Log() - List of modes:
 // 1 = send, 2 = receive, 3 = disk, 4 = error
-func NewLogger(base_path string, mode int) Logger {
+func NewLogger(base_path string, mode int, debug bool) *Logger {
 	new_logger := Logger{}
 	new_logger.log_lock = sync.Mutex{}
-	new_logger.mode = mode
 	new_logger.base_path = base_path
-	if mode == LOGGING_ERROR {
-		new_logger.internal_logger = log.New(nil, "", log.Ldate|log.Ltime)
+	new_logger.mode = mode
+	new_logger.debug = debug
+	if mode == LOGGING_MSG {
+		if base_path != "" {
+			new_logger.internal_logger = log.New(nil, "", log.Ldate|log.Ltime)
+		}
 	} else {
 		new_logger.internal_logger = log.New(nil, "", 0)
 	}
-	return new_logger
+	return &new_logger
 }
 
 // updateFileHandle is called before each call to a Log() function. If the day has changed,
@@ -67,26 +71,47 @@ func (logger *Logger) updateFileHandle(host_names ...string) {
 		var open_err error
 		logger.file_handle, open_err = os.OpenFile(current_path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0700)
 		if open_err != nil {
-			fmt.Println("Couldn't open log file: ", open_err.Error())
+			LogError("Failed to open log file: ", open_err.Error())
 		}
 		logger.internal_logger.SetOutput(logger.file_handle)
 	}
 }
 
-// LogError joins each item in params{} by a space, prepends a timestamp and the location of the error,
+// LogDebug joins each item in params{} by a space, prepends a timestamp and the location of the message,
 // and writes the result to stdout and to the "messages" log file.
+func (logger *Logger) LogDebug(params ...interface{}) error {
+	if logger.internal_logger == nil || !logger.debug {
+		return nil
+	}
+	if logger.mode != LOGGING_MSG {
+		fmt.Fprintln(os.Stderr, params...) // Prevent error message from being lost.
+		return errors.New(fmt.Sprintf("Can't call LogDebug with log of mode %d", logger.mode))
+	}
+	logger.log_lock.Lock()
+	defer logger.log_lock.Unlock()
+	// Get file name and line number of the caller of this function
+	_, file_name, line, _ := runtime.Caller(1)
+	params = append([]interface{}{fmt.Sprintf("%s:%d", filepath.Base(file_name), line)}, params...)
+	fmt.Fprintln(os.Stdout, params...)
+	logger.updateFileHandle()
+	logger.internal_logger.Println(params...)
+	return nil
+}
+
+// LogError joins each item in params{} by a space, prepends a timestamp and the location of the error,
+// and writes the result to stderr and to the "messages" log file.
 func (logger *Logger) LogError(params ...interface{}) error {
-	if logger.mode != LOGGING_ERROR {
-		fmt.Println(params...) // Prevent error message from being lost.
+	if logger.mode != LOGGING_MSG {
+		fmt.Fprintln(os.Stderr, params...) // Prevent error message from being lost.
 		return errors.New(fmt.Sprintf("Can't call LogError with log of mode %d", logger.mode))
 	}
 	logger.log_lock.Lock()
 	defer logger.log_lock.Unlock()
-	logger.updateFileHandle()
 	// Get file name and line number of the caller of this function
 	_, file_name, line, _ := runtime.Caller(1)
 	params = append([]interface{}{fmt.Sprintf("%s:%d", filepath.Base(file_name), line)}, params...)
-	fmt.Println(params...)
+	fmt.Fprintln(os.Stderr, params...)
+	logger.updateFileHandle()
 	logger.internal_logger.Println(params...)
 	return nil
 }
@@ -155,7 +180,7 @@ func getDirectory(mode int) string {
 		return "incoming_from"
 	case LOGGING_DISK:
 		return "to_disk"
-	case LOGGING_ERROR:
+	case LOGGING_MSG:
 		return "messages"
 	}
 	panic(fmt.Sprintf("Unrecognized logging mode %d", mode))

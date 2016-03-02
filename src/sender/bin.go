@@ -118,7 +118,7 @@ func (cache *Cache) walkBin(path string, info os.FileInfo, err error) error {
 	if strings.HasSuffix(path, ".bin") {
 		bin_file, read_err := ioutil.ReadFile(path)
 		if read_err != nil {
-			error_log.LogError(read_err.Error())
+			util.LogError(read_err.Error())
 		}
 		loaded_bin := cache.loadBin(bin_file)
 		cache.bin_channel <- loaded_bin
@@ -132,7 +132,7 @@ func (cache *Cache) loadBin(bin_bytes []byte) Bin {
 	decoded_bin := Bin{}
 	decode_err := json.Unmarshal(bin_bytes, &decoded_bin)
 	if decode_err != nil {
-		error_log.LogError(decode_err.Error())
+		util.LogError(decode_err.Error())
 	}
 	return decoded_bin
 }
@@ -143,7 +143,7 @@ func (bin *Bin) save() {
 	bin.Name = util.JoinPath(config.Bin_Store, bin_md5+".bin")
 	json_bytes, encode_err := json.Marshal(bin)
 	if encode_err != nil {
-		error_log.LogError(encode_err.Error())
+		util.LogError(encode_err.Error())
 	}
 	ioutil.WriteFile(bin.Name+".tmp", json_bytes, 0700)
 	os.Rename(bin.Name+".tmp", bin.Name)
@@ -153,8 +153,15 @@ func (bin *Bin) save() {
 func (bin *Bin) delete() {
 	err := os.Remove(bin.Name)
 	if err != nil {
-		error_log.LogError("Failed to remove bin", bin.Name)
+		util.LogError("Failed to remove bin:", bin.Name)
 	}
+}
+
+func (bin *Bin) done() {
+	for _, part := range bin.Files {
+		bin.cache.updateFileProgress(part.Path, part.End-part.Start)
+	}
+	bin.delete()
 }
 
 // fill iterates through files in the cache until it finds one that is not completely allocated.
@@ -177,16 +184,13 @@ func (bin *Bin) fill() {
 			}
 			info, info_err := os.Stat(path)
 			if info_err != nil {
-				error_log.LogError("File:", path, "registered in cache, but does not exist")
+				util.LogError("Cached file not found:", path)
 				bin.cache.removeFile(path)
 			}
 			file_size := info.Size()
 			if file_size == 0 {
 				// Empty file
 				bin.cache.removeFile(path)
-			}
-			if cache_file.Allocation == -1 {
-				bin.cache.poller.addFile(path, cache_file.StartTime)
 			}
 			if cache_file.Allocation < file_size && cache_file.Allocation != -1 {
 				// File passes initial check, do expensive check
@@ -208,7 +212,7 @@ func (bin *Bin) fill() {
 						last_file = tag_data.LastFile(getStorePath(path, config.Input_Directory))
 					}
 					bin.addPart(path, tag_data, cache_file.Allocation, new_allocation, info, last_file)
-					bin.cache.updateFile(path, new_allocation, tag_data, info, update_startstamp)
+					bin.cache.updateFileAlloc(path, new_allocation, tag_data, info, update_startstamp)
 				}
 			}
 			if cache_file.Allocation != -1 {
@@ -251,14 +255,14 @@ func highestPriority(cache *Cache, tag_data *util.TagData) bool {
 func oldestFileInTag(cache *Cache, path string) bool {
 	stat, stat_err := os.Stat(path)
 	if stat_err != nil {
-		error_log.LogError(stat_err.Error())
+		util.LogError(stat_err.Error())
 	}
 	modtime := stat.ModTime()
 	for cache_path, cache_file := range cache.listener.Files {
 		if cache_file.Allocation != -1 && sameTag(path, cache_path) {
 			cache_stat, stat_err := os.Stat(cache_path)
 			if stat_err != nil {
-				error_log.LogError(stat_err.Error())
+				util.LogError(stat_err.Error())
 			}
 			cache_modtime := cache_stat.ModTime()
 			if !modtime.Before(cache_modtime) && modtime != cache_modtime {
@@ -295,7 +299,7 @@ func getTag(cache *Cache, path string) *util.TagData {
 			}
 			matched, match_err := regexp.MatchString(tag_pattern, path_tag)
 			if match_err != nil {
-				error_log.LogError(match_err.Error())
+				util.LogError(match_err.Error())
 			}
 			if matched {
 				file.SetTag(tag_data)
@@ -316,21 +320,21 @@ func getTag(cache *Cache, path string) *util.TagData {
 func (bin *Bin) handleExternalTransferMethod(path string, tag_data *util.TagData) {
 	info, stat_err := os.Stat(path)
 	if stat_err != nil {
-		error_log.LogError(stat_err.Error())
+		util.LogError(stat_err.Error())
 	}
 	switch tag_data.TransferMethod() {
 	case TRANSFER_HTTP:
-		error_log.LogError("handleExternalTransferMethod called, but method is not external")
+		util.LogError("handleExternalTransferMethod called, but method is not external")
 		panic("Fatal error")
 	case TRANSFER_DISK:
 		bin.handleDisk(path, tag_data)
 	case TRANSFER_GRIDFTP:
 		bin.handleGridFTP(path, tag_data)
 	default:
-		error_log.LogError("Transfer method", tag_data.TransferMethod(), "not recognized")
+		util.LogError("Transfer method", tag_data.TransferMethod(), "not recognized")
 		panic("Fatal error")
 	}
-	bin.cache.updateFile(path, -1, tag_data, info)
+	bin.cache.updateFileAlloc(path, -1, tag_data, info)
 }
 
 // handleDisk is called to prep bins for files with transfer method disk.
@@ -338,7 +342,7 @@ func (bin *Bin) handleDisk(path string, tag_data *util.TagData) {
 	bin.TransferMethod = TRANSFER_DISK
 	info, stat_err := os.Stat(path)
 	if stat_err != nil {
-		error_log.LogError(stat_err.Error())
+		util.LogError(stat_err.Error())
 	}
 	bin.Size = -1
 	bin.BytesLeft = 0
@@ -351,7 +355,7 @@ func (bin *Bin) handleGridFTP(path string, tag_data *util.TagData) {
 	bin.TransferMethod = TRANSFER_GRIDFTP
 	info, stat_err := os.Stat(path)
 	if stat_err != nil {
-		error_log.LogError(stat_err.Error())
+		util.LogError(stat_err.Error())
 	}
 	bin.Size = -1
 	bin.BytesLeft = 0

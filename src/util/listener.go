@@ -31,7 +31,7 @@ type Listener struct {
 	WriteLock            sync.Mutex           // Prevents the cache from being written to disk and modified simultaneously
 	cache_write_interval int64                // Time in seconds that must elapse before the on-disk cache file can be written again.
 	last_cache_write     time.Time            // The time that the cache was last written to disk.
-	error_log            Logger
+	file_age             int                  // How old (in seconds) the file needs to be in order to get into the cache.
 }
 
 // CacheFile is the data structure that is stored on disk and in memory for every file in the cache
@@ -40,6 +40,8 @@ type CacheFile struct {
 	Allocation int64    // An int64 that represents the number of bytes from this file that have been allocated to a Bin.
 	StartTime  int64    // A unix timestamp that is taken when the first part of a file is allocated. Used to calculate time taken for send.
 	tag        *TagData // Value used to cache tag lookups. Isn't written to disk.
+	Bytes      int64    // The file size when cached.
+	SentBytes  int64    // The number of bytes sent (updated as bins for this file are deleted).
 }
 
 func (file *CacheFile) SetAllocation(new_allocation int64) {
@@ -66,9 +68,8 @@ type FinishFunc func()
 
 // NewListener generates and returns a new Listener struct which operates on the provided
 // watch_dir and saves its data to cache_file_name.
-func NewListener(cache_file_name string, error_log Logger, cache_write_interval int64, watch_dirs ...string) *Listener {
+func NewListener(cache_file_name string, cache_write_interval int64, file_age int, watch_dirs ...string) *Listener {
 	new_listener := &Listener{}
-	new_listener.error_log = error_log
 	new_listener.recent_files = make(map[string]bool)
 	new_listener.scan_delay = 3
 	new_listener.file_name = cache_file_name
@@ -78,6 +79,7 @@ func NewListener(cache_file_name string, error_log Logger, cache_write_interval 
 	new_listener.watch_dirs = watch_dirs
 	new_listener.Files = make(map[string]CacheFile)
 	new_listener.ignore_patterns = make([]string, 0)
+	new_listener.file_age = file_age
 	new_listener.AddIgnored(`\.DS_Store`)
 	return new_listener
 }
@@ -114,7 +116,7 @@ func (listener *Listener) WriteCache() {
 	defer listener.WriteLock.Unlock()
 	// Only write to the cache if it hasn't been written for cache_write_interval seconds.
 	if time.Since(listener.last_cache_write).Seconds() > float64(listener.cache_write_interval) || listener.cache_write_interval == 0 {
-		listener.Files["__TIMESTAMP__"] = CacheFile{listener.last_update, 0, nil}
+		listener.Files["__TIMESTAMP__"] = CacheFile{listener.last_update, 0, nil, 0, 0}
 		json_bytes, encode_err := json.Marshal(listener.Files)
 		if encode_err != nil {
 			listener.codingError(encode_err)
@@ -131,12 +133,18 @@ func (listener *Listener) WriteCache() {
 // If new files are found, their paths are sent to update_channel.
 // When finished, it updates the local cache file.
 func (listener *Listener) scanDir() {
-	before_update := GetTimestamp()
+	start := GetTimestamp()
 	listener.new_files = false
 	for _, watch_dir := range listener.watch_dirs {
+		_, err := os.Stat(JoinPath(watch_dir, ".disabled"))
+		if err == nil {
+			continue // File exists, don't scan.
+		}
 		filepath.Walk(watch_dir, listener.fileWalkHandler)
 	}
-	listener.last_update = before_update
+	if listener.new_files { // Because .disabled might have kept files from getting checked.
+		listener.last_update = start - int64(listener.file_age) - 1
+	}
 	listener.afterScan()
 	listener.WriteCache()
 	if !listener.new_files && len(listener.recent_files) > 0 {
@@ -152,17 +160,17 @@ func (listener *Listener) fileWalkHandler(path string, info os.FileInfo, err err
 	if info == nil { // Check to make sure the file still exists
 		return nil
 	}
-	if !info.IsDir() {
-		_, in_map := listener.Files[path]
-		_, in_recent := listener.recent_files[path]
-		modtime := info.ModTime()
-		special_case := false
-		if modtime == time.Unix(listener.last_update, 0) && !in_map {
-			// Special case: since ModTime doesn't offer resolution to a fraction of a second
-			special_case = true // If modtime and the last cache update are equal, set the special case flag
-			// When the special case flag is active, the modtime check in the next conditional always passes.
-		}
-		if !in_recent && !in_map && !listener.checkIgnored(info.Name()) && (modtime.After(time.Unix(listener.last_update, 0)) || special_case) {
+	if info.IsDir() {
+		return nil
+	}
+	_, in_map := listener.Files[path]
+	_, in_recent := listener.recent_files[path]
+	if in_map || in_recent {
+		return nil
+	}
+	modtime := info.ModTime()
+	if !listener.checkIgnored(info.Name()) && modtime.After(time.Unix(listener.last_update, 0)) {
+		if modtime.Unix() < (GetTimestamp() - int64(listener.file_age)) {
 			listener.new_files = true
 			listener.recent_files[path] = true
 			listener.update_channel <- path
@@ -190,7 +198,7 @@ func (listener *Listener) checkIgnored(path string) bool {
 	for _, pattern := range listener.ignore_patterns {
 		matched, match_err := regexp.MatchString(pattern, path)
 		if match_err != nil {
-			listener.error_log.LogError("Error matching pattern", pattern, "against file", path)
+			LogError("Error matching pattern", pattern, "against file", path)
 		} else {
 			if matched {
 				ignore = true
@@ -228,8 +236,8 @@ func (listener *Listener) WatchDir(dir_slice int) (string, error) {
 // This would probably only be called if the local copy of the cache has been corrupted.
 // Because of this, codingError tries to provide a meaningful dump of data in regards to the status of the cache.
 func (listener *Listener) codingError(err error) {
-	listener.error_log.LogError("Cache corruption in " + listener.file_name)
-	listener.error_log.LogError("Cache contents dump:", listener.Files)
-	listener.error_log.LogError(err)
+	LogError("Cache corruption:", listener.file_name)
+	LogError("Cache contents dump:", listener.Files)
+	LogError(err)
 	panic("Fatal error")
 }

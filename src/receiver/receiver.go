@@ -20,15 +20,19 @@ import (
 	"util"
 )
 
+type PollData struct {
+	Path       string
+	Start_Time int64
+}
+
 // finalize_mutex prevents the cache from updating its timestamp while files
 // from its addition channel are being processed.
 var finalize_mutex sync.RWMutex
 
-var config util.Config
+var config *util.Config
 
-var error_log util.Logger
-var receiver_log util.Logger
-var disk_log util.Logger
+var receiver_log *util.Logger
+var disk_log *util.Logger
 
 // log_map stores recently completed files, to be accessed by polling. If a key points to a value
 // of -1, that file has been validated and can be removed. If the value is not -1, it will be a
@@ -42,44 +46,46 @@ const LOG_SEARCH_WIDTH = 30
 
 // Main is the entry point of the webserver. It is responsible for registering HTTP
 // handlers, parsing the config file, starting the file listener, and beginning the request serving loop.
-func Main(config_file string) {
+func Main(in_config *util.Config) {
+	config = in_config
+
 	// Setup mutex locks and parse config into global variable.
 	finalize_mutex = sync.RWMutex{}
 	util.CompanionLock = sync.Mutex{}
-	var parse_err error
-	config, parse_err = util.ParseConfig(config_file)
-	if parse_err != nil {
-		fmt.Println("Couldn't parse config", parse_err.Error())
-	}
+
 	// Setup loggers
-	receiver_log = util.NewLogger(config.Logs_Directory, util.LOGGING_RECEIVE)
-	error_log = util.NewLogger(config.Logs_Directory, util.LOGGING_ERROR)
-	disk_log = util.NewLogger(config.Logs_Directory, util.LOGGING_DISK)
+	receiver_log = util.NewLogger(config.Logs_Directory, util.LOGGING_RECEIVE, false)
+	disk_log = util.NewLogger(config.Logs_Directory, util.LOGGING_DISK, false)
 
 	// Initialize log_map to store validated files
 	log_map = make(map[string]bool)
 	log_map_lock = sync.Mutex{}
+
 	// Setup listener and add ignore patterns.
 	addition_channel := make(chan string, 1)
-	listener := util.NewListener(config.Cache_File_Name, error_log, config.Cache_Write_Interval, config.Staging_Directory, config.Output_Directory)
+	listener := util.NewListener(config.Cache_File_Name, config.Cache_Write_Interval, 0, config.Staging_Directory, config.Output_Directory)
 	listener.SetOnFinish(onFinish)
 	listener.AddIgnored(`\.tmp`)
+	listener.AddIgnored(`\.lck`)
 	listener.AddIgnored(`\.comp`)
 	listener.AddIgnored(regexp.QuoteMeta(config.Cache_File_Name))
+
 	// Start listening threads
 	go finishFile(addition_channel)
 	cache_err := listener.LoadCache()
 	if cache_err != nil {
-		error_log.LogError("Error loading listener cache:", cache_err.Error())
+		util.LogError("Error loading listener cache:", cache_err.Error())
 	}
 	go listener.Listen(addition_channel)
+
 	// Register request handling functions
-	http.HandleFunc("/send.go", sendHandler)
-	http.HandleFunc("/disk_add.go", diskWriteHandler)
-	http.HandleFunc("/poll.go", pollHandler)
-	http.HandleFunc("/editor.go", config.EditConfigInterface)
-	http.HandleFunc("/edit_config.go", config.EditConfig)
+	http.HandleFunc("/data", dataHandler)
+	http.HandleFunc("/disknotify", diskWriteHandler)
+	http.HandleFunc("/validate", pollHandler)
+	//http.HandleFunc("/config", config.EditConfigInterface)
+	//http.HandleFunc("/config/edit", config.EditConfig)
 	http.HandleFunc("/", errorHandler)
+
 	// Setup server with correct HTTP protocol
 	var serv net.Listener
 	var serv_err error
@@ -89,12 +95,14 @@ func Main(config_file string) {
 	} else if config.Protocol() == "http" {
 		serv, serv_err = util.AsyncListenAndServe(address)
 	} else {
-		error_log.LogError(fmt.Sprintf("Protocol type %s is not valid"), config.Protocol())
+		util.LogError(fmt.Sprintf("Protocol type %s is not valid"), config.Protocol())
 	}
 	if serv_err != nil {
-		error_log.LogError(serv_err.Error())
+		util.LogError(serv_err.Error())
 	}
+
 	// Enter mainloop to check for config changes
+	util.LogDebug("RECEIVER Ready")
 	for {
 		checkReload(serv)
 		time.Sleep(1 * time.Second)
@@ -113,18 +121,18 @@ func getPartLocation(location string) (int64, int64) {
 	start, start_err := strconv.ParseInt(split_header[0], 10, 64)
 	end, end_err := strconv.ParseInt(split_header[1], 10, 64)
 	if start_err != nil {
-		error_log.LogError(start_err.Error())
+		util.LogError(start_err.Error())
 	}
 	if end_err != nil {
-		error_log.LogError(end_err.Error())
+		util.LogError(end_err.Error())
 	}
 	return start, end
 }
 
-// sendHandler receives a multipart file from the sender via PUT request.
+// dataHandler receives a multipart file from the sender via PUT request.
 // It is responsible for verifying the md5 of each part in the file, replicating
 // its directory structure as it was on the sender, and writing the file to disk.
-func sendHandler(w http.ResponseWriter, r *http.Request) {
+func dataHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	host_name := util.GetHostname(r)
 	compression := false
@@ -147,29 +155,30 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, http.StatusOK)
 }
 
-// handlePart is called for each part in the multipart file that is sent to sendHandler.
+// handlePart is called for each part in the multipart file that is sent to dataHandler.
 // It reads from the Part stream and writes the part to a file while calculating the md5.
-// If the file is bad, it will be reacquired and passed back into sendHandler.
+// If the file is bad, it will be reacquired and passed back into dataHandler.
 func handlePart(part *multipart.Part, boundary string, host_name string, compressed bool) bool {
+	util.LogDebug("RECEIVER Process Part:", part.Header.Get("X-STS-FileName"))
 	// Gather data about part from headers
-	part_path := util.JoinPath(config.Staging_Directory, host_name, part.Header.Get("name"))
+	part_path := util.JoinPath(config.Staging_Directory, host_name, part.Header.Get("X-STS-FileName"))
 	write_path := part_path + ".tmp"
-	part_start, _ := getPartLocation(part.Header.Get("location"))
+	part_start, _ := getPartLocation(part.Header.Get("X-STS-PartLocation"))
 	part_md5 := util.NewStreamMD5()
 	// If the file which this part belongs to does not already exist, create a new empty file and companion file.
 	_, err := os.Stat(write_path)
 	if os.IsNotExist(err) {
-		size_header := part.Header.Get("total_size")
+		size_header := part.Header.Get("X-STS-FileSize")
 		total_size, parse_err := strconv.ParseInt(size_header, 10, 64)
 		if parse_err != nil {
-			error_log.LogError(fmt.Sprintf("Could not parse %s to int64: %s", size_header, parse_err.Error()))
+			util.LogError(fmt.Sprintf("Could not parse %s to int64: %s", size_header, parse_err.Error()))
 		}
 		createEmptyFile(part_path, total_size, host_name)
 	}
 	// Start reading and iterating over the part
 	part_fi, open_err := os.OpenFile(write_path, os.O_WRONLY, 0600)
 	if open_err != nil {
-		error_log.LogError("Could not open file while trying to write part:", open_err.Error())
+		util.LogError("Failed to open file while trying to write part:", open_err.Error())
 	}
 	part_fi.Seek(part_start, 0)
 	part_bytes := make([]byte, part_md5.BlockSize)
@@ -178,14 +187,14 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
 		var gzip_err error
 		gzip_reader, gzip_err = gzip.NewReader(part)
 		if gzip_err != nil {
-			error_log.LogError("Could not create new gzip reader while parsing sent part:", gzip_err.Error())
+			util.LogError("Failed to create new gzip reader while parsing sent part:", gzip_err.Error())
 		}
 	}
 	for {
 		var err error
 		var bytes_read int
 		// The number of bytes read can often be less than the size of the passed buffer.
-		if compressed {
+		if gzip_reader != nil {
 			bytes_read, err = gzip_reader.Read(part_bytes)
 		} else {
 			bytes_read, err = part.Read(part_bytes)
@@ -198,25 +207,25 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
 	}
 	part_fi.Close()
 	// Validate part
-	if (part.Header.Get("md5") != part_md5.SumString()) || debugBinFail() { // If debug is enabled, drop bin 1/5th of the time
+	if (part.Header.Get("X-STS-FileHash") != part_md5.SumString()) || debugBinFail() { // If debug is enabled, drop bin 1/5th of the time
 		// Validation failed, request this specific part again using part size
-		error_log.LogError(fmt.Sprintf("Bad part of %s from bytes %s", part_path, part.Header.Get("location")))
+		util.LogError(fmt.Sprintf("Bad part of %s from bytes %s", part_path, part.Header.Get("X-STS-PartLocation")))
 		return false
 	}
 	// Update the companion file of the part, and check if the whole file is done
-	add_err := util.AddPartToCompanion(part_path, part.Header.Get("md5"), part.Header.Get("location"), part.Header.Get("file_md5"), part.Header.Get("last_file"))
+	add_err := util.AddPartToCompanion(part_path, part.Header.Get("X-STS-PartHash"), part.Header.Get("X-STS-PartLocation"), part.Header.Get("X-STS-FileHash"), part.Header.Get("X-STS-PrevFileName"))
 	if add_err != nil {
-		error_log.LogError("Failed to add part to companion:", add_err.Error())
+		util.LogError("Failed to add part to companion:", add_err.Error())
 	}
 	if isFileComplete(part_path) {
 		// Finish file by updating the modtime and removing the .tmp extension.
 		rename_err := os.Rename(write_path, part_path)
 		if rename_err != nil {
-			error_log.LogError(rename_err.Error())
+			util.LogError(rename_err.Error())
 			panic("Fatal error")
 		}
 		os.Chtimes(part_path, time.Now(), time.Now()) // Update mtime so that listener will pick up the file
-		fmt.Println("Fully assembled", part_path)
+		util.LogDebug("RECEIVER File Done:", part_path)
 	}
 	return true
 }
@@ -237,7 +246,7 @@ func isFileComplete(path string) bool {
 	is_done := false
 	decoded_companion, comp_err := util.DecodeCompanion(path)
 	if comp_err != nil {
-		error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", path, comp_err.Error()))
+		util.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", path, comp_err.Error()))
 		return false
 	}
 	companion_size := int64(0)
@@ -260,11 +269,11 @@ func createEmptyFile(path string, size int64, host_name string) {
 	os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	_, comp_err := util.NewCompanion(path, size, host_name)
 	if comp_err != nil {
-		error_log.LogError("Could not create new companion:", comp_err.Error())
+		util.LogError("Could not create new companion:", comp_err.Error())
 	}
 	fi, create_err := os.Create(path + ".tmp")
 	if create_err != nil {
-		error_log.LogError(fmt.Sprintf("Couldn't create empty file at %s.tmp with size %d: %s", path, size, create_err.Error()))
+		util.LogError(fmt.Sprintf("Couldn't create empty file at %s.tmp with size %d: %s", path, size, create_err.Error()))
 	}
 	fi.Truncate(size)
 	fi.Close()
@@ -288,6 +297,7 @@ func finishFile(addition_channel chan string) {
 		if strings.HasPrefix(new_file, config.Output_Directory) {
 			continue // Don't process files that have already been finished.
 		}
+		util.LogDebug("RECEIVER Finalizing:", new_file)
 		// Acquire the mutex while working with new files so that the cache will re-detect unprocessed files in the event of a crash.
 		go func() { // Create inline function so we can defer the release of the mutex lock.
 			finalize_mutex.RLock()
@@ -297,11 +307,11 @@ func finishFile(addition_channel chan string) {
 			// Get file size & md5
 			info, stat_err := os.Stat(new_file)
 			if stat_err != nil {
-				error_log.LogError("Couldn't stat file: ", stat_err.Error())
+				util.LogError("Failed to stat file: ", stat_err.Error())
 			}
 			companion, comp_err := util.DecodeCompanion(new_file)
 			if comp_err != nil {
-				error_log.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", new_file, comp_err.Error()))
+				util.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", new_file, comp_err.Error()))
 				return
 			}
 			// If the companion has records of a last file, check to make sure we've already renamed it.
@@ -327,47 +337,41 @@ func finishFile(addition_channel chan string) {
 			file_md5 := companion.File_MD5
 			computed_md5, md5_err := util.FileMD5(new_file)
 			if md5_err != nil {
-				error_log.LogError(fmt.Sprintf("Error while calculating MD5 of %s: %s", new_file, md5_err))
+				util.LogError(fmt.Sprintf("Failed to calculate MD5 of %s: %s", new_file, md5_err))
 			}
-			replace_portion := config.Staging_Directory + util.Sep
-			log_name := strings.Replace(new_file, replace_portion, "", 1)
+			replace_portion := util.JoinPath(config.Staging_Directory, host_name) + util.Sep
+			store_name := strings.Replace(new_file, replace_portion, "", 1)
 			if computed_md5 != file_md5 {
 				// Welp, somehow the whole file didn't validate. Let's ask for it again.
-				error_log.LogError(fmt.Sprintf("File %s failed whole file validation, asking sender to resend", new_file))
+				util.LogError(fmt.Sprintf("File %s failed whole file validation, asking sender to resend", new_file))
 				log_map_lock.Lock()
-				log_map[log_name] = false
+				log_map[store_name] = false
 				log_map_lock.Unlock()
 				// Cleanup file data
 				os.Remove(new_file + ".tmp")
 				os.Remove(new_file + ".comp")
 				return
 			}
-			// Finally, rename and clean up the file
-			root_pattern := fmt.Sprintf("%s/%s/[^/]*/", config.Staging_Directory, host_name)
-
-			compiled_pattern := regexp.MustCompile(root_pattern)
-			remove_part := compiled_pattern.FindString(new_file)
-			removed_root := strings.Replace(new_file, remove_part, "", 1)
-			final_path := util.JoinPath(config.Output_Directory, host_name, removed_root)
+			final_path := util.JoinPath(config.Output_Directory, host_name, store_name)
 			os.MkdirAll(filepath.Dir(final_path), os.ModePerm) // Make containing directories for the file.
 			rename_err := os.Rename(new_file, final_path)
 			if rename_err != nil {
-				error_log.LogError(fmt.Sprintf("Couldn't rename file while moving %s to output directory: %s", new_file, rename_err.Error()))
+				util.LogError(fmt.Sprintf("Failed to rename file while moving %s to output directory: %s", new_file, rename_err.Error()))
 			}
 			// Remove companion file
 			companion_name := new_file + ".comp"
 			remove_err := os.Remove(companion_name)
 			if remove_err != nil {
-				error_log.LogError(fmt.Sprintf("Couldn't remove companion file %s: %s", companion_name, remove_err.Error()))
+				util.LogError(fmt.Sprintf("Failed to remove companion file %s: %s", companion_name, remove_err.Error()))
 			}
 			log_map_lock.Lock()
 			delete(moved_map, new_file)
-			log_map[log_name] = true
+			log_map[store_name] = true
 			if len(log_map) > 10000 {
 				// Dump the log map when it gets too large.
 				log_map = make(map[string]bool)
 			}
-			receiver_log.LogReceive(log_name, file_md5, info.Size(), host_name)
+			receiver_log.LogReceive(store_name, file_md5, info.Size(), host_name)
 			log_map_lock.Unlock()
 		}()
 	}
@@ -379,7 +383,7 @@ func diskWriteHandler(w http.ResponseWriter, r *http.Request) {
 	md5 := r.FormValue("md5")
 	size, parse_err := strconv.ParseInt(r.FormValue("size"), 10, 64)
 	if parse_err != nil {
-		error_log.LogError(fmt.Sprintf("Couldn't parse int64 from %s: %s", r.FormValue("size"), parse_err.Error()))
+		util.LogError(fmt.Sprintf("Failed to parse int64 from %s: %s", r.FormValue("size"), parse_err.Error()))
 	}
 	disk_log.LogDisk(file_path, md5, size)
 	fmt.Fprint(w, http.StatusOK)
@@ -389,14 +393,23 @@ func diskWriteHandler(w http.ResponseWriter, r *http.Request) {
 func pollHandler(w http.ResponseWriter, r *http.Request) {
 	// Get host name of request
 	host_name := util.GetHostname(r)
-	files := strings.Split(r.FormValue("files"), ",")
+	files := []*PollData{}
+	decoder := json.NewDecoder(r.Body)
+	err := decoder.Decode(&files)
+	if err != nil {
+		fmt.Fprint(w, http.StatusBadRequest) // respond with a 400
+		return
+	}
+	// files := strings.Split(r.FormValue("files"), ",")
 	response_map := make(map[string]int, len(files))
-	for _, file_data := range files {
-		split_data := strings.Split(file_data, ";")
-		start_time, _ := strconv.ParseInt(split_data[1], 10, 64)
-		response_map[split_data[0]] = isFileMoved(split_data[0], host_name, start_time)
+	for _, pd := range files {
+		// split_data := strings.Split(file_data, ";")
+		// start_time, _ := strconv.ParseInt(split_data[1], 10, 64)
+		// response_map[split_data[0]] = isFileMoved(split_data[0], host_name, start_time)
+		response_map[pd.Path] = isFileMoved(pd.Path, host_name, pd.Start_Time)
 	}
 	json_response, _ := json.Marshal(response_map)
+	w.WriteHeader(http.StatusOK)
 	w.Write(json_response)
 }
 
@@ -405,9 +418,8 @@ func pollHandler(w http.ResponseWriter, r *http.Request) {
 //  1 - If the file has sent successfully.
 // -1 - If the file sending failed.
 func isFileMoved(path string, host_name string, start_time int64) int {
-	log_map_path := util.JoinPath(host_name, path)
 	log_map_lock.Lock()
-	success, verified := log_map[log_map_path]
+	success, verified := log_map[path]
 	log_map_lock.Unlock()
 	if verified && success {
 		return 1
@@ -415,7 +427,7 @@ func isFileMoved(path string, host_name string, start_time int64) int {
 		return -1
 	}
 	// Get the path of this file in the
-	temp_path := config.Staging_Directory + util.Sep + path
+	temp_path := util.JoinPath(config.Staging_Directory, host_name, path)
 	companion_path := temp_path + ".comp"
 	_, file_exists := os.Stat(temp_path + ".tmp")
 	_, comp_exists := os.Stat(companion_path)
@@ -467,13 +479,13 @@ func checkReload(server net.Listener) {
 		old_config := config
 		temp_config, parse_err := util.ParseConfig(config.FileName())
 		if parse_err != nil {
-			error_log.LogError("Couldn't parse config file, changes not accepted:", parse_err.Error())
+			util.LogError("Failed to parse config file: ", config.FileName(), " (changes not accepted)", parse_err.Error())
 			config.Reloaded()
 			return
 		}
 		config = temp_config
 		if config.StaticDiff(old_config) {
-			error_log.LogError("Static config value(s) changed, restarting...")
+			util.LogError("Static config value(s) changed, restarting...")
 			server.Close()
 			util.Restart()
 		} else {

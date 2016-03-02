@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -13,7 +14,10 @@ import (
 	"time"
 )
 
+var path_root string
 var host_names map[string]string
+
+var logger *Logger
 
 const Sep = string(os.PathSeparator)
 
@@ -30,6 +34,41 @@ func GetTimestamp() int64 {
 func GetTimestampNS() int64 {
 	now_time := time.Now()
 	return now_time.UnixNano()
+}
+
+func GetRootPath() string {
+	if path_root != "" {
+		return path_root
+	}
+	path_root = os.Getenv("STS_DATA")
+	if path_root == "" {
+		var err error
+		path_root, err = filepath.Abs(filepath.Dir(os.Args[0]))
+		if err != nil {
+			path_root = Sep + "sts"
+		}
+	}
+	return path_root
+}
+
+func InitLogger(input_logger *Logger) {
+	logger = input_logger
+}
+
+func LogDebug(params ...interface{}) {
+	if logger == nil {
+		fmt.Fprintln(os.Stdout, params...)
+		return
+	}
+	logger.LogDebug(params...)
+}
+
+func LogError(params ...interface{}) {
+	if logger == nil {
+		fmt.Fprintln(os.Stderr, params...)
+		return
+	}
+	logger.LogError(params...)
 }
 
 // IsStringInArray takes an array of strings and a string value and returns a boolean.
@@ -60,12 +99,6 @@ func JoinPath(params ...string) string {
 	return strings.Join(params, Sep)
 }
 
-// PrintDebug is a wrapper over fmt.Println that can be used to write debug messages which can be
-// easily found and removed later.
-func PrintDebug(str string) {
-	fmt.Println(str)
-}
-
 // Restart is called to restart the sts binary. No closing of resources is performed, so data could
 // be lost if Restart() is called without proper preparation.
 func Restart() {
@@ -77,8 +110,8 @@ func Restart() {
 // a cached copy is returned. If the resulting hostname has a trailing dot, it is removed.
 func GetHostname(r *http.Request) string {
 	var host_name string
-	if len(r.Header.Get("sender_name")) > 0 {
-		host_name = r.Header.Get("sender_name")
+	if len(r.Header.Get("X-STS-SenderName")) > 0 {
+		host_name = r.Header.Get("X-STS-SenderName")
 		return host_name
 	}
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
