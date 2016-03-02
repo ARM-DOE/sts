@@ -10,6 +10,7 @@ import (
     "reflect"
     "strconv"
     "strings"
+    "sync"
 )
 
 // Config is the struct that all values from the configuration file are loaded into when it is parsed.
@@ -68,22 +69,23 @@ type TagData struct {
     Sort             string
     Delete_On_Verify bool
     Last_File        string // Name of the last file sent from this tag. Used for linked list sorting on receiving end.
+    last_file_lock   sync.Mutex
 }
 
 func (tag *TagData) TransferMethod() string {
     return strings.ToLower(tag.Transfer_Method)
 }
 
-func (tag *TagData) SetLastFile(last_file string) {
+func (tag *TagData) LastFile(new_last string) string {
     if tag.Sort == "none" {
         // Don't set the last file for tags that don't have ordering configured.
-        return
+        return ""
     }
-    tag.Last_File = last_file
-}
-
-func (tag *TagData) LastFile() string {
-    return tag.Last_File
+    tag.last_file_lock.Lock()
+    defer tag.last_file_lock.Unlock()
+    return_file := tag.Last_File
+    tag.Last_File = new_last
+    return return_file
 }
 
 // parseConfig parses the config.yaml file and returns the parsed results as an instance of the Config struct.

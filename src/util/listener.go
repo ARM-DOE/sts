@@ -113,7 +113,7 @@ func (listener *Listener) WriteCache() {
     listener.WriteLock.Lock()
     defer listener.WriteLock.Unlock()
     // Only write to the cache if it hasn't been written for cache_write_interval seconds.
-    if time.Since(listener.last_cache_write).Seconds() > float64(listener.cache_write_interval) {
+    if time.Since(listener.last_cache_write).Seconds() > float64(listener.cache_write_interval) || listener.cache_write_interval == 0 {
         listener.Files["__TIMESTAMP__"] = CacheFile{listener.last_update, 0, nil}
         json_bytes, encode_err := json.Marshal(listener.Files)
         if encode_err != nil {
