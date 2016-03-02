@@ -41,7 +41,6 @@ func NewCache(cache_file_name string, watch_dir string, cache_write_interval int
 func (cache *Cache) updateFileAlloc(path string, new_byte_alloc int64, tag_data *util.TagData, info os.FileInfo, new_timestamp ...bool) bool {
 	finished := false
 	if new_byte_alloc == info.Size() || new_byte_alloc == -1 {
-		tag_data.SetLastFile(getStorePath(path, config.Input_Directory))
 		new_byte_alloc = -1
 		finished = true
 	}
@@ -121,6 +120,10 @@ func (cache *Cache) getFileMD5(path string) string {
 		return new_md5
 	}
 	return md5
+}
+
+func (cache Cache) copyFileData() map[string]util.CacheFile {
+    return cache.listener.Files
 }
 
 // freeSender checks the Busy value of all senders and returns true if there are any non-busy Senders.

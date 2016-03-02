@@ -27,7 +27,7 @@ type PollData struct {
 
 // finalize_mutex prevents the cache from updating its timestamp while files
 // from its addition channel are being processed.
-var finalize_mutex sync.Mutex
+var finalize_mutex sync.RWMutex
 
 var config *util.Config
 
@@ -50,7 +50,7 @@ func Main(in_config *util.Config) {
 	config = in_config
 
 	// Setup mutex locks and parse config into global variable.
-	finalize_mutex = sync.Mutex{}
+	finalize_mutex = sync.RWMutex{}
 	util.CompanionLock = sync.Mutex{}
 
 	// Setup loggers
@@ -166,7 +166,7 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
 	part_start, _ := getPartLocation(part.Header.Get("X-STS-PartLocation"))
 	part_md5 := util.NewStreamMD5()
 	// If the file which this part belongs to does not already exist, create a new empty file and companion file.
-	_, err := os.Open(write_path)
+	_, err := os.Stat(write_path)
 	if os.IsNotExist(err) {
 		size_header := part.Header.Get("X-STS-FileSize")
 		total_size, parse_err := strconv.ParseInt(size_header, 10, 64)
@@ -247,6 +247,7 @@ func isFileComplete(path string) bool {
 	decoded_companion, comp_err := util.DecodeCompanion(path)
 	if comp_err != nil {
 		util.LogError(fmt.Sprintf("Error decoding companion file at %s: %s", path, comp_err.Error()))
+		return false
 	}
 	companion_size := int64(0)
 	for _, element := range decoded_companion.CurrentParts {
@@ -299,8 +300,8 @@ func finishFile(addition_channel chan string) {
 		util.LogDebug("RECEIVER Finalizing:", new_file)
 		// Acquire the mutex while working with new files so that the cache will re-detect unprocessed files in the event of a crash.
 		go func() { // Create inline function so we can defer the release of the mutex lock.
-			finalize_mutex.Lock()
-			defer finalize_mutex.Unlock()
+			finalize_mutex.RLock()
+			defer finalize_mutex.RUnlock()
 			// Recreate the staging directory path so the companion can be taken care of.
 			host_name := strings.Split(strings.SplitN(new_file, config.Staging_Directory+util.Sep, 2)[1], util.Sep)[0]
 			// Get file size & md5
@@ -327,6 +328,7 @@ func finishFile(addition_channel chan string) {
 				// We'll look up to a month in either direction for the file, but we won't be happy about it.
 				if isFileMoved(util.JoinPath(companion.Last_File), companion.SenderName, int64(start_time)) == 0 {
 					moved_map[new_file] += 1
+					time.Sleep(time.Millisecond * 50) // Don't thrash
 					addition_channel <- new_file
 					return
 				}
@@ -345,6 +347,10 @@ func finishFile(addition_channel chan string) {
 				log_map_lock.Lock()
 				log_map[store_name] = false
 				log_map_lock.Unlock()
+				// Cleanup file data
+				os.Remove(new_file + ".tmp")
+				os.Remove(new_file + ".comp")
+				return
 			}
 			final_path := util.JoinPath(config.Output_Directory, host_name, store_name)
 			os.MkdirAll(filepath.Dir(final_path), os.ModePerm) // Make containing directories for the file.

@@ -169,10 +169,14 @@ func (bin *Bin) done() {
 // It repeats this process until either the Bin runs out of room, or there are no more valid & unallocated files.
 // After a bin is filled, the local cache will be updated.
 func (bin *Bin) fill() {
+	// Make copy of cache contents before beginning allocation.
+    bin.cache.listener.WriteLock.Lock()
+    cache_copy := bin.cache.copyFileData()
+    bin.cache.listener.WriteLock.Unlock()
 	keep_trying := true // There may still some files in the cache that have been passed over due to selecting of higher priority data
 	for keep_trying {   // This outer for loop keeps looping until no unallocated data can be found.
 		keep_trying = false // Set keep_trying to false until a file is found that will allow the loop to continue.
-		for path, cache_file := range bin.cache.listener.Files {
+		for path, cache_file := range cache_copy {
 			if bin.BytesLeft == 0 {
 				break // Bin is full
 			}
@@ -202,11 +206,13 @@ func (bin *Bin) fill() {
 					added_bytes := bin.fitBytes(cache_file.Allocation, file_size)
 					bin.BytesLeft = bin.BytesLeft - added_bytes
 					new_allocation := cache_file.Allocation + int64(added_bytes)
-					bin.addPart(path, tag_data, cache_file.Allocation, new_allocation, info)
 					update_startstamp := false
+					last_file := ""
 					if cache_file.Allocation == 0 {
 						update_startstamp = true // If the first chunk is being allocated, mark the start stamp.
+						last_file = tag_data.LastFile(getStorePath(path, config.Input_Directory))
 					}
+					bin.addPart(path, tag_data, cache_file.Allocation, new_allocation, info, last_file)
 					bin.cache.updateFileAlloc(path, new_allocation, tag_data, info, update_startstamp)
 				}
 			}
@@ -341,7 +347,8 @@ func (bin *Bin) handleDisk(path string, tag_data *util.TagData) {
 	}
 	bin.Size = -1
 	bin.BytesLeft = 0
-	bin.addPart(path, tag_data, 0, info.Size(), info)
+	last_file := tag_data.LastFile(getStorePath(path, config.Input_Directory))
+    bin.addPart(path, tag_data, 0, info.Size(), info, last_file)
 }
 
 // handleGridFTP is called to prep bins for files with transfer method GridFTP.
@@ -353,7 +360,7 @@ func (bin *Bin) handleGridFTP(path string, tag_data *util.TagData) {
 	}
 	bin.Size = -1
 	bin.BytesLeft = 0
-	bin.addPart(path, tag_data, 0, info.Size(), info)
+	bin.addPart(path, tag_data, 0, info.Size(), info, "")
 }
 
 // fitBytes checks a file to see how much of that file can fit inside a Bin.
@@ -372,11 +379,10 @@ func (bin *Bin) fitBytes(allocation int64, file_size int64) int {
 
 // addPart calls NewPart and appends the new part to the Bin.
 // See documentation for NewPart for an in-depth explanation of addParts arguments.
-func (bin *Bin) addPart(path string, tag_data *util.TagData, start int64, end int64, info os.FileInfo) Part {
-	new_part := NewPart(path, start, end, info.Size())
-	new_part.File_MD5 = bin.cache.getFileMD5(path)
-	new_part.Last_File = tag_data.LastFile()
-	bin.Files = append(bin.Files, new_part)
-	bin.Empty = false
-	return new_part
+func (bin *Bin) addPart(path string, tag_data *util.TagData, start int64, end int64, info os.FileInfo, last_file string) Part {
+    new_part := NewPart(path, start, end, info.Size())
+    new_part.File_MD5 = bin.cache.getFileMD5(path)
+    bin.Files = append(bin.Files, new_part)
+    bin.Empty = false
+    return new_part
 }
