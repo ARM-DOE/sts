@@ -63,7 +63,7 @@ func Main(in_config *util.Config) {
 
 	// Setup listener and add ignore patterns.
 	addition_channel := make(chan string, 1)
-	listener := util.NewListener(config.Cache_File_Name, config.Cache_Write_Interval, config.Staging_Directory, config.Output_Directory)
+	listener := util.NewListener(config.Cache_File_Name, config.Cache_Write_Interval, 0, config.Staging_Directory, config.Output_Directory)
 	listener.SetOnFinish(onFinish)
 	listener.AddIgnored(`\.tmp`)
 	listener.AddIgnored(`\.lck`)

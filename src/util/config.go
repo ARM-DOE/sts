@@ -17,6 +17,7 @@ import (
 type Config struct {
 	// Static configuration values from file - require restart to change
 	Input_Directory      string
+	Input_Age            int
 	Sender_Threads       int
 	Sender_Name          string
 	Cache_File_Name      string

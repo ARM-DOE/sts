@@ -28,7 +28,7 @@ func NewCache(cache_file_name string, watch_dir string, cache_write_interval int
 	new_cache.bin_size = bin_size
 	new_cache.bin_channel = bin_channel
 	new_cache.senders = nil
-	new_cache.listener = util.NewListener(cache_file_name, cache_write_interval, watch_dir)
+	new_cache.listener = util.NewListener(cache_file_name, cache_write_interval, config.Input_Age, watch_dir)
 	new_cache.channel_lock = sync.Mutex{}
 	return new_cache
 }
