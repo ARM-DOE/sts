@@ -3,9 +3,10 @@ package main
 import (
 	"flag"
 	"os"
-	"receiver"
-	"sender"
-	"util"
+
+	"github.com/ARM-DOE/sts/receiver"
+	"github.com/ARM-DOE/sts/sender"
+	"github.com/ARM-DOE/sts/util"
 )
 
 func main() {

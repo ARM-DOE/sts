@@ -5,7 +5,8 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"util"
+
+	"github.com/ARM-DOE/sts/util"
 )
 
 // Cache is a wrapper around Listener that provides extra Bin-filling functionality.
@@ -123,10 +124,6 @@ func (cache *Cache) getFileMD5(path string) string {
 		return new_md5
 	}
 	return md5
-}
-
-func (cache Cache) copyFileData() map[string]util.CacheFile {
-	return cache.listener.Files
 }
 
 // freeSender checks the Busy value of all senders and returns true if there are any non-busy Senders.

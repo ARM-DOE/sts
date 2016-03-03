@@ -8,7 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"util"
+
+	"github.com/ARM-DOE/sts/util"
 )
 
 // Part represents a part of a multipart file.

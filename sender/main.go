@@ -3,7 +3,8 @@ package sender
 import (
 	"strings"
 	"time"
-	"util"
+
+	"github.com/ARM-DOE/sts/util"
 )
 
 const TRANSFER_HTTP = "http"

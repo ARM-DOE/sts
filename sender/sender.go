@@ -12,7 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-	"util"
+
+	"github.com/ARM-DOE/sts/util"
 )
 
 // Sender is a struct that continually requests new Bins from a channel.

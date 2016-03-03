@@ -17,7 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"util"
+
+	"github.com/ARM-DOE/sts/util"
 )
 
 type PollData struct {
@@ -209,7 +210,7 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
 	// Validate part
 	if (part.Header.Get("X-STS-FileHash") != part_md5.SumString()) || debugBinFail() { // If debug is enabled, drop bin 1/5th of the time
 		// Validation failed, request this specific part again using part size
-		util.LogError(fmt.Sprintf("Bad part of %s from bytes %s", part_path, part.Header.Get("X-STS-PartLocation")))
+		util.LogError(fmt.Sprintf("Bad part of %s from bytes %s (%s:%s)", part_path, part.Header.Get("X-STS-PartLocation"), part.Header.Get("X-STS-FileHash"), part_md5.SumString()))
 		return false
 	}
 	// Update the companion file of the part, and check if the whole file is done
@@ -227,6 +228,7 @@ func handlePart(part *multipart.Part, boundary string, host_name string, compres
 		os.Chtimes(part_path, time.Now(), time.Now()) // Update mtime so that listener will pick up the file
 		util.LogDebug("RECEIVER File Done:", part_path)
 	}
+	util.LogDebug("RECEIVER Park OK:", part_path)
 	return true
 }
 

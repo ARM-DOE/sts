@@ -13,6 +13,8 @@ $basedir/bin/sts --debug --mode=send --conf=$basedir/conf/dist.send.yaml 2>&1 &
 
 sleep 1
 
-cp $basedir/test/test_files/*.* $basedir/run/data/out
+# cp $basedir/test/test_files/*.* $basedir/run/data/out
 
-#pkill sts
+$PWD/$basedir/scripts/makedata.py
+
+# pkill sts

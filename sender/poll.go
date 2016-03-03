@@ -8,7 +8,8 @@ import (
 	"os"
 	"sync"
 	"time"
-	"util"
+
+	"github.com/ARM-DOE/sts/util"
 )
 
 // Poller continually asks the receiver to confirm that files allocated as -1 were successfully
