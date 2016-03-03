@@ -1,0 +1,34 @@
+# Paths (either absolute or relative to $STS_DATA)
+input_directory: data/out
+cache_file_name: .sts/cache.send.dat
+logs_directory:  logs
+disk_path:       data/disk
+bin_store:       .sts/bins
+
+# Operating variables
+sender_name:          ststest-out
+sender_threads:       10
+cache_write_interval: 60
+input_age:            5
+disk_switching:       false # true, false, or auto
+bin_timeout:          3600  # bin sending timeout in seconds
+poll_delay:           5 # How many seconds to wait after file sent before final validation
+poll_interval:        1 # Hoa many seconds to wait between polling requests
+
+# Receiver
+receiver_name:    ststest-in
+receiver_address: localhost:8081
+tls:              true
+client_ssl_cert:  conf/client.pem
+client_ssl_key:   conf/client.key
+
+# Send parameters
+dynamic:
+  bin_size:    300000
+  compression: false
+  tags:
+    DEFAULT:
+      priority:         5
+      sort:             modtime # none, modtime
+      delete_on_verify: true
+      transfer_method:  HTTP
