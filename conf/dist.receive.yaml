@@ -7,5 +7,5 @@ logs_directory:       logs
 # Operating variables
 server_port:          8081
 tls:                  true
-server_ssl_cert:      conf/server.pem
-server_ssl_key:       conf/server.key
+server_ssl_cert:      ../conf/server.pem
+server_ssl_key:       ../conf/server.key

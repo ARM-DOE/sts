@@ -19,8 +19,8 @@ poll_interval:        1 # Hoa many seconds to wait between polling requests
 receiver_name:    ststest-in
 receiver_address: localhost:8081
 tls:              true
-client_ssl_cert:  conf/client.pem
-client_ssl_key:   conf/client.key
+client_ssl_cert:  ../conf/client.pem
+client_ssl_key:   ../conf/client.key
 
 # Send parameters
 dynamic:

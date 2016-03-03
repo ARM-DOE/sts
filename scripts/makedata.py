@@ -5,7 +5,7 @@ import sys
 import subprocess
 
 def main(argv):
-    root = '%s/../run/data/out' % os.path.dirname(os.path.realpath(__file__))
+    root = '%s/run/data/out' % os.path.dirname(os.path.realpath(__file__))
     root = os.path.abspath(root)
     tags = {
         # 'xl' : { 'size' : 500*1024*1024, 'count' : 3   },
