@@ -1,14 +1,7 @@
 Site Transfer Software (STS)
 ----------------------------
 
-### Key Features
-
-- Sending of one file in multiple requests
-- Sending of multiple files in one request
-- Safety - can crash or lose connection at any time without data loss
-- Sender and receiver both contained in one binary
-- Web interface config editor
-- Graceful restarting on config change
+STS is software used for transmitting data over wide-area networks with the following priorities: 1) in-order delivery, 2) confirmed hash validation, 3) efficient use of bandwidth, and 4) bandwidth sharing among "tags" (groups of files).
 
 ### Definitions
 
@@ -76,4 +69,4 @@ If STS is configured to run as a receiver, two additional threads are started: 1
 1. _Source_ **Validation Poller**: For validated files, queue is updated (entry removed) and file deleted from disk (if configured to do so).
 
 
-![Flowchart2](conf/sts-flow.png?raw=true)
+![Flowchart2](assets/sts-flow.png?raw=true)
