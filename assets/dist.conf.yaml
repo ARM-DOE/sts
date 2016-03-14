@@ -1,0 +1,39 @@
+SEND:
+  dirs:
+    cache : .sts/out # Appends "target" name
+    out   : data/out # Appends "target" name
+    logs  : data/log # Appends "outgoing_to/{target}", "messages"
+  sources:
+    - name          : stsout-1
+      threads       : 1
+      min-age       : 1
+      max-retries   : 10
+      timeout       : 3600
+      bin-bytes     : 3000
+      compress      : false
+      poll-delay    : 5 # How many seconds to wait after file sent before final validation
+      poll-interval : 1 # How many seconds to wait between polling requests
+      target:
+        name          : stsin-1
+        http-host     : localhost:8081
+        http-tls      : true
+        http-tls-cert : ../client.pem
+        http-tls-key  : ../client.key
+      tags:
+        - pattern   : DEFAULT
+          priority  : 5
+          order     : fifo
+          delete    : true
+          method    : http
+
+RECEIVE:
+    dirs:
+        cache : .sts/in
+        stage : data/stage # Appends "source" name
+        final : data/in    # Appends "source" name
+        logs  : data/log
+    server:
+        http-port     : 8081
+        http-tls      : true
+        http-tls-cert : ../server.pem
+        http-tls-key  : ../server.key
