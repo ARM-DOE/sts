@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/ARM-DOE/sts/fileutils"
@@ -107,6 +108,8 @@ type PartMeta struct {
 
 // ZBinWriter is a wrapper around BinWriter that gzips the bin content.
 type ZBinWriter struct {
+	meta   []byte
+	bytes  int
 	bw     *BinWriter
 	buff   *bytes.Buffer
 	writer *gzip.Writer
@@ -129,25 +132,47 @@ func (z *ZBinWriter) Read(buff []byte) (n int, err error) {
 			return
 		}
 	}
-	n, err = z.bw.Read(buff)
-	logging.Debug("BIN Raw Bytes:", n, err)
-	if n > 0 {
-		z.writer.Write(buff[:n])
+	if z.bytes < len(z.meta) {
+		n = int(math.Min(float64(len(buff)), float64(len(z.meta)-z.bytes)))
+		copy(buff, z.meta[z.bytes:n])
+	} else {
+		n, err = z.bw.Read(buff)
+		logging.Debug("BIN Raw Bytes:", n, err)
+		if n > 0 {
+			z.writer.Write(buff[:n])
+		}
+		if err == io.EOF {
+			z.writer.Close() // Close is important so we get the last few bytes.
+			z.writer = nil   // Need to create a new one for each file.
+		}
+		bytes := z.buff.Bytes()
+		n = len(bytes)
+		copy(buff[:n], bytes)
 	}
-	if err == io.EOF {
-		z.writer.Close() // Close is important so we get the last few bytes.
-		z.writer = nil   // Need to create a new one for each file.
-	}
-	bytes := z.buff.Bytes()
-	n = len(bytes)
-	copy(buff[:n], bytes)
+	z.bytes += n
 	logging.Debug("BIN Zip Bytes:", n)
 	return
 }
 
 // EncodeMeta is a wrapper around BinWriter's EncodeMeta.
-func (z *ZBinWriter) EncodeMeta() (string, error) {
-	return z.bw.EncodeMeta()
+func (z *ZBinWriter) EncodeMeta() (meta string, err error) {
+	z.buff.Reset()
+	z.writer, err = gzip.NewWriterLevel(z.buff, gzip.BestCompression)
+	if err != nil {
+		return
+	}
+	meta, err = z.bw.EncodeMeta()
+	if err != nil {
+		return
+	}
+	bmeta := []byte(meta)
+	z.writer.Write(bmeta)
+	z.writer.Flush()
+	z.writer.Close()
+	z.writer = nil
+	z.meta = z.buff.Bytes()
+	meta = fmt.Sprintf("%d", len(bmeta))
+	return
 }
 
 // BinWriter is the struct that manages writing a bin.
@@ -280,14 +305,19 @@ type BinReader struct {
 // NewBinReader returns a new instance of BinReader.
 func NewBinReader(encMeta string, body io.Reader, compressed bool) (br *BinReader, err error) {
 	br = &BinReader{}
+	br.raw = body
+	br.pi = 0
 	if compressed {
 		br.gzip, err = gzip.NewReader(body)
 		if err != nil {
 			return
 		}
+		var n int
+		n, err = strconv.Atoi(encMeta) // The length of the unzipped metadata.
+		buff := make([]byte, n)
+		br.gzip.Read(buff)
+		encMeta = string(buff[:n])
 	}
-	br.raw = body
-	br.pi = 0
 	fromJSON := json.NewDecoder(strings.NewReader(encMeta))
 	err = fromJSON.Decode(&br.meta)
 	if err != nil {
