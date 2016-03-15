@@ -11,11 +11,10 @@ rm -rf $STS_DATA
 # sleep 1
 #
 # $GOPATH/bin/sts --debug --mode=send --conf=$PWD/$basedir/../dist.conf.yaml 2>&1 &
+$GOPATH/bin/sts --debug --conf=$PWD/$basedir/../dist.conf.yaml 2>&1 &
 
 $PWD/$basedir/makedata.py
 # mkdir -p $PWD/$basedir/run/data/out/stsin-1
 # cp ../../main.go $PWD/$basedir/run/data/out/stsin-1
-
-$GOPATH/bin/sts --debug --conf=$PWD/$basedir/../dist.conf.yaml 2>&1 &
 
 # gdb --pid=$!
