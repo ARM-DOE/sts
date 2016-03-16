@@ -4,7 +4,9 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"reflect"
+	"time"
 
+	"github.com/alecthomas/units"
 	"gopkg.in/yaml.v2"
 )
 
@@ -55,17 +57,52 @@ type SendDirs struct {
 
 // SendSource is the struct for managing the configuration of an outgoing source.
 type SendSource struct {
-	Name         string      `yaml:"name"`
-	Threads      int         `yaml:"threads"`
-	MinAge       int         `yaml:"min-age"`
-	MaxRetries   int         `yaml:"max-retries"`
-	Timeout      int         `yaml:"timeout"`
-	BinSize      int64       `yaml:"bin-bytes"`
-	Compress     bool        `yaml:"compress"`
-	PollDelay    int         `yaml:"poll-delay"`
-	PollInterval int         `yaml:"poll-interval"`
-	Target       *SendTarget `yaml:"target"`
-	Tags         []*Tag      `yaml:"tags"`
+	Name         string
+	Threads      int
+	MinAge       time.Duration
+	MaxRetries   int
+	Timeout      time.Duration
+	BinSize      units.Base2Bytes
+	Compress     bool
+	PollDelay    time.Duration
+	PollInterval time.Duration
+	Target       *SendTarget
+	Tags         []*Tag
+}
+
+// UnmarshalYAML implements the Unmarshaler interface for handling custom member(s).
+// https://godoc.org/gopkg.in/yaml.v2
+func (ss *SendSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
+	var aux struct {
+		Name         string        `yaml:"name"`
+		Threads      int           `yaml:"threads"`
+		MinAge       time.Duration `yaml:"min-age"`
+		MaxRetries   int           `yaml:"max-retries"`
+		Timeout      time.Duration `yaml:"timeout"`
+		BinSize      string        `yaml:"bin-size"`
+		Compress     bool          `yaml:"compress"`
+		PollDelay    time.Duration `yaml:"poll-delay"`
+		PollInterval time.Duration `yaml:"poll-interval"`
+		Target       *SendTarget   `yaml:"target"`
+		Tags         []*Tag        `yaml:"tags"`
+	}
+	if err = unmarshal(&aux); err != nil {
+		return
+	}
+	ss.Name = aux.Name
+	ss.Threads = aux.Threads
+	ss.MinAge = aux.MinAge
+	ss.MaxRetries = aux.MaxRetries
+	ss.Timeout = aux.Timeout
+	if ss.BinSize, err = units.ParseBase2Bytes(aux.BinSize); err != nil {
+		return
+	}
+	ss.Compress = aux.Compress
+	ss.PollDelay = aux.PollDelay
+	ss.PollInterval = aux.PollInterval
+	ss.Target = aux.Target
+	ss.Tags = aux.Tags
+	return nil
 }
 
 // Tag is the struct for managing configuration options for "tags" (groups) of files.

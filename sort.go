@@ -9,17 +9,56 @@ import (
 	"github.com/ARM-DOE/sts/logging"
 )
 
-type sortedFile struct {
-	file      ScanFile
-	tag       string
-	hash      string
-	nextByTag SortFile
-	prevByTag SortFile
-	next      SortFile
-	prev      SortFile
+type sortedTag struct {
+	tag   string
+	conf  *Tag
+	next  *sortedTag
+	prev  *sortedTag
+	bytes int64
+	files int
+	time  int64
 }
 
-func newSortFile(foundFile ScanFile) *sortedFile {
+func newSortedTag(tag string, conf *Tag) *sortedTag {
+	t := &sortedTag{}
+	t.tag = tag
+	t.conf = conf
+	return t
+}
+
+func (t *sortedTag) insertAfter(prev *sortedTag) {
+	if t.prev != nil {
+		t.prev.next = t.next
+	}
+	if t.next != nil {
+		t.next.prev = t.prev
+	}
+	t.next = prev.next
+	t.prev = prev
+	prev.next = t
+}
+
+func (t *sortedTag) insertBefore(next *sortedTag) {
+	if t.prev != nil {
+		t.prev.next = t.next
+	}
+	if t.next != nil {
+		t.next.prev = t.prev
+	}
+	t.next = next
+	t.prev = next.prev
+	next.prev = t
+}
+
+type sortedFile struct {
+	file ScanFile
+	tag  string
+	hash string
+	next SortFile
+	prev SortFile
+}
+
+func newSortedFile(foundFile ScanFile) *sortedFile {
 	file := &sortedFile{}
 	file.file = foundFile
 	file.tag = strings.Split(foundFile.GetRelPath(), ".")[0]
@@ -66,63 +105,48 @@ func (file *sortedFile) SetPrev(prev SortFile) {
 	file.prev = prev
 }
 
-func (file *sortedFile) GetNextByTag() SortFile {
-	return file.nextByTag
-}
-
-func (file *sortedFile) GetPrevByTag() SortFile {
-	return file.prevByTag
-}
-
-func (file *sortedFile) SetNextByTag(next SortFile) {
-	file.nextByTag = next
-}
-
-func (file *sortedFile) SetPrevByTag(prev SortFile) {
-	file.prevByTag = prev
-}
-
 func (file *sortedFile) InsertAfter(prev SortFile) {
+	if file.GetPrev() != nil {
+		file.GetPrev().SetNext(file.GetNext())
+	}
+	if file.GetNext() != nil {
+		file.GetNext().SetPrev(file.GetPrev())
+	}
 	file.SetNext(prev.GetNext())
 	file.SetPrev(prev)
 	prev.SetNext(file)
 }
 
-func (file *sortedFile) InsertAfterByTag(prev SortFile) {
-	file.SetNextByTag(prev.GetNextByTag())
-	file.SetPrevByTag(prev)
-	prev.SetNextByTag(file)
-}
-
-func (file *sortedFile) InsertBefore(prev SortFile) {
-	file.SetNext(prev)
-	file.SetPrev(prev.GetPrev())
-	prev.SetPrev(file)
-}
-
-func (file *sortedFile) InsertBeforeByTag(prev SortFile) {
-	file.SetNextByTag(prev)
-	file.SetPrevByTag(prev.GetPrevByTag())
-	prev.SetPrevByTag(file)
+func (file *sortedFile) InsertBefore(next SortFile) {
+	if file.GetPrev() != nil {
+		file.GetPrev().SetNext(file.GetNext())
+	}
+	if file.GetNext() != nil {
+		file.GetNext().SetPrev(file.GetPrev())
+	}
+	file.SetNext(next)
+	file.SetPrev(next.GetPrev())
+	next.SetPrev(file)
 }
 
 // Sorter is responsible for sorting files based on tag configuration.
 type Sorter struct {
-	rootPath  string
-	files     map[string]SortFile
-	tags      map[string]*Tag
-	tagData   []*Tag
-	tagDef    *Tag
-	next      SortFile
-	last      SortFile
-	lastByTag map[string]SortFile
+	rootPath string
+	files    map[string]SortFile   // path -> file pointer (lookup)
+	next     map[string]SortFile   // tag -> file pointer (next by tag)
+	nextOut  SortFile              // the next file out the door
+	tag      *sortedTag            // the first tag by priority
+	tagMap   map[string]*sortedTag // tag -> tag conf
+	tagData  []*Tag                // list of raw tag conf
+	tagDef   *Tag                  // default tag
 }
 
 // NewSorter returns a new Sorter instance with input tag configuration.
 func NewSorter(tagData []*Tag) *Sorter {
 	sorter := &Sorter{}
 	sorter.files = make(map[string]SortFile)
-	sorter.tags = make(map[string]*Tag)
+	sorter.next = make(map[string]SortFile)
+	sorter.tagMap = make(map[string]*sortedTag)
 	sorter.tagData = tagData
 	for _, tag := range tagData {
 		if tag.Pattern == DefaultTag {
@@ -130,7 +154,6 @@ func NewSorter(tagData []*Tag) *Sorter {
 			break
 		}
 	}
-	sorter.lastByTag = make(map[string]SortFile)
 	return sorter
 }
 
@@ -140,114 +163,136 @@ func (sorter *Sorter) Start(inChan chan []ScanFile, outChan chan SortFile, doneC
 		select {
 		case foundFiles := <-inChan:
 			for _, foundFile := range foundFiles {
-				logging.Debug("SORT In:", foundFile.GetRelPath())
+				logging.Debug("SORT File In:", foundFile.GetRelPath())
 				sorter.add(foundFile)
 			}
 		case file := <-doneChan:
-			logging.Debug("SORT Done:", file.GetSortFile().GetRelPath())
+			logging.Debug("SORT File Done:", file.GetSortFile().GetRelPath())
 			sorter.done(file)
 		default:
-			if sorter.next != nil {
-				logging.Debug("SORT Out:", sorter.next.GetRelPath())
-				select { // We don't want to block if the send queue is full so we can keep accepting incoming files.
-				case outChan <- sorter.next:
-					if sorter.next.GetNext() != nil {
-						sorter.next = sorter.next.GetNext()
-					} else {
-						sorter.next = nil
-						sorter.last = nil
+			if sorter.nextOut == nil {
+				t := sorter.tag
+				for t != nil {
+					if sorter.next[t.tag] != nil {
+						// Make this file next one out the door.
+						sorter.nextOut = sorter.next[t.tag]
+						// Push this tag to the last one of its priority to avoid starvation.
+						p := t.conf.Priority
+						n := t
+						for n.next != nil && n.next.conf.Priority == p {
+							n = n.next
+						}
+						if n != t {
+							if t == sorter.tag {
+								sorter.tag = t.next
+							}
+							if n.conf.Priority < t.conf.Priority {
+								t.insertBefore(n)
+								if n == sorter.tag {
+									sorter.tag = t
+								}
+							} else {
+								t.insertAfter(n)
+							}
+						}
+						break
 					}
+					t = t.next
+				}
+			}
+			if sorter.nextOut != nil {
+				select { // We don't want to block if the send queue is full so we can keep accepting incoming files.
+				case outChan <- sorter.nextOut:
+					logging.Debug("SORT File Out:", sorter.nextOut.GetRelPath())
+					next := sorter.nextOut.GetNext()
+					ntag := sorter.nextOut.GetTag()
+					sorter.next[ntag] = next
+					sorter.nextOut = nil
 					continue
 				default:
-					break
+					continue
 				}
 			}
 			time.Sleep(100 * time.Millisecond) // To avoid thrashing.
+			break
 		}
 	}
 }
 
 func (sorter *Sorter) add(f ScanFile) {
-	_, inMap := sorter.files[f.GetPath()]
-	if inMap {
+	var exists bool
+	_, exists = sorter.files[f.GetPath()]
+	if exists {
 		return
 	}
-	file := newSortFile(f)
-	_, exists := sorter.lastByTag[file.GetTag()]
+	file := newSortedFile(f)
+	ftag := file.GetTag()
+	_, exists = sorter.tagMap[ftag]
 	if !exists {
-		sorter.lastByTag[file.GetTag()] = file
-		found := false
+		conf := sorter.tagDef
 		for _, tag := range sorter.tagData {
 			if tag.Pattern == DefaultTag {
 				continue
 			}
-			matched, err := regexp.MatchString(tag.Pattern, file.GetTag())
+			matched, err := regexp.MatchString(tag.Pattern, ftag)
 			if matched && err == nil {
-				sorter.tags[file.GetTag()] = tag
-				found = true
+				conf = tag
 				break
 			}
 		}
-		if !found {
-			sorter.tags[file.GetTag()] = sorter.tagDef
-		}
+		stag := newSortedTag(ftag, conf)
+		sorter.tagMap[ftag] = stag
+		sorter.insertTag(stag)
 	}
-	if sorter.last == nil {
-		sorter.next = file
-		sorter.last = file
-	} else {
-		sorter.insertFile(sorter.last, file)
-		sorter.insertFileByTag(sorter.lastByTag[file.GetTag()], file)
-		if file.GetPrev() == sorter.last {
-			sorter.last = file
-		}
-		if file.GetPrevByTag() == sorter.lastByTag[file.GetTag()] {
-			sorter.lastByTag[file.GetTag()] = file
-		}
-	}
+	sorter.insertFile(file)
 	sorter.files[file.GetPath()] = file
 }
 
-func (sorter *Sorter) insertFile(prev SortFile, file SortFile) {
-	tag := sorter.tags[file.GetTag()]
-	for {
-		tagPrev := sorter.tags[prev.GetTag()]
-		if tag.Priority >= tagPrev.Priority {
-			if tag.Order == OrderNone {
-				file.InsertAfter(prev)
-				break
-			} else if tag.Order == OrderFIFO {
-				if file.GetTime() >= prev.GetTime() {
-					file.InsertAfter(prev)
-					break
-				}
+func (sorter *Sorter) insertTag(tag *sortedTag) {
+	t := sorter.tag
+	if t == nil {
+		sorter.tag = tag
+		return
+	}
+	for t != nil {
+		if tag.conf.Priority > t.conf.Priority {
+			tag.insertBefore(t)
+			if t == sorter.tag {
+				sorter.tag = tag
 			}
-		}
-		if prev == sorter.next {
-			file.InsertBefore(prev)
-			sorter.next = file
 			break
 		}
-		prev = prev.GetPrev()
+		if t.next == nil {
+			tag.insertAfter(t)
+			break
+		}
+		t = t.next
 	}
 }
 
-func (sorter *Sorter) insertFileByTag(prev SortFile, file SortFile) {
-	tag := sorter.tags[file.GetTag()]
-	if tag.Order != OrderFIFO {
+func (sorter *Sorter) insertFile(file SortFile) {
+	tag := sorter.tagMap[file.GetTag()]
+	if tag.conf.Order == OrderNone {
 		return
 	}
-	for {
-		if file.GetTime() >= prev.GetTime() {
-			file.InsertAfterByTag(prev)
+	f := sorter.next[tag.tag]
+	if f == nil {
+		sorter.next[tag.tag] = file
+		return
+	}
+	for f != nil {
+		if tag.conf.Order == OrderFIFO && file.GetTime() < f.GetTime() {
+			file.InsertBefore(f)
+			if f == sorter.next[tag.tag] {
+				sorter.next[tag.tag] = file
+			}
 			break
 		}
-		if sorter.lastByTag[file.GetTag()] == prev {
-			file.InsertBeforeByTag(prev)
-			sorter.lastByTag[file.GetTag()] = file
+		if f.GetNext() == nil {
+			file.InsertAfter(f)
 			break
 		}
-		prev = prev.GetPrevByTag()
+		f = f.GetNext()
 	}
 }
 
@@ -256,10 +301,7 @@ func (sorter *Sorter) done(file DoneFile) {
 	if f.GetPrev() != nil {
 		f.GetPrev().SetNext(nil)
 	}
-	if f.GetPrevByTag() != nil {
-		f.GetPrevByTag().SetNextByTag(nil)
-	}
-	if sorter.tags[f.GetTag()].Delete {
+	if sorter.tagMap[f.GetTag()].conf.Delete {
 		err := os.Remove(f.GetPath())
 		if err != nil {
 			logging.Error("Failed to remove:", f.GetPath(), err.Error())

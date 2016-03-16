@@ -18,9 +18,9 @@ import (
 const DisabledName = ".disabled"
 
 type scanQueue struct {
-	ScanTime int64
-	ScanDir  string
-	Files    map[string]*foundFile
+	ScanTime int64                 `json:"time"`
+	ScanDir  string                `json:"dir"`
+	Files    map[string]*foundFile `json:"files"`
 }
 
 func newScanQueue(scanDir string) *scanQueue {
@@ -110,7 +110,7 @@ func (f ScanFileList) Swap(i, j int) { f[i], f[j] = f[j], f[i] }
 // Scanner is responsible for traversing a directory tree for files.
 type Scanner struct {
 	delay   time.Duration
-	minAge  int
+	minAge  time.Duration
 	outOnce bool
 	nested  int
 	ignore  []string
@@ -120,7 +120,7 @@ type Scanner struct {
 }
 
 // NewScanner returns a Scanner instance.
-func NewScanner(scanDir string, cacheDir string, scanDelay time.Duration, minAge int, outOnce bool, nested int) *Scanner {
+func NewScanner(scanDir string, cacheDir string, scanDelay time.Duration, minAge time.Duration, outOnce bool, nested int) *Scanner {
 	scanner := &Scanner{}
 
 	scanner.delay = scanDelay
@@ -168,7 +168,7 @@ func (scanner *Scanner) Start(outChan chan []ScanFile, doneChan chan DoneFile) {
 		if !scanner.scan() || len(scanner.queue.Files) == 0 {
 			continue
 		}
-		scanner.queue.ScanTime = start + 1
+		scanner.queue.ScanTime = start - int64(scanner.minAge.Seconds()) - 1
 
 		// Sort files by modtime (oldest first).
 		files := make(ScanFileList, 0)
@@ -218,7 +218,7 @@ func (scanner *Scanner) handleNode(path string, info os.FileInfo, err error) err
 	}
 	fTime := info.ModTime()
 	fSize := info.Size()
-	if fTime.Unix() < (time.Now().Unix() - int64(scanner.minAge)) {
+	if fTime.Unix() < (time.Now().Unix() - int64(scanner.minAge.Seconds())) {
 		if !scanner.outOnce || fTime.After(time.Unix(scanner.queue.ScanTime, 0)) {
 			scanner.queue.add(path, fSize, fTime.Unix())
 		}

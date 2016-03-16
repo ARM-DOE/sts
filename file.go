@@ -19,14 +19,8 @@ type SortFile interface {
 	GetPrev() SortFile
 	SetNext(SortFile)
 	SetPrev(SortFile)
-	GetNextByTag() SortFile
-	GetPrevByTag() SortFile
-	SetNextByTag(SortFile)
-	SetPrevByTag(SortFile)
 	InsertAfter(SortFile)
-	InsertAfterByTag(SortFile)
 	InsertBefore(SortFile)
-	InsertBeforeByTag(SortFile)
 }
 
 // SendFile is the interface for a file as needed for sending.

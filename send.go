@@ -10,6 +10,7 @@ import (
 	"github.com/ARM-DOE/sts/fileutils"
 	"github.com/ARM-DOE/sts/httputils"
 	"github.com/ARM-DOE/sts/logging"
+	"github.com/alecthomas/units"
 )
 
 type sendFile struct {
@@ -67,8 +68,8 @@ func (f *sendFile) GetHash() string {
 func (f *sendFile) GetPrevName() string {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
-	if f.file.GetPrevByTag() != nil {
-		return f.file.GetPrevByTag().GetRelPath()
+	if f.file.GetPrev() != nil {
+		return f.file.GetPrev().GetRelPath()
 	}
 	return ""
 }
@@ -126,11 +127,11 @@ type SenderConf struct {
 	TargetHost   string
 	TLSCert      string
 	TLSKey       string
-	BinSize      int64
-	Timeout      int
+	BinSize      units.Base2Bytes
+	Timeout      time.Duration
 	MaxRetries   int
-	PollInterval int
-	PollDelay    int
+	PollInterval time.Duration
+	PollDelay    time.Duration
 }
 
 // Protocol returns the protocl (http vs https) based on the configuration.
@@ -180,57 +181,63 @@ func (sender *Sender) StartPrep(prepChan chan SortFile, fileChan chan SendFile) 
 // StartSend is the daemon for sending files on the incoming channel and routing them to the
 // "done" channel after all parts have been sent.  The "loop" channel is for files that aren't
 // yet fully allocated.
-func (sender *Sender) StartSend(fileChan chan SendFile, loopChan chan SendFile, doneChan []chan SendFile) {
+func (sender *Sender) StartSend(fileChan chan SendFile, doneChan []chan SendFile) {
 	var bin *Bin
 	var file SendFile
 	for {
-		bin = NewBin(sender.conf.BinSize)
+		bin = NewBin(int64(sender.conf.BinSize))
 		waited := time.Millisecond * 0
-		isLast := false
-		for {
-			file = nil
-			isLast = false
+		if file != nil {
+			// Attempt to put this file back on the channel so others can help.
+			// If not, just keep working on it and try again later if we're still not done on next iteration.
 			select {
-			case file = <-loopChan:
-				break
+			case fileChan <- file:
+				file = nil
 			default:
+				break
+			}
+		}
+		// Loop until we have a bin ready to send.
+		for {
+			// While we don't have a file from the channel or we haven't waited long enough.
+			for file == nil {
 				select {
 				case file = <-fileChan:
 					waited = 0
-					break
 				default:
 					if waited.Seconds() > 1 && len(bin.Parts) > 0 {
-						isLast = true
+						break
 					}
 					wait := time.Millisecond * 100
 					time.Sleep(wait)
 					waited += wait
+					continue
 				}
+				break
 			}
+			// No file found, we must have waited long enough and can go ahead with this bin.
 			if file == nil {
-				if isLast {
-					break
-				}
-				continue
+				break
 			}
+			// File found; let's allocate what we can to this bin.
 			logging.Debug("SEND Found:", file.GetRelPath(), bin.IsFull(), bin.BytesLeft)
 			bin.Add(file)
-			if file.GetBytesAlloc() < file.GetSize() {
+			if file.GetBytesAlloc() < file.GetSize() { // Bin is full and file is not fully allocated.
 				logging.Debug("SEND Loop:", file.GetRelPath(), file.GetBytesAlloc())
-				loopChan <- file
 				break
 			}
-			if bin.IsFull() {
+			// Reset so next file can be grabbed.
+			file = nil
+			if bin.IsFull() { // Bin is full. Time to send it.
 				break
 			}
 		}
-		if len(bin.Parts) == 0 {
-			continue
-		}
+		// Send the bin.  In a loop to handle errors and keep trying.
 		for {
 			logging.Debug("SEND Bin:", bin.Bytes, bin.BytesLeft, len(bin.Parts))
 			err := sender.send(bin)
 			if err != nil {
+				logging.Error(err.Error())
 				sender.nFailures++
 				time.Sleep(time.Duration(sender.nFailures) * time.Second) // Wait longer the more it fails.
 				continue

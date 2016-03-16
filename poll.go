@@ -30,7 +30,7 @@ type Poller struct {
 
 type pollFile struct {
 	file   SendFile
-	time   int64
+	time   time.Time
 	nRetry int
 }
 
@@ -53,7 +53,7 @@ func NewPoller(conf *SenderConf) *Poller {
 
 // Start runs the poller in a loop and operates on the input channels.
 func (poller *Poller) Start(inChan chan SendFile, failChan chan SendFile, doneChan []chan DoneFile) {
-	var t int64
+	var t time.Time
 	pause := time.Millisecond * 100
 	for {
 		time.Sleep(pause) // To keep from thrashing
@@ -68,7 +68,7 @@ func (poller *Poller) Start(inChan chan SendFile, failChan chan SendFile, doneCh
 			break
 		}
 
-		if t > 0 && int(time.Now().Unix()-t) < poller.conf.PollInterval {
+		if !t.IsZero() && time.Now().Sub(t) < poller.conf.PollInterval {
 			continue
 		}
 		if len(poller.Files) < 1 {
@@ -80,7 +80,7 @@ func (poller *Poller) Start(inChan chan SendFile, failChan chan SendFile, doneCh
 		}
 		err := poller.poll(files, failChan, doneChan)
 		if err != nil {
-			t = time.Now().Unix()
+			t = time.Now()
 			continue
 		}
 	}
@@ -90,7 +90,7 @@ func (poller *Poller) addFile(file SendFile) {
 	_, exists := poller.Files[file.GetRelPath()]
 	if !exists {
 		logging.Debug("POLLER Added:", file.GetRelPath())
-		pfile := &pollFile{file, time.Now().Unix(), 0}
+		pfile := &pollFile{file, time.Now(), 0}
 		poller.Files[file.GetRelPath()] = pfile
 	}
 }
@@ -113,9 +113,9 @@ func (poller *Poller) buildList(failChan chan SendFile) []*ConfirmFile {
 			}
 			continue
 		}
-		if pf.time < (time.Now().Unix() - int64(poller.conf.PollDelay)) {
+		if time.Now().Sub(pf.time) > poller.conf.PollDelay {
 			logging.Debug("POLLER Request:", pf.file.GetRelPath())
-			cf := &ConfirmFile{pf.file.GetRelPath(), pf.time}
+			cf := &ConfirmFile{pf.file.GetRelPath(), pf.time.Unix()}
 			list = append(list, cf)
 			pf.nRetry++
 		}

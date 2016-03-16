@@ -137,7 +137,7 @@ func (z *ZBinWriter) Read(buff []byte) (n int, err error) {
 		copy(buff, z.meta[z.bytes:n])
 	} else {
 		n, err = z.bw.Read(buff)
-		logging.Debug("BIN Raw Bytes:", n, err)
+		// logging.Debug("BIN Raw Bytes:", n, err)
 		if n > 0 {
 			z.writer.Write(buff[:n])
 		}
@@ -150,7 +150,7 @@ func (z *ZBinWriter) Read(buff []byte) (n int, err error) {
 		copy(buff[:n], bytes)
 	}
 	z.bytes += n
-	logging.Debug("BIN Zip Bytes:", n)
+	// logging.Debug("BIN Zip Bytes:", n)
 	return
 }
 
@@ -214,7 +214,7 @@ func (bw *BinWriter) startNextPart() error {
 	if err != nil {
 		return fmt.Errorf("Could not open file %s while writing bin: %s", bw.binPart.File.GetPath(), err.Error())
 	}
-	logging.Debug("BIN Next Part:", bw.binPart.File.GetRelPath())
+	// logging.Debug("BIN Next Part:", bw.binPart.File.GetRelPath())
 	bw.fh.Seek(bw.binPart.Start, 0)
 	return nil
 }
@@ -222,7 +222,7 @@ func (bw *BinWriter) startNextPart() error {
 // Read implements io.Reader and is responsible for reading "parts" of files to the input []byte.
 func (bw *BinWriter) Read(out []byte) (n int, err error) {
 	if bw.eof {
-		logging.Debug("BIN Done, #Parts:", len(bw.bin.Parts))
+		// logging.Debug("BIN Done, #Parts:", len(bw.bin.Parts))
 		return 0, io.EOF
 	}
 	// Calculate bytes left
@@ -231,7 +231,7 @@ func (bw *BinWriter) Read(out []byte) (n int, err error) {
 	n, err = bw.fh.Read(out)
 	bytesLeft -= int64(n)
 	bw.partProgress += int64(n)
-	logging.Debug("BIN Bytes Read", n, bw.binPart.File.GetRelPath())
+	// logging.Debug("BIN Bytes Read", n, bw.binPart.File.GetRelPath())
 	if err == io.EOF || n == 0 {
 		bw.startNextPart()
 		err = nil
@@ -283,13 +283,13 @@ func (pr *PartReader) Read(out []byte) (n int, err error) {
 	}
 	pr.pos += n
 	if pr.pos == int(total) {
-		logging.Debug("BIN Part Done", pr.pos)
+		// logging.Debug("BIN Part Done", pr.pos)
 		return n, io.EOF
 	}
 	if pr.pos > int(total) {
 		logging.Error("BIN Part Overflow:", pr.pos-int(total))
 	}
-	logging.Debug("BIN Part Read", n, pr.pos, total, err)
+	// logging.Debug("BIN Part Read", n, pr.pos, total, err)
 	return
 }
 

@@ -6,15 +6,16 @@ export STS_DATA=$PWD/$basedir/run
 pkill sts
 rm -rf $STS_DATA
 
-# $GOPATH/bin/sts --debug --mode=receive --conf=$PWD/$basedir/../dist.conf.yaml 2>&1 &
-#
-# sleep 1
-#
-# $GOPATH/bin/sts --debug --mode=send --conf=$PWD/$basedir/../dist.conf.yaml 2>&1 &
-$GOPATH/bin/sts --debug --conf=$PWD/$basedir/../dist.conf.yaml 2>&1 &
+exe="$GOPATH/bin/sts"
+conf="$PWD/$basedir/../dist.conf.yaml"
+debug="--debug"
 
-$PWD/$basedir/makedata.py
-# mkdir -p $PWD/$basedir/run/data/out/stsin-1
-# cp ../../main.go $PWD/$basedir/run/data/out/stsin-1
+if [[ ! -n $1 ]] || [[ $1 ==  "send" ]]; then
+    $PWD/$basedir/makedata.py
+fi
 
-# gdb --pid=$!
+if [ -n $1 ]; then
+    $exe $debug --conf=$conf 2>&1 &
+else
+    $exe $debug --conf=$conf --mode=$1 2>&1 &
+fi

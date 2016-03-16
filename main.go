@@ -146,7 +146,6 @@ func startSender(source *SendSource, dirs *SendDirs) {
 	scanChan := make(chan []ScanFile, 1) // One batch at a time.
 	sortChan := make(chan SortFile, source.Threads*2)
 	sendChan := make(chan SendFile, source.Threads*2)
-	loopChan := make(chan SendFile, source.Threads*2)
 	pollChan := []chan SendFile{
 		make(chan SendFile, source.Threads*2),
 	}
@@ -163,7 +162,7 @@ func startSender(source *SendSource, dirs *SendDirs) {
 	for i := 0; i < source.Threads; i++ {
 		sender := NewSender(sendConf)
 		go sender.StartPrep(sortChan, sendChan)
-		go sender.StartSend(sendChan, loopChan, pollChan[:len(pollChan)])
+		go sender.StartSend(sendChan, pollChan[:len(pollChan)])
 	}
 
 	poller := NewPoller(sendConf)

@@ -13,7 +13,7 @@ import (
 )
 
 // CacheAge is how long a finalized file is kept in memory.
-const CacheAge = 3600
+const CacheAge = time.Minute * 60
 
 // LogSearchDays is how far back (max) to look in the logs for a finalized file.
 const LogSearchDays = 30
@@ -156,9 +156,10 @@ func (f *Finalizer) toCache(source string, file ScanFile, success bool) {
 		f.last = ff.time
 	}
 	if len(f.cache)%50 == 0 {
-		limit := time.Now().Unix() - CacheAge
+		limit := time.Now().Unix() - int64(CacheAge.Seconds())
 		for key, cfile := range f.cache {
 			if cfile.time < limit {
+				logging.Debug("FINAL Clean Cache:", key)
 				delete(f.cache, key)
 			}
 		}

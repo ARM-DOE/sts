@@ -19,6 +19,7 @@ mkdir -p $GOPATH/bin
 
 echo "-- Building Dependencies"
 go get gopkg.in/yaml.v2
+go get github.com/alecthomas/units
 go get github.com/davecgh/go-spew/spew
 go get $race github.com/ARM-DOE/sts/fileutils
 go get $race github.com/ARM-DOE/sts/httputils
