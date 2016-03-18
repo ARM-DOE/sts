@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"sync"
 	"time"
@@ -23,16 +22,15 @@ type sendFile struct {
 	lock       sync.RWMutex
 }
 
-func newSendFile(f SortFile) (*sendFile, error) {
-	file := &sendFile{}
+func newSendFile(f SortFile) (file *sendFile, err error) {
+	file = &sendFile{}
 	file.file = f
-	var err error
-	file.hash, err = fileutils.FileMD5(f.GetPath())
-	return file, err
-}
-
-func (f *sendFile) GetSortFile() SortFile {
-	return f.file
+	if _, ok := f.GetOrigFile().(RecoverFile); ok {
+		file.hash = f.GetOrigFile().(RecoverFile).GetHash()
+	} else {
+		file.hash, err = fileutils.FileMD5(f.GetPath())
+	}
+	return
 }
 
 func (f *sendFile) GetPath() string {
@@ -68,6 +66,12 @@ func (f *sendFile) GetHash() string {
 func (f *sendFile) GetPrevName() string {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
+	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
+		p := f.file.GetOrigFile().(RecoverFile).GetPrevName()
+		if p != "" {
+			return p
+		}
+	}
 	if f.file.GetPrev() != nil {
 		return f.file.GetPrev().GetRelPath()
 	}
@@ -80,42 +84,68 @@ func (f *sendFile) GetStarted() int64 {
 	return f.started
 }
 
+func (f *sendFile) GetNextAlloc() (int64, int64) {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
+		return f.file.GetOrigFile().(RecoverFile).GetNextAlloc()
+	}
+	return f.bytesAlloc, f.file.GetSize()
+}
+
 func (f *sendFile) GetBytesAlloc() int64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
+	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
+		return f.file.GetOrigFile().(RecoverFile).GetBytesAlloc()
+	}
 	return f.bytesAlloc
-}
-
-func (f *sendFile) GetBytesSent() int64 {
-	f.lock.RLock()
-	defer f.lock.RUnlock()
-	return f.bytesSent
 }
 
 func (f *sendFile) AddAlloc(bytes int64) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
+	if f.started == 0 {
+		f.started = time.Now().UnixNano()
+	}
+	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
+		f.file.GetOrigFile().(RecoverFile).AddAlloc(bytes)
+		return
+	}
 	f.bytesAlloc += bytes
+}
+
+func (f *sendFile) GetBytesSent() int64 {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
+		return f.file.GetOrigFile().(RecoverFile).GetBytesSent()
+	}
+	return f.bytesSent
 }
 
 func (f *sendFile) AddSent(bytes int64) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
-	if f.bytesSent == 0 {
-		f.started = time.Now().UnixNano()
+	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
+		f.file.GetOrigFile().(RecoverFile).AddSent(bytes)
+		return
 	}
 	f.bytesSent += bytes
 }
 
-func (f *sendFile) Time() int64 {
+func (f *sendFile) TimeMs() int64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
-	return time.Now().UnixNano() - f.started
+	return int64((time.Now().UnixNano() - f.started) / 1e6)
 }
 
 func (f *sendFile) IsSent() bool {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
+	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
+		return f.file.GetOrigFile().(RecoverFile).GetBytesSent() == f.file.GetSize()
+	}
 	return f.file.GetSize() == f.bytesSent
 }
 
@@ -181,14 +211,23 @@ func (sender *Sender) StartPrep(prepChan chan SortFile, fileChan chan SendFile) 
 // StartSend is the daemon for sending files on the incoming channel and routing them to the
 // "done" channel after all parts have been sent.  The "loop" channel is for files that aren't
 // yet fully allocated.
-func (sender *Sender) StartSend(fileChan chan SendFile, doneChan []chan SendFile) {
+func (sender *Sender) StartSend(fileChan chan SendFile, doneChan chan []SendFile) {
 	var bin *Bin
 	var file SendFile
+	var done []SendFile
+	// Outer loop for building and sending bins.
 	for {
-		bin = NewBin(int64(sender.conf.BinSize))
-		waited := time.Millisecond * 0
+		// Send any completed files to the done channel.
+		if len(done) > 0 {
+			select {
+			case doneChan <- done:
+				done = []SendFile{} // Clear them out once passed on.
+			default:
+				break
+			}
+		}
 		if file != nil {
-			// Attempt to put this file back on the channel so others can help.
+			// Attempt to put this file back on the file channel so others can help.
 			// If not, just keep working on it and try again later if we're still not done on next iteration.
 			select {
 			case fileChan <- file:
@@ -197,8 +236,10 @@ func (sender *Sender) StartSend(fileChan chan SendFile, doneChan []chan SendFile
 				break
 			}
 		}
+		bin = NewBin(int64(sender.conf.BinSize)) // Start new bin.
 		// Loop until we have a bin ready to send.
 		for {
+			waited := time.Millisecond * 0
 			// While we don't have a file from the channel or we haven't waited long enough.
 			for file == nil {
 				select {
@@ -215,38 +256,59 @@ func (sender *Sender) StartSend(fileChan chan SendFile, doneChan []chan SendFile
 				}
 				break
 			}
-			// No file found, we must have waited long enough and can go ahead with this bin.
+			// No file found, we must have waited long enough and can go ahead and send this bin.
 			if file == nil {
 				break
 			}
-			// File found; let's allocate what we can to this bin.
-			logging.Debug("SEND Found:", file.GetRelPath(), bin.IsFull(), bin.BytesLeft)
-			bin.Add(file)
-			if file.GetBytesAlloc() < file.GetSize() { // Bin is full and file is not fully allocated.
-				logging.Debug("SEND Loop:", file.GetRelPath(), file.GetBytesAlloc())
-				break
+			// This only happens when a recovered file was already fully sent and just needs to move on.
+			// It goes the whole path in order to be sorted and wrapped like the others.
+			if file.IsSent() {
+				logging.Debug("SEND Found (Sent):", file.GetRelPath())
+				done = append(done, file)
+				file = nil
+				continue
 			}
-			// Reset so next file can be grabbed.
-			file = nil
+			// File found; let's allocate what we can to this bin.
+			logging.Debug("SEND Found:", file.GetRelPath(), bin.IsFull(), bin.BytesLeft, file.GetSize()-file.GetBytesAlloc())
+			if bin.Add(file) && file.GetBytesAlloc() < file.GetSize() { // File is not fully allocated.
+				logging.Debug("SEND Loop:", file.GetRelPath(), file.GetBytesAlloc())
+			} else {
+				// Reset so next file can be grabbed.
+				file = nil
+			}
 			if bin.IsFull() { // Bin is full. Time to send it.
 				break
 			}
 		}
-		// Send the bin.  In a loop to handle errors and keep trying.
-		for {
-			logging.Debug("SEND Bin:", bin.Bytes, bin.BytesLeft, len(bin.Parts))
-			err := sender.send(bin)
-			if err != nil {
-				logging.Error(err.Error())
-				sender.nFailures++
-				time.Sleep(time.Duration(sender.nFailures) * time.Second) // Wait longer the more it fails.
-				continue
-			}
-			sender.complete(bin, doneChan)
-			bin = nil
-			break
-		}
+		done = append(done, sender.out(bin)...)
 	}
+}
+
+func (sender *Sender) out(bin *Bin) []SendFile {
+	// Send the bin.  In a loop to handle errors and keep trying.
+	// TODO: respond to partially successful requests.
+	var done []SendFile
+	for {
+		logging.Debug("SEND Bin:", bin.Bytes, bin.BytesLeft, len(bin.Parts))
+		err := sender.send(bin)
+		if err != nil {
+			logging.Error(err.Error())
+			sender.nFailures++
+			time.Sleep(time.Duration(sender.nFailures) * time.Second) // Wait longer the more it fails.
+			continue
+		}
+		for _, part := range bin.Parts {
+			part.File.AddSent(part.End - part.Beg)
+			if part.File.IsSent() {
+				f := part.File
+				logging.Sent(f.GetRelPath(), f.GetHash(), f.GetSize(), f.TimeMs(), sender.conf.TargetName)
+				done = append(done, f)
+			}
+		}
+		bin = nil
+		break
+	}
+	return done
 }
 
 func (sender *Sender) send(bin *Bin) error {
@@ -286,28 +348,12 @@ func (sender *Sender) send(bin *Bin) error {
 	if err != nil {
 		return err
 	}
-	code, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	} else if string(code) == "206" {
-		return fmt.Errorf("Bin failed validation: %s", bin.Path)
-	} else if string(code) != "200" {
-		return fmt.Errorf("Send failed with response code: %s", string(code))
+	if resp.StatusCode == 206 {
+		return fmt.Errorf("Bin failed validation")
+	} else if resp.StatusCode != 200 {
+		return fmt.Errorf("Bin failed with response code: %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 	req.Close = true
 	return nil
-}
-
-func (sender *Sender) complete(bin *Bin, done []chan SendFile) {
-	for _, part := range bin.Parts {
-		part.File.AddSent(part.End - part.Start)
-		if part.File.IsSent() {
-			f := part.File
-			logging.Sent(f.GetRelPath(), f.GetHash(), f.GetSize(), f.GetTime(), sender.conf.TargetName)
-			for _, dc := range done {
-				dc <- part.File // This will block if channel is full so it's imoprtant that the receiving end of this channel is able to keep up.
-			}
-		}
-	}
 }

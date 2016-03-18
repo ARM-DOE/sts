@@ -8,7 +8,7 @@ def makedata(name):
     root = '%s/run/data/out/%s' % (os.path.dirname(os.path.realpath(__file__)),name)
     root = os.path.abspath(root)
     tags = {
-        'xl' : { 'size' : 500*1024*1024, 'count' : 3   },
+        'xl' : { 'size' : 50*1024*1024,  'count' : 3   },
         'lg' : { 'size' : 5*1024*1024,   'count' : 7  },
         'md' : { 'size' : 500*1024,      'count' : 2 },
         'sm' : { 'size' : 50*1024,       'count' : 10 },

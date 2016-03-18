@@ -20,17 +20,17 @@ const BinFluff = 0.1
 
 // Part is the struct for managing the parts of an outgoing "bin".
 type Part struct {
-	File  SendFile // The file for which this part applies
-	Start int64    // Beginning byte in the part
-	End   int64    // Ending byte in the part
-	Hash  string   // MD5 of the data in the part file from Start:End
+	File SendFile // The file for which this part applies
+	Beg  int64    // Beginning byte in the part
+	End  int64    // Ending byte in the part
+	Hash string   // MD5 of the data in the part file from Start:End
 }
 
 // NewPart creates a new Part reference.
-func NewPart(file SendFile, start int64, end int64) *Part {
+func NewPart(file SendFile, beg int64, end int64) *Part {
 	p := &Part{}
 	p.File = file
-	p.Start = start
+	p.Beg = beg
 	p.End = end
 	return p
 }
@@ -39,7 +39,7 @@ func NewPart(file SendFile, start int64, end int64) *Part {
 func (part *Part) GetHash() (string, error) {
 	if part.Hash == "" {
 		var err error
-		part.Hash, err = fileutils.PartialMD5(part.File.GetPath(), part.Start, part.End)
+		part.Hash, err = fileutils.PartialMD5(part.File.GetPath(), part.Beg, part.End)
 		if err != nil {
 			return "", err
 		}
@@ -71,16 +71,18 @@ func (bin *Bin) IsFull() bool {
 
 // Add adds what it can of the input SendFile to the bin.  Returns false if no bytes were added.
 func (bin *Bin) Add(file SendFile) bool {
-	start := file.GetBytesAlloc()
-	end := int64(math.Min(float64(file.GetSize()), float64(start+bin.BytesLeft)+float64(bin.Bytes)*BinFluff))
-	bytes := int64(end - start)
+	beg, end := file.GetNextAlloc()
+	end = int64(math.Min(float64(end), float64(beg+bin.BytesLeft)+float64(bin.Bytes)*BinFluff))
+	bytes := int64(end - beg)
 	if bytes > 0 {
-		part := NewPart(file, start, end)
+		part := NewPart(file, beg, end)
 		bin.Parts = append(bin.Parts, part)
 		bin.BytesLeft -= bytes
+		logging.Debug("BIN Allocating:", file.GetRelPath(), beg, end)
 		file.AddAlloc(bytes)
 		return true
 	}
+
 	return false
 }
 
@@ -90,18 +92,13 @@ type BinEncoder interface {
 	EncodeMeta() (string, error)
 }
 
-// BinDecoder is the interface for decoding a bin.
-type BinDecoder interface {
-	Next() (*PartReader, error)
-}
-
 // PartMeta is the struct that contains the part metadata needed on receiving end.
 type PartMeta struct {
 	Path     string
 	PrevPath string
 	FileHash string
 	FileSize int64
-	Start    int64
+	Beg      int64
 	End      int64
 	Hash     string
 }
@@ -215,7 +212,7 @@ func (bw *BinWriter) startNextPart() error {
 		return fmt.Errorf("Could not open file %s while writing bin: %s", bw.binPart.File.GetPath(), err.Error())
 	}
 	// logging.Debug("BIN Next Part:", bw.binPart.File.GetRelPath())
-	bw.fh.Seek(bw.binPart.Start, 0)
+	bw.fh.Seek(bw.binPart.Beg, 0)
 	return nil
 }
 
@@ -226,10 +223,10 @@ func (bw *BinWriter) Read(out []byte) (n int, err error) {
 		return 0, io.EOF
 	}
 	// Calculate bytes left
-	bytesLeft := (bw.binPart.End - bw.binPart.Start) - bw.partProgress
+	// bytesLeft := (bw.binPart.End - bw.binPart.Beg) - bw.partProgress
 	// Read from file
 	n, err = bw.fh.Read(out)
-	bytesLeft -= int64(n)
+	// bytesLeft -= int64(n)
 	bw.partProgress += int64(n)
 	// logging.Debug("BIN Bytes Read", n, bw.binPart.File.GetRelPath())
 	if err == io.EOF || n == 0 {
@@ -249,7 +246,7 @@ func (bw *BinWriter) EncodeMeta() (string, error) {
 			PrevPath: part.File.GetPrevName(),
 			FileHash: part.File.GetHash(),
 			FileSize: part.File.GetSize(),
-			Start:    part.Start,
+			Beg:      part.Beg,
 			End:      part.End,
 			Hash:     part.Hash,
 		}
@@ -271,7 +268,7 @@ type PartReader struct {
 
 // Read reads the incoming stream (either raw or gzipped) and writes it to the input []byte.
 func (pr *PartReader) Read(out []byte) (n int, err error) {
-	total := pr.Meta.End - pr.Meta.Start
+	total := pr.Meta.End - pr.Meta.Beg
 	left := int(total) - pr.pos
 	if left > len(out) {
 		left = len(out)

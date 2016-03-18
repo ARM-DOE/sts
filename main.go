@@ -5,20 +5,67 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"time"
 
-	"github.com/ARM-DOE/sts/fileutils"
 	"github.com/ARM-DOE/sts/logging"
-	"github.com/ARM-DOE/sts/pathutils"
 )
 
 func main() {
+	app := newApp()
+	app.start()
+}
+
+// getRoot returns the STS root.  It will use $STS_DATA and fall back to the directory
+// of the executable plus "/sts".
+func getRoot() string {
+	root := os.Getenv("STS_DATA")
+	if root == "" {
+		var err error
+		root, err = filepath.Abs(filepath.Dir(os.Args[0]))
+		if err != nil {
+			root = string(os.PathSeparator) + "sts"
+		}
+	}
+	return root
+}
+
+// InitPath will turn a relative path into absolute (based on root) and make sure it exists.
+func InitPath(root string, path string, isdir bool) string {
+	var err error
+	if !filepath.IsAbs(path) {
+		path, err = filepath.Abs(filepath.Join(root, path))
+		if err != nil {
+			logging.Error("Failed to initialize: ", path, err.Error())
+		}
+	}
+	pdir := path
+	if !isdir {
+		pdir = filepath.Dir(pdir)
+	}
+	_, err = os.Stat(pdir)
+	if os.IsNotExist(err) {
+		logging.Debug("MAIN Make Path:", pdir)
+		os.MkdirAll(pdir, os.ModePerm)
+	}
+	return path
+}
+
+type app struct {
+	debug    bool
+	mode     string
+	root     string
+	confPath string
+	conf     *Conf
+	in       *AppIn
+	out      []*AppOut
+}
+
+func newApp() *app {
 	// Initialize command line arguments
 	help := flag.Bool("help", false, "Print the help message")
 	debug := flag.Bool("debug", false, "Log program flow")
 	mode := flag.String("mode", "", "Mode: 'send' or 'receive'")
-	confName := flag.String("conf", "", "Configuration file path")
+	confPath := flag.String("conf", "", "Configuration file path")
 
 	// Parse command line
 	flag.Parse()
@@ -30,35 +77,30 @@ func main() {
 	}
 
 	// Parse configuration and initialize directories
-	if *confName == "" {
-		*confName = pathutils.Join(pathutils.GetRoot(), "conf", "dist."+*mode+".yaml")
+	if *confPath == "" {
+		*confPath = filepath.Join(getRoot(), "conf", "dist."+*mode+".yaml")
 	}
-	config, err := NewConf(*confName)
+	conf, err := NewConf(*confPath)
 	if err != nil {
-		logging.Error("Failed to parse configuration:", *confName, err.Error())
-		os.Exit(1)
+		panic(fmt.Sprintf("Failed to parse configuration: %s\n%s", *confPath, err.Error()))
 	}
 
-	// Useful for inspecting nested structs...
-	// spew.Dump(config)
-
-	// Run
-	if *mode == "receive" || *mode == "" {
-		if config.Receive == nil || config.Receive.Dirs == nil || config.Receive.Server == nil {
-			panic("Missing required RECEIVER configuration")
-		}
-		logging.Init([]string{logging.Receive, logging.Msg}, initPath(config.Receive.Dirs.Logs, true), *debug)
-		startReceiver(config.Receive)
-		time.Sleep(1 * time.Second) // Give it time to start the server.
+	a := &app{
+		debug:    *debug,
+		mode:     *mode,
+		confPath: *confPath,
+		conf:     conf,
+		root:     getRoot(),
 	}
-	if *mode == "send" || *mode == "" {
-		if config.Send == nil || config.Send.Sources == nil || len(config.Send.Sources) < 1 {
-			panic("Missing required SENDER configuration")
-		}
-		logging.Init([]string{logging.Send, logging.Msg}, initPath(config.Send.Dirs.Logs, true), *debug)
-		for _, source := range config.Send.Sources {
-			startSender(source, config.Send.Dirs)
-		}
+	return a
+}
+
+func (a *app) start() {
+	if a.mode == "receive" || a.mode == "" {
+		a.startIn()
+	}
+	if a.mode == "send" || a.mode == "" {
+		a.startOut()
 	}
 
 	// TODO: Add mechanism for graceful shutdown by sending "empty" data down the input channels
@@ -69,143 +111,31 @@ func main() {
 	}
 }
 
-func startReceiver(conf *ReceiveConf) {
-	recvConf := &ReceiverConf{}
-	recvConf.StageDir = initPath(conf.Dirs.Stage, true)
-	recvConf.FinalDir = initPath(conf.Dirs.Final, true)
-	recvConf.Port = conf.Server.Port
-	if conf.Server.TLS {
-		recvConf.TLSCert = conf.Server.TLSCert
-		recvConf.TLSKey = conf.Server.TLSKey
+func (a *app) startIn() {
+	if a.conf.Receive == nil || a.conf.Receive.Dirs == nil || a.conf.Receive.Server == nil {
+		panic("Missing required RECEIVER configuration")
 	}
-
-	scanChan := make(chan []ScanFile, 1)
-
-	scanner := NewScanner(recvConf.StageDir, initPath(conf.Dirs.Cache, true), time.Second*1, 0, false, 1)
-	finalizer := NewFinalizer(recvConf)
-	receiver := NewReceiver(recvConf, finalizer)
-
-	scanner.AddIgnore(fmt.Sprintf(`\%s$`, fileutils.LockExt))
-	scanner.AddIgnore(fmt.Sprintf(`\%s$`, PartExt))
-	scanner.AddIgnore(fmt.Sprintf(`\%s$`, CompExt))
-
-	go scanner.Start(scanChan, nil)
-	go finalizer.Start(scanChan)
-	go receiver.Serve()
-
-	logging.Debug(fmt.Sprintf("RECEIVER Ready: Port %d", recvConf.Port))
+	logging.Init([]string{logging.Receive, logging.Msg}, InitPath(a.root, a.conf.Receive.Dirs.Logs, true), a.debug)
+	a.in = &AppIn{
+		root:    a.root,
+		rawConf: a.conf.Receive,
+	}
+	a.in.Start()
+	time.Sleep(1 * time.Second) // Give it time to start the server.
 }
 
-func startSender(source *SendSource, dirs *SendDirs) {
-	outDir := initPath(pathutils.Join(dirs.Out, source.Target.Name), true)
-	cacheDir := initPath(dirs.Cache, true)
-
-	sendConf := &SenderConf{}
-	sendConf.Compress = source.Compress
-	sendConf.SourceName = source.Name
-	sendConf.TargetName = source.Target.Name
-	sendConf.TargetHost = source.Target.Host
-	sendConf.TLSCert = source.Target.TLSCert
-	sendConf.TLSKey = source.Target.TLSKey
-	sendConf.BinSize = source.BinSize
-	sendConf.Timeout = source.Timeout
-	sendConf.MaxRetries = source.MaxRetries
-	sendConf.PollInterval = source.PollInterval
-	sendConf.PollDelay = source.PollDelay
-	if sendConf.SourceName == "" {
-		panic("Source name missing from configuration")
+func (a *app) startOut() {
+	if a.conf.Send == nil || a.conf.Send.Sources == nil || len(a.conf.Send.Sources) < 1 {
+		panic("Missing required SENDER configuration")
 	}
-	if sendConf.TargetName == "" {
-		panic("Target name missing from configuration")
-	}
-	if sendConf.TargetHost == "" {
-		panic("Target host missing from configuration")
-	}
-	if source.Target.TLS && (sendConf.TLSCert == "" || sendConf.TLSKey == "") {
-		panic("TLS enabled but missing either TLSCert or TLSKey")
-	}
-	if sendConf.BinSize == 0 {
-		sendConf.BinSize = 10 * 1024 * 1024
-	}
-	if sendConf.Timeout == 0 {
-		sendConf.Timeout = 3600 * 60
-	}
-	if sendConf.MaxRetries == 0 {
-		sendConf.MaxRetries = 10
-	}
-	if sendConf.PollInterval == 0 {
-		sendConf.PollInterval = 60
-	}
-	if sendConf.PollDelay == 0 {
-		sendConf.PollDelay = 5
-	}
-
-	// spew.Dump(sendConf)
-	// spew.Dump(dirs)
-
-	scanChan := make(chan []ScanFile, 1) // One batch at a time.
-	sortChan := make(chan SortFile, source.Threads*2)
-	sendChan := make(chan SendFile, source.Threads*2)
-	pollChan := []chan SendFile{
-		make(chan SendFile, source.Threads*2),
-	}
-	doneChan := []chan DoneFile{
-		make(chan DoneFile, source.Threads*2),
-		make(chan DoneFile, source.Threads*2),
-	}
-
-	scanner := NewScanner(outDir, cacheDir, time.Second*5, source.MinAge, true, 0)
-	sorter := NewSorter(source.Tags)
-
-	scanner.AddIgnore(fmt.Sprintf(`\%s$`, fileutils.LockExt))
-
-	for i := 0; i < source.Threads; i++ {
-		sender := NewSender(sendConf)
-		go sender.StartPrep(sortChan, sendChan)
-		go sender.StartSend(sendChan, pollChan[:len(pollChan)])
-	}
-
-	poller := NewPoller(sendConf)
-
-	go poller.Start(pollChan[0], sendChan, doneChan[:len(doneChan)])
-	go sorter.Start(scanChan, sortChan, doneChan[0])
-	go scanner.Start(scanChan, doneChan[1])
-
-	logging.Debug(fmt.Sprintf("SENDER Ready: %s -> %s", sendConf.SourceName, sendConf.TargetName))
-}
-
-func initPath(path string, isdir bool) string {
-	var err error
-	if !filepath.IsAbs(path) {
-		root := pathutils.GetRoot()
-		path, err = filepath.Abs(pathutils.Join(root, path))
-		if err != nil {
-			logging.Error("Failed to initialize: ", path, err.Error())
+	logging.Init([]string{logging.Send, logging.Msg}, InitPath(a.root, a.conf.Send.Dirs.Logs, true), a.debug)
+	for _, source := range a.conf.Send.Sources {
+		out := &AppOut{
+			root:    a.root,
+			dirConf: a.conf.Send.Dirs,
+			rawConf: source,
 		}
-	}
-	pdir := path
-	if !isdir {
-		pdir = filepath.Dir(pdir)
-	}
-	_, err = os.Stat(pdir)
-	if os.IsNotExist(err) {
-		logging.Debug("CONFIG Make Path:", pdir)
-		os.MkdirAll(pdir, os.ModePerm)
-	}
-	return path
-}
-
-func initPathElements(i interface{}) {
-	v := reflect.ValueOf(i)
-	if v.IsNil() {
-		return
-	}
-	t := reflect.TypeOf(i).Elem()
-	n := t.NumField()
-	for i := 0; i < n; i++ {
-		index := []int{i}
-		attName := t.FieldByIndex(index)
-		attValue := reflect.Indirect(v).FieldByName(attName.Name)
-		attValue.SetString(initPath(attValue.String(), true))
+		out.Start()
+		a.out = append(a.out, out)
 	}
 }

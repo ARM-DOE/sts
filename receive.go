@@ -6,13 +6,13 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
+	"strings"
 	"sync"
-	"time"
 
 	"github.com/ARM-DOE/sts/fileutils"
 	"github.com/ARM-DOE/sts/httputils"
 	"github.com/ARM-DOE/sts/logging"
-	"github.com/ARM-DOE/sts/pathutils"
 )
 
 // PartExt is the file extension added to files in the stage area as they are
@@ -51,6 +51,7 @@ func NewReceiver(conf *ReceiverConf, f *Finalizer) *Receiver {
 func (rcv *Receiver) Serve() {
 	http.HandleFunc("/data", rcv.routeData)
 	http.HandleFunc("/validate", rcv.routeValidate)
+	http.HandleFunc("/partials", rcv.routePartials)
 
 	var err error
 	addr := fmt.Sprintf(":%d", rcv.Conf.Port)
@@ -74,13 +75,48 @@ func (rcv *Receiver) getLock(path string) *sync.Mutex {
 	return rcv.fileLocks[path]
 }
 
+func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
+	source := r.Header.Get(HeaderSourceName)
+	if source == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	var partials []*Companion
+	root := filepath.Join(rcv.Conf.StageDir, source)
+	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if filepath.Ext(path) == CompExt {
+			base := strings.TrimSuffix(path, CompExt)
+			lock := rcv.getLock(base)
+			lock.Lock()
+			defer lock.Unlock()
+			if _, err := os.Stat(base + CompExt); !os.IsNotExist(err) { // Make sure it still exists.
+				cmp, err := ReadCompanion(base)
+				if err == nil {
+					// Would be nice not to have to care about case but apparently on Mac it can be an issue.
+					relPath := strings.TrimPrefix(strings.ToLower(cmp.Path), strings.ToLower(root+string(os.PathSeparator)))
+					cmp.Path = cmp.Path[len(root)+1 : len(root)+1+len(relPath)]
+					partials = append(partials, cmp)
+				}
+			}
+		}
+		return nil
+	})
+	respJSON, err := json.Marshal(partials)
+	if err != nil {
+		w.WriteHeader(500)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write(respJSON)
+}
+
 func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
 	source := r.Header.Get(HeaderSourceName)
 	files := []*ConfirmFile{}
 	decoder := json.NewDecoder(r.Body)
 	err := decoder.Decode(&files)
-	if err != nil {
-		fmt.Fprint(w, http.StatusBadRequest) // Respond with a 400
+	if source == "" || err != nil {
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	respMap := make(map[string]int, len(files))
@@ -105,9 +141,12 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 	source := r.Header.Get(HeaderSourceName)
 	meta := r.Header.Get(HeaderBinData)
 	reader, err := NewBinReader(meta, r.Body, compressed)
-	if err != nil {
-		logging.Error(err.Error())
-		fmt.Fprint(w, http.StatusPartialContent) // respond with a 206
+	if source == "" || err != nil {
+		if err != nil {
+			logging.Error(err.Error())
+		}
+		w.WriteHeader(http.StatusPartialContent) // respond with a 206
+		return
 	}
 	for {
 		next, eof := reader.Next()
@@ -119,14 +158,18 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 		err := rcv.parsePart(next, source)
 		if err != nil {
 			logging.Error(err.Error())
-			fmt.Fprint(w, http.StatusPartialContent) // respond with a 206
+			w.WriteHeader(http.StatusPartialContent) // respond with a 206
 			return
 		}
 	}
-	fmt.Fprint(w, http.StatusOK)
+	w.WriteHeader(http.StatusOK)
 }
 
 func (rcv *Receiver) initStageFile(filePath string, size int64) {
+	if _, err := os.Stat(filePath + CompExt); os.IsNotExist(err) {
+		logging.Debug("RECEIVE Removing Stale Companion:", filePath+CompExt)
+		os.Remove(filePath + CompExt)
+	}
 	os.MkdirAll(path.Dir(filePath), os.ModePerm)
 	fh, err := os.Create(filePath + PartExt)
 	logging.Debug(fmt.Sprintf("RECEIVE Creating Empty File: %s (%d B)", filePath, size))
@@ -139,9 +182,16 @@ func (rcv *Receiver) initStageFile(filePath string, size int64) {
 
 func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 
+	// Useful for simluating recovery.
+	// rand.Seed(time.Now().Unix())
+	// if rand.Intn(2) == 1 {
+	// 	logging.Debug("RECEIVE Bailing out early for fun")
+	// 	return nil
+	// }
+
 	logging.Debug("RECEIVE Process Part:", pr.Meta.Path, pr.Meta.FileSize)
 
-	path := pathutils.Join(rcv.Conf.StageDir, source, pr.Meta.Path)
+	path := filepath.Join(rcv.Conf.StageDir, source, pr.Meta.Path)
 	hash := fileutils.NewMD5()
 	lock := rcv.getLock(path)
 
@@ -157,8 +207,8 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 	if err != nil {
 		return fmt.Errorf("Failed to open file while trying to write part: %s", err.Error())
 	}
-	fh.Seek(pr.Meta.Start, 0)
-	logging.Debug("RECEIVE Seek:", pr.Meta.Path, pr.Meta.Start)
+	fh.Seek(pr.Meta.Beg, 0)
+	logging.Debug("RECEIVE Seek:", pr.Meta.Path, pr.Meta.Beg)
 	bytes := make([]byte, hash.BlockSize)
 	var nb int
 	wrote := 0
@@ -176,7 +226,7 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 	logging.Debug("RECEIVE Wrote:", pr.Meta.Path, wrote)
 	fh.Close()
 	if pr.Meta.Hash != hash.Sum() {
-		return fmt.Errorf("Bad part of %s from bytes %d:%d (%s:%s)", pr.Meta.Path, pr.Meta.Start, pr.Meta.End, pr.Meta.Hash, hash.Sum())
+		return fmt.Errorf("Bad part of %s from bytes %d:%d (%s:%s)", pr.Meta.Path, pr.Meta.Beg, pr.Meta.End, pr.Meta.Hash, hash.Sum())
 	}
 
 	// Make sure we're the only one updating the companion
@@ -184,22 +234,22 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 	defer lock.Unlock()
 
 	// Update the companion file
-	cmp, err := NewCompanion(source, path, pr.Meta.FileSize)
+	cmp, err := NewCompanion(source, path, pr.Meta.PrevPath, pr.Meta.FileSize, pr.Meta.FileHash)
 	if err != nil {
 		return err
 	}
-	err = cmp.AddPart(pr.Meta.FileHash, pr.Meta.Hash, pr.Meta.PrevPath, pr.Meta.Start, pr.Meta.End)
+	cmp.AddPart(pr.Meta.Hash, pr.Meta.Beg, pr.Meta.End)
+	err = cmp.Write()
 	if err != nil {
-		return fmt.Errorf("Failed to add part to companion: %s", err.Error())
+		return fmt.Errorf("Failed to write updated companion: %s", err.Error())
 	}
 	if cmp.IsComplete() {
 
-		// Finish file by updating the modtime and removing the "partial" extension.
+		// Finish file by removing the "partial" extension so the scanner will pick it up.
 		err := os.Rename(path+PartExt, path)
 		if err != nil {
 			return err
 		}
-		os.Chtimes(path, time.Now(), time.Now()) // Update mtime so that scanner will pick up the file
 		logging.Debug("RECEIVE File Done:", path)
 	}
 	logging.Debug("RECEIVE Park OK:", path)

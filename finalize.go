@@ -9,7 +9,6 @@ import (
 
 	"github.com/ARM-DOE/sts/fileutils"
 	"github.com/ARM-DOE/sts/logging"
-	"github.com/ARM-DOE/sts/pathutils"
 )
 
 // CacheAge is how long a finalized file is kept in memory.
@@ -58,7 +57,7 @@ func (f *Finalizer) IsFinal(source string, relPath string, sentTime int64) (bool
 	success, found := f.fromCache(source, relPath)
 	if !found {
 		success = logging.GetLogger(logging.Receive).Search(relPath, 0, sentTime, source)
-		return success, false
+		return success, success
 	}
 	return success, true
 }
@@ -72,8 +71,6 @@ func (f *Finalizer) finalize(file ScanFile) (bool, error) {
 		return false, fmt.Errorf(err.Error())
 	}
 
-	logging.Debug("FINAL Finalizing", file.GetRelPath())
-
 	// Read about it.
 	cmp, err := ReadCompanion(file.GetPath())
 	if err != nil {
@@ -83,7 +80,7 @@ func (f *Finalizer) finalize(file ScanFile) (bool, error) {
 
 	// Sort it.
 	if cmp.PrevFile != "" {
-		stagedPrevFile := pathutils.Join(f.Conf.StageDir, cmp.SourceName, cmp.PrevFile)
+		stagedPrevFile := filepath.Join(f.Conf.StageDir, cmp.SourceName, cmp.PrevFile)
 		_, err = os.Stat(stagedPrevFile + PartExt)
 		if !os.IsNotExist(err) {
 			return false, nil
@@ -96,10 +93,10 @@ func (f *Finalizer) finalize(file ScanFile) (bool, error) {
 		if !found {
 			found = logging.GetLogger(logging.Receive).Search(cmp.PrevFile, LogSearchDays, 0, cmp.SourceName)
 			if !found {
+				logging.Debug("FINAL Not Found in Logs", file.GetRelPath(), cmp.PrevFile)
 				return false, nil
 			}
-		}
-		if !success {
+		} else if !success {
 			return false, nil
 		}
 	}
@@ -115,8 +112,10 @@ func (f *Finalizer) finalize(file ScanFile) (bool, error) {
 		return false, fmt.Errorf("Failed validation: %s", file.GetRelPath())
 	}
 
+	logging.Debug("FINAL Finalizing", file.GetRelPath())
+
 	// Move it.
-	finalPath := pathutils.Join(f.Conf.FinalDir, cmp.SourceName, file.GetRelPath())
+	finalPath := filepath.Join(f.Conf.FinalDir, cmp.SourceName, file.GetRelPath())
 	os.MkdirAll(filepath.Dir(finalPath), os.ModePerm)
 	err = os.Rename(file.GetPath(), finalPath)
 	if err != nil {

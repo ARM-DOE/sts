@@ -28,14 +28,23 @@ type Poller struct {
 	conf   *SenderConf
 }
 
+// Implements PollFile and DoneFile interfaces
 type pollFile struct {
 	file   SendFile
 	time   time.Time
 	nRetry int
 }
 
-func (f *pollFile) GetSortFile() SortFile {
-	return f.file.GetSortFile()
+func (f *pollFile) GetPath() string {
+	return f.file.GetPath()
+}
+
+func (f *pollFile) GetRelPath() string {
+	return f.file.GetRelPath()
+}
+
+func (f *pollFile) GetStarted() int64 {
+	return f.time.UnixNano()
 }
 
 // NewPoller creates a new Poller instance with all default variables instantiated.
@@ -52,33 +61,65 @@ func NewPoller(conf *SenderConf) *Poller {
 }
 
 // Start runs the poller in a loop and operates on the input channels.
-func (poller *Poller) Start(inChan chan SendFile, failChan chan SendFile, doneChan []chan DoneFile) {
+func (poller *Poller) Start(inChan chan []SendFile, failChan chan SendFile, doneChan []chan []DoneFile) {
 	var t time.Time
+	var err error
+	fail := []SendFile{}
+	poll := []PollFile{}
+	done := make([][]DoneFile, len(doneChan))
 	pause := time.Millisecond * 100
 	for {
 		time.Sleep(pause) // To keep from thrashing
 		for {
+			for len(fail) > 0 { // Send out any failed.
+				select {
+				case failChan <- fail[0]:
+					fail = fail[1:]
+					continue
+				default:
+					break
+				}
+				break
+			}
+			for i, dc := range doneChan { // Send out any done.
+				if len(done[i]) > 0 {
+					select {
+					case dc <- done[i]:
+						done[i] = []DoneFile{}
+					default:
+						break
+					}
+				}
+			}
 			select {
-			case file := <-inChan:
-				poller.addFile(file)
+			case files := <-inChan: // Get incoming.
+				for _, file := range files {
+					poller.addFile(file)
+				}
 				continue
 			default:
 				break
 			}
 			break
 		}
-
 		if !t.IsZero() && time.Now().Sub(t) < poller.conf.PollInterval {
 			continue
 		}
 		if len(poller.Files) < 1 {
 			continue
 		}
-		files := poller.buildList(failChan)
-		if len(files) < 1 {
+		var f []SendFile
+		var d []DoneFile
+		f, poll = poller.buildList()
+		fail = append(fail, f...)
+		if len(poll) < 1 {
 			continue
 		}
-		err := poller.poll(files, failChan, doneChan)
+		f, d, err = poller.Poll(poll)
+		fail = append(fail, f...)
+		for i := range done {
+			done[i] = append(done[i], d...)
+		}
 		if err != nil {
 			t = time.Now()
 			continue
@@ -89,76 +130,85 @@ func (poller *Poller) Start(inChan chan SendFile, failChan chan SendFile, doneCh
 func (poller *Poller) addFile(file SendFile) {
 	_, exists := poller.Files[file.GetRelPath()]
 	if !exists {
-		logging.Debug("POLLER Added:", file.GetRelPath())
+		logging.Debug("POLL Added:", file.GetRelPath())
 		pfile := &pollFile{file, time.Now(), 0}
 		poller.Files[file.GetRelPath()] = pfile
 	}
 }
 
-func (poller *Poller) removeFile(file *pollFile) {
-	delete(poller.Files, file.file.GetRelPath())
+func (poller *Poller) removeFile(file PollFile) {
+	delete(poller.Files, file.GetRelPath())
 }
 
-func (poller *Poller) buildList(failChan chan SendFile) []*ConfirmFile {
-	list := []*ConfirmFile{}
+func (poller *Poller) buildList() (fail []SendFile, poll []PollFile) {
 	for _, pf := range poller.Files {
 		if poller.conf.MaxRetries > 0 && pf.nRetry > poller.conf.MaxRetries {
-			logging.Debug("POLLER Rejected:", pf.file.GetRelPath())
-			// Send the file again
-			select {
-			case failChan <- pf.file:
-				poller.removeFile(pf)
-			default:
-				break
-			}
+			logging.Debug("POLL Rejected:", pf.file.GetRelPath())
+			fail = append(fail, pf.file)
 			continue
 		}
 		if time.Now().Sub(pf.time) > poller.conf.PollDelay {
-			logging.Debug("POLLER Request:", pf.file.GetRelPath())
-			cf := &ConfirmFile{pf.file.GetRelPath(), pf.time.Unix()}
-			list = append(list, cf)
+			logging.Debug("POLL Request:", pf.file.GetRelPath())
+			poll = append(poll, pf)
 			pf.nRetry++
 		}
 	}
-	return list
+	return
 }
 
-func (poller *Poller) poll(files []*ConfirmFile, failChan chan SendFile, doneChan []chan DoneFile) error {
-	payloadJSON, err := json.Marshal(files)
-	if err != nil {
-		return err
+// Poll attempts to confirm whether files have been properly received on target.
+func (poller *Poller) Poll(files []PollFile) (fail []SendFile, done []DoneFile, err error) {
+	fmap := make(map[string]PollFile)
+	var cf []*ConfirmFile
+	for _, f := range files {
+		cf = append(cf, &ConfirmFile{f.GetRelPath(), int64(f.GetStarted() / 1e9)}) // GetStarted() returns in nanoseconds
+		fmap[f.GetRelPath()] = f
 	}
-	logging.Debug("POLLING:", len(files))
+	payloadJSON, err := json.Marshal(cf)
+	if err != nil {
+		return
+	}
+	logging.Debug("POLLing for:", len(files))
 	url := fmt.Sprintf("%s://%s/validate", poller.conf.Protocol(), poller.conf.TargetHost)
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payloadJSON))
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add(HeaderSourceName, poller.conf.SourceName)
 	if err != nil {
-		return err
+		return
 	}
 	resp, err := poller.client.Do(req)
 	if err != nil {
-		return err
+		return
+	}
+	if resp.StatusCode != 200 {
+		err = fmt.Errorf("Poll request failed: %d", resp.StatusCode)
+		return
 	}
 	fileMap := make(map[string]int)
 	jsonDecoder := json.NewDecoder(resp.Body)
 	err = jsonDecoder.Decode(&fileMap)
 	if err != nil {
-		return err
+		return
 	}
 	for path, code := range fileMap {
-		pf := poller.Files[path]
+		pf := fmap[path]
+		df, ok := pf.(DoneFile)
+		if !ok {
+			_, ok = poller.Files[path]
+			if !ok {
+				continue
+			}
+			df = poller.Files[path].file.(DoneFile)
+		}
 		switch code {
 		case ConfirmPassed:
-			logging.Debug("POLLER Confirmation:", path)
-			for _, dc := range doneChan {
-				dc <- pf.file
-			}
+			logging.Debug("POLL Confirmation:", path)
+			done = append(done, df)
 		case ConfirmFailed:
-			logging.Error("POLLER Failed Confirmation:", path)
-			failChan <- pf.file
+			logging.Error("POLL Failed Confirmation:", path)
+			fail = append(fail, poller.Files[path].file.(SendFile))
 		}
 		poller.removeFile(pf)
 	}
-	return nil
+	return
 }

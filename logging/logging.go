@@ -10,8 +10,6 @@ import (
 	"runtime"
 	"sync"
 	"time"
-
-	"github.com/ARM-DOE/sts/pathutils"
 )
 
 // Send is the log directory for send log entries to match legacy STS.
@@ -132,11 +130,11 @@ func Received(msg string, hash string, size int64, prefix ...string) {
 }
 
 func getPath(basePath string, mode string, time time.Time, prefix ...string) string {
-	root := pathutils.Join(basePath, mode)
+	root := filepath.Join(basePath, mode)
 	if len(prefix) > 0 {
-		root = pathutils.Join(root, pathutils.Join(prefix...))
+		root = filepath.Join(root, filepath.Join(prefix...))
 	}
-	return pathutils.Join(root, getYear(time)+getMonth(time), getDay(time))
+	return filepath.Join(root, getYear(time)+getMonth(time), getDay(time))
 }
 
 // Logger is the main struct for managing a rolling log file.
@@ -216,7 +214,6 @@ func (logger *Logger) Search(text string, nDays int, start int64, prefix ...stri
 		return false
 	}
 	logs := make([]string, nDays)
-	start -= start % 86400
 	for i := range logs {
 		offset := int64(3600 * 24 * i)
 		if !fwd {

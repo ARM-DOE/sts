@@ -9,6 +9,12 @@ import (
 	"github.com/ARM-DOE/sts/logging"
 )
 
+// computeTag returns the "tag" - the relative path to the first dot.
+// TODO: look into making this more generic.
+func computeTag(relPath string) string {
+	return strings.Split(relPath, ".")[0]
+}
+
 type sortedTag struct {
 	tag   string
 	conf  *Tag
@@ -61,8 +67,12 @@ type sortedFile struct {
 func newSortedFile(foundFile ScanFile) *sortedFile {
 	file := &sortedFile{}
 	file.file = foundFile
-	file.tag = strings.Split(foundFile.GetRelPath(), ".")[0]
+	file.tag = computeTag(file.GetRelPath())
 	return file
+}
+
+func (file *sortedFile) GetOrigFile() ScanFile {
+	return file.file
 }
 
 func (file *sortedFile) GetPath() string {
@@ -158,56 +168,26 @@ func NewSorter(tagData []*Tag) *Sorter {
 }
 
 // Start starts the daemon that listens for files on inChan and doneChan and puts files on outChan.
-func (sorter *Sorter) Start(inChan chan []ScanFile, outChan chan SortFile, doneChan chan DoneFile) {
+func (sorter *Sorter) Start(inChan chan []ScanFile, outChan chan SortFile, doneChan chan []DoneFile) {
 	for {
 		select {
 		case foundFiles := <-inChan:
 			for _, foundFile := range foundFiles {
 				logging.Debug("SORT File In:", foundFile.GetRelPath())
-				sorter.add(foundFile)
+				sorter.Add(foundFile)
 			}
-		case file := <-doneChan:
-			logging.Debug("SORT File Done:", file.GetSortFile().GetRelPath())
-			sorter.done(file)
+		case doneFiles := <-doneChan:
+			for _, doneFile := range doneFiles {
+				logging.Debug("SORT File Done:", doneFile.GetRelPath())
+				sorter.Done(doneFile)
+			}
 		default:
-			if sorter.nextOut == nil {
-				t := sorter.tag
-				for t != nil {
-					if sorter.next[t.tag] != nil {
-						// Make this file next one out the door.
-						sorter.nextOut = sorter.next[t.tag]
-						// Push this tag to the last one of its priority to avoid starvation.
-						p := t.conf.Priority
-						n := t
-						for n.next != nil && n.next.conf.Priority == p {
-							n = n.next
-						}
-						if n != t {
-							if t == sorter.tag {
-								sorter.tag = t.next
-							}
-							if n.conf.Priority < t.conf.Priority {
-								t.insertBefore(n)
-								if n == sorter.tag {
-									sorter.tag = t
-								}
-							} else {
-								t.insertAfter(n)
-							}
-						}
-						break
-					}
-					t = t.next
-				}
-			}
-			if sorter.nextOut != nil {
+			next := sorter.getNext()
+			if next != nil {
 				select { // We don't want to block if the send queue is full so we can keep accepting incoming files.
-				case outChan <- sorter.nextOut:
-					logging.Debug("SORT File Out:", sorter.nextOut.GetRelPath())
-					next := sorter.nextOut.GetNext()
-					ntag := sorter.nextOut.GetTag()
-					sorter.next[ntag] = next
-					sorter.nextOut = nil
+				case outChan <- next:
+					logging.Debug("SORT File Out:", next.GetRelPath())
+					sorter.clearNext(next)
 					continue
 				default:
 					continue
@@ -219,7 +199,8 @@ func (sorter *Sorter) Start(inChan chan []ScanFile, outChan chan SortFile, doneC
 	}
 }
 
-func (sorter *Sorter) add(f ScanFile) {
+// Add adds a new file to the list.
+func (sorter *Sorter) Add(f ScanFile) {
 	var exists bool
 	_, exists = sorter.files[f.GetPath()]
 	if exists {
@@ -229,23 +210,75 @@ func (sorter *Sorter) add(f ScanFile) {
 	ftag := file.GetTag()
 	_, exists = sorter.tagMap[ftag]
 	if !exists {
-		conf := sorter.tagDef
-		for _, tag := range sorter.tagData {
-			if tag.Pattern == DefaultTag {
-				continue
-			}
-			matched, err := regexp.MatchString(tag.Pattern, ftag)
-			if matched && err == nil {
-				conf = tag
-				break
-			}
-		}
+		conf := sorter.getTagConf(ftag)
 		stag := newSortedTag(ftag, conf)
 		sorter.tagMap[ftag] = stag
 		sorter.insertTag(stag)
 	}
 	sorter.insertFile(file)
 	sorter.files[file.GetPath()] = file
+}
+
+func (sorter *Sorter) getNext() SortFile {
+	next := sorter.nextOut
+	if next == nil {
+		t := sorter.tag
+		for t != nil {
+			if sorter.next[t.tag] != nil {
+				// Make this file next one out the door.
+				next = sorter.next[t.tag]
+				// Push this tag to the last one of its priority to avoid starvation.
+				sorter.delayTag(t)
+				break
+			}
+			t = t.next
+		}
+		sorter.nextOut = next
+	}
+	return next
+}
+
+func (sorter *Sorter) clearNext(out SortFile) {
+	next := out.GetNext()
+	ntag := out.GetTag()
+	sorter.next[ntag] = next
+	sorter.nextOut = nil
+}
+
+func (sorter *Sorter) delayTag(t *sortedTag) {
+	p := t.conf.Priority
+	n := t
+	for n.next != nil && n.next.conf.Priority == p {
+		n = n.next
+	}
+	if n != t {
+		if t == sorter.tag {
+			sorter.tag = t.next
+		}
+		if n.conf.Priority < t.conf.Priority {
+			t.insertBefore(n)
+			if n == sorter.tag {
+				sorter.tag = t
+			}
+		} else {
+			t.insertAfter(n)
+		}
+	}
+}
+
+func (sorter *Sorter) getTagConf(t string) *Tag {
+	conf := sorter.tagDef
+	for _, tag := range sorter.tagData {
+		if tag.Pattern == DefaultTag {
+			continue
+		}
+		matched, err := regexp.MatchString(tag.Pattern, t)
+		if matched && err == nil {
+			conf = tag
+			break
+		}
+	}
+	return conf
 }
 
 func (sorter *Sorter) insertTag(tag *sortedTag) {
@@ -296,15 +329,25 @@ func (sorter *Sorter) insertFile(file SortFile) {
 	}
 }
 
-func (sorter *Sorter) done(file DoneFile) {
-	f := file.GetSortFile()
-	if f.GetPrev() != nil {
-		f.GetPrev().SetNext(nil)
+// Done will remove this file from the list and do any cleanup as specified by the tag.
+func (sorter *Sorter) Done(file DoneFile) {
+	delete := false
+	f, found := sorter.files[file.GetPath()]
+	if found {
+		if f.GetPrev() != nil {
+			f.GetPrev().SetNext(nil)
+		}
+		if sorter.tagMap[f.GetTag()].conf.Delete {
+			delete = true
+		}
+	} else {
+		tag := sorter.getTagConf(computeTag(file.GetRelPath()))
+		delete = tag.Delete
 	}
-	if sorter.tagMap[f.GetTag()].conf.Delete {
-		err := os.Remove(f.GetPath())
+	if delete {
+		err := os.Remove(file.GetPath())
 		if err != nil {
-			logging.Error("Failed to remove:", f.GetPath(), err.Error())
+			logging.Error("Failed to remove:", file.GetPath(), err.Error())
 		}
 	}
 }

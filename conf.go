@@ -29,6 +29,9 @@ const (
 	// MethodHTTP indicates an HTTP outgoing method.
 	MethodHTTP = "http"
 
+	// MethodDisk indicates a disk transfer method.
+	MethodDisk = "disk"
+
 	// MethodNone indicates files are not to be sent.
 	MethodNone = "none" // TODO: not currently supported.
 )
