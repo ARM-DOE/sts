@@ -331,20 +331,21 @@ func (sorter *Sorter) insertFile(file SortFile) {
 
 // Done will remove this file from the list and do any cleanup as specified by the tag.
 func (sorter *Sorter) Done(file DoneFile) {
-	delete := false
+	del := false
 	f, found := sorter.files[file.GetPath()]
 	if found {
 		if f.GetPrev() != nil {
 			f.GetPrev().SetNext(nil)
 		}
 		if sorter.tagMap[f.GetTag()].conf.Delete {
-			delete = true
+			del = true
 		}
+		delete(sorter.files, file.GetPath())
 	} else {
 		tag := sorter.getTagConf(computeTag(file.GetRelPath()))
-		delete = tag.Delete
+		del = tag.Delete
 	}
-	if delete {
+	if del {
 		err := os.Remove(file.GetPath())
 		if err != nil {
 			logging.Error("Failed to remove:", file.GetPath(), err.Error())
