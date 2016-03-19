@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"github.com/ARM-DOE/sts/httputils"
@@ -74,6 +75,9 @@ func (a *AppOut) initConf() {
 	if a.rawConf.Target.TLS && (a.conf.TLSCert == "" || a.conf.TLSKey == "") {
 		panic("TLS enabled but missing either TLSCert or TLSKey")
 	}
+	if a.rawConf.GroupBy.String() == "" {
+		a.rawConf.GroupBy, _ = regexp.Compile(`^([\.]*)\.`) // Default is up to the first dot of the relative path.
+	}
 	a.setDefaults()
 }
 
@@ -91,7 +95,7 @@ func (a *AppOut) initComponents() {
 	cacheDir := InitPath(a.root, a.dirConf.Cache, true)
 
 	a.scanner = NewScanner(outDir, cacheDir, time.Second*5, a.rawConf.MinAge, true, 0)
-	a.sorter = NewSorter(a.rawConf.Tags)
+	a.sorter = NewSorter(a.rawConf.Tags, a.rawConf.GroupBy)
 	a.poller = NewPoller(a.conf)
 
 	for _, tag := range a.rawConf.Tags {

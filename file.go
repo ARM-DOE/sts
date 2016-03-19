@@ -16,7 +16,7 @@ type SortFile interface {
 	GetRelPath() string
 	GetSize() int64
 	GetTime() int64
-	GetTag() string
+	GetGroup() string
 	GetNext() SortFile
 	GetPrev() SortFile
 	SetNext(SortFile)

@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"time"
 
 	"github.com/alecthomas/units"
@@ -70,6 +71,7 @@ type SendSource struct {
 	PollDelay    time.Duration
 	PollInterval time.Duration
 	Target       *SendTarget
+	GroupBy      *regexp.Regexp
 	Tags         []*Tag
 }
 
@@ -87,6 +89,7 @@ func (ss *SendSource) UnmarshalYAML(unmarshal func(interface{}) error) (err erro
 		PollDelay    time.Duration `yaml:"poll-delay"`
 		PollInterval time.Duration `yaml:"poll-interval"`
 		Target       *SendTarget   `yaml:"target"`
+		GroupBy      string        `yaml:"group-by"`
 		Tags         []*Tag        `yaml:"tags"`
 	}
 	if err = unmarshal(&aux); err != nil {
@@ -104,6 +107,9 @@ func (ss *SendSource) UnmarshalYAML(unmarshal func(interface{}) error) (err erro
 	ss.PollDelay = aux.PollDelay
 	ss.PollInterval = aux.PollInterval
 	ss.Target = aux.Target
+	if ss.GroupBy, err = regexp.Compile(aux.GroupBy); err != nil {
+		return
+	}
 	ss.Tags = aux.Tags
 	return nil
 }
