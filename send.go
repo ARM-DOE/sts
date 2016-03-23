@@ -19,6 +19,7 @@ type sendFile struct {
 	started    int64
 	bytesAlloc int64
 	bytesSent  int64
+	cancel     bool
 	lock       sync.RWMutex
 }
 
@@ -149,8 +150,50 @@ func (f *sendFile) IsSent() bool {
 	return f.file.GetSize() == f.bytesSent
 }
 
+func (f *sendFile) Stat() (bool, error) {
+	f.lock.Lock()
+	defer f.lock.RUnlock()
+	return f.file.GetOrigFile().Reset()
+}
+
+func (f *sendFile) Reset() (changed bool, err error) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	f.started = 0
+	f.bytesAlloc = 0
+	f.bytesSent = 0
+	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
+		changed, err = f.file.GetOrigFile().Reset()
+		return
+	}
+	changed, err = f.file.GetOrigFile().Reset()
+	if err != nil {
+		return
+	}
+	if changed {
+		f.hash, err = fileutils.FileMD5(f.GetPath())
+		if err != nil {
+			return
+		}
+	}
+	return
+}
+
+func (f *sendFile) GetCancel() bool {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+	return f.cancel
+}
+
+func (f *sendFile) SetCancel(c bool) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	f.cancel = c
+}
+
 // SenderConf contains all parameters necessary for the sending daemon.
 type SenderConf struct {
+	Threads      int
 	Compress     bool
 	SourceName   string
 	TargetName   string
@@ -172,131 +215,221 @@ func (sc *SenderConf) Protocol() string {
 	return "http"
 }
 
+// SenderChan is the struct used to house the channels in support of flow
+// through the sender.
+type SenderChan struct {
+	In       <-chan SortFile
+	Retry    <-chan []SendFile
+	Done     []chan<- []SendFile
+	Close    chan<- bool
+	sendFile chan SendFile
+	sendBin  chan *Bin
+}
+
 // Sender is the struct for managing STS send operations.
 type Sender struct {
-	conf      *SenderConf
-	client    *http.Client
-	nFailures int // Number of sequential failures used to gauge network thrashing
+	conf   *SenderConf
+	ch     *SenderChan
+	client *http.Client
 }
 
 // NewSender creates a new sender instance based on provided configuration.
 func NewSender(conf *SenderConf) *Sender {
 	sender := &Sender{}
 	sender.conf = conf
-
 	var err error
 	sender.client, err = httputils.GetClient(conf.TLSCert, conf.TLSKey)
 	if err != nil {
 		logging.Error(err.Error())
 	}
-
 	sender.client.Timeout = time.Second * time.Duration(conf.Timeout)
 	return sender
 }
 
-// StartPrep is the daemon that converts a SortFile to a SendFile (includes MD5 computation).
-func (sender *Sender) StartPrep(prepChan chan SortFile, fileChan chan SendFile) {
-	for {
-		file := <-prepChan
-		logging.Debug("PRESEND Found:", file.GetRelPath())
-		sendFile, err := newSendFile(file)
-		if err != nil {
-			logging.Error("Failed to get file ready to send:", file.GetPath(), err.Error())
-			continue
-		}
-		fileChan <- sendFile
+// Start controls the sending of files on the in channel and writing results to the out channels.
+func (sender *Sender) Start(ch *SenderChan) {
+	sender.ch = ch
+	sender.ch.sendFile = make(chan SendFile, sender.conf.Threads)
+	sender.ch.sendBin = make(chan *Bin, sender.conf.Threads)
+	var wgWrap, wgBin, wgRebin, wgSend sync.WaitGroup
+	nWrap, nBin, nRebin, nSend := 1, 1, 1, sender.conf.Threads
+	wgWrap.Add(nWrap)
+	for i := 0; i < nWrap; i++ {
+		go sender.startWrap(&wgWrap)
+	}
+	wgBin.Add(nBin)
+	for i := 0; i < nBin; i++ {
+		go sender.startBin(&wgBin)
+	}
+	wgRebin.Add(nRebin)
+	for i := 0; i < nRebin; i++ {
+		go sender.startRebin(&wgRebin)
+	}
+	wgSend.Add(nSend)
+	for i := 0; i < nSend; i++ {
+		go sender.startSend(&wgSend)
+	}
+	wgWrap.Wait()
+	logging.Debug("SEND Wrapping Done")
+	sender.ch.sendFile <- nil // Trigger a shutdown without closing the channel.
+	wgBin.Wait()
+	logging.Debug("SEND Binning Done")
+	for i := 0; i < nSend; i++ {
+		sender.ch.sendBin <- nil // Trigger a shutdown without closing the channel.
+	}
+	wgSend.Wait()
+	logging.Debug("SEND Sending Done")
+	// Once we're here, everything has been sent to the out channel(s) and all we need to
+	// do is resend anything that comes in on the retry channel.
+	sender.ch.Close <- true // Communicate shutdown.
+	close(sender.ch.Close)
+	wgBin.Add(nBin)
+	for i := 0; i < nBin; i++ {
+		go sender.startBin(&wgBin) // Restart the binners.
+	}
+	wgSend.Add(nSend)
+	for i := 0; i < nSend; i++ {
+		go sender.startSend(&wgSend) // Restart the senders.
+	}
+	wgRebin.Wait() // Will only unblock once retry channel is closed. Then we can close out the loop.
+	logging.Debug("SEND Retrying Done")
+	close(sender.ch.sendFile)
+	wgBin.Wait()
+	close(sender.ch.sendBin)
+	wgSend.Wait()
+	for _, c := range sender.ch.Done {
+		close(c)
 	}
 }
 
-// StartSend is the daemon for sending files on the incoming channel and routing them to the
-// "done" channel after all parts have been sent.  The "loop" channel is for files that aren't
-// yet fully allocated.
-func (sender *Sender) StartSend(fileChan chan SendFile, doneChan chan []SendFile) {
-	var bin *Bin
-	var file SendFile
-	var done []SendFile
-	// Outer loop for building and sending bins.
+func (sender *Sender) startWrap(wg *sync.WaitGroup) {
+	defer wg.Done()
 	for {
-		// Send any completed files to the done channel.
-		if len(done) > 0 {
-			select {
-			case doneChan <- done:
-				done = []SendFile{} // Clear them out once passed on.
-			default:
-				break
-			}
+		f, ok := <-sender.ch.In
+		if !ok {
+			break
 		}
-		if file != nil {
-			// Attempt to put this file back on the file channel so others can help.
-			// If not, just keep working on it and try again later if we're still not done on next iteration.
-			select {
-			case fileChan <- file:
-				file = nil
-			default:
-				break
-			}
+		logging.Debug("SEND Found:", f.GetRelPath())
+		sf, err := newSendFile(f)
+		if err != nil {
+			logging.Error("Failed to get file ready to send:", f.GetPath(), err.Error())
+			return
 		}
-		bin = NewBin(int64(sender.conf.BinSize)) // Start new bin.
-		// Loop until we have a bin ready to send.
-		for {
-			waited := time.Millisecond * 0
-			// While we don't have a file from the channel or we haven't waited long enough.
-			for file == nil {
-				select {
-				case file = <-fileChan:
-					waited = 0
-				default:
-					if waited.Seconds() > 1 && len(bin.Parts) > 0 {
-						break
+		sender.ch.sendFile <- sf
+	}
+}
+
+func (sender *Sender) startBin(wg *sync.WaitGroup) {
+	defer wg.Done()
+	var b *Bin
+	var f SendFile
+	var ok bool
+	wait := time.Millisecond * 100
+	waited := time.Millisecond * 0
+	in := sender.ch.sendFile
+	for {
+		if f == nil {
+			select {
+			case f, ok = <-in:
+				if f == nil || !ok {
+					in = nil
+				}
+			default:
+				time.Sleep(wait)
+				waited += wait
+				if waited > time.Second && b != nil && len(b.Parts) > 0 {
+					sender.ch.sendBin <- b
+					b = nil
+				}
+				if in == nil {
+					return
+				}
+				continue
+			}
+			if f != nil {
+				waited = time.Millisecond * 0
+				if f.IsSent() {
+					for _, c := range sender.ch.Done {
+						c <- []SendFile{f}
 					}
-					wait := time.Millisecond * 100
-					time.Sleep(wait)
-					waited += wait
+					continue
+				}
+			} else {
+				continue
+			}
+		}
+		if b == nil {
+			b = NewBin(int64(sender.conf.BinSize)) // Start new bin.
+		}
+		if !b.Add(f) || f.GetBytesAlloc() == f.GetSize() { // File is fully allocated.
+			f = nil
+		}
+		if b.IsFull() {
+			sender.ch.sendBin <- b
+			b = nil
+		}
+	}
+}
+
+func (sender *Sender) startRebin(wg *sync.WaitGroup) {
+	defer wg.Done()
+	for {
+		f, ok := <-sender.ch.Retry
+		if !ok {
+			break
+		}
+		var cancel []SendFile
+		for _, sf := range f {
+			// If we need to resend a file, let's make sure it hasn't changed...
+			changed, err := sf.Reset()
+			if err != nil {
+				logging.Error("Failed to reset:", sf.GetPath(), err.Error())
+				sf.SetCancel(true)
+				cancel = append(cancel, sf)
+				continue
+			}
+			if changed {
+				logging.Debug("SEND File Changed:", sf.GetPath())
+			}
+			sender.ch.sendFile <- sf
+		}
+		sender.done(cancel)
+	}
+}
+
+func (sender *Sender) startSend(wg *sync.WaitGroup) {
+	defer wg.Done()
+	for {
+		b, ok := <-sender.ch.sendBin
+		if b == nil || !ok {
+			break
+		}
+		sender.sendBin(b)
+	}
+}
+
+// sendBin sends a bin in a loop to handle errors and keep trying.
+func (sender *Sender) sendBin(bin *Bin) {
+	// TODO: respond to partially successful requests.
+	for {
+		nerr := 0
+		logging.Debug("SEND Bin:", bin.Bytes, bin.BytesLeft, len(bin.Parts))
+		err := sender.httpBin(bin)
+		if err != nil {
+			nerr++
+			logging.Error(err.Error())
+			canceled := bin.Validate()
+			if len(canceled) > 0 {
+				sender.done(canceled)
+				if len(bin.Parts) > 0 {
 					continue
 				}
 				break
 			}
-			// No file found, we must have waited long enough and can go ahead and send this bin.
-			if file == nil {
-				break
-			}
-			// This only happens when a recovered file was already fully sent and just needs to move on.
-			// It goes the whole path in order to be sorted and wrapped like the others.
-			if file.IsSent() {
-				logging.Debug("SEND Found (Sent):", file.GetRelPath())
-				done = append(done, file)
-				file = nil
-				continue
-			}
-			// File found; let's allocate what we can to this bin.
-			logging.Debug("SEND Found:", file.GetRelPath(), bin.IsFull(), bin.BytesLeft, file.GetSize()-file.GetBytesAlloc())
-			if bin.Add(file) && file.GetBytesAlloc() < file.GetSize() { // File is not fully allocated.
-				logging.Debug("SEND Loop:", file.GetRelPath(), file.GetBytesAlloc())
-			} else {
-				// Reset so next file can be grabbed.
-				file = nil
-			}
-			if bin.IsFull() { // Bin is full. Time to send it.
-				break
-			}
-		}
-		done = append(done, sender.out(bin)...)
-	}
-}
-
-func (sender *Sender) out(bin *Bin) []SendFile {
-	// Send the bin.  In a loop to handle errors and keep trying.
-	// TODO: respond to partially successful requests.
-	var done []SendFile
-	for {
-		logging.Debug("SEND Bin:", bin.Bytes, bin.BytesLeft, len(bin.Parts))
-		err := sender.send(bin)
-		if err != nil {
-			logging.Error(err.Error())
-			sender.nFailures++
-			time.Sleep(time.Duration(sender.nFailures) * time.Second) // Wait longer the more it fails.
+			time.Sleep(time.Duration(nerr) * time.Second) // Wait longer the more it fails.
 			continue
 		}
+		var done []SendFile
 		for _, part := range bin.Parts {
 			part.File.AddSent(part.End - part.Beg)
 			if part.File.IsSent() {
@@ -305,13 +438,21 @@ func (sender *Sender) out(bin *Bin) []SendFile {
 				done = append(done, f)
 			}
 		}
-		bin = nil
+		sender.done(done)
 		break
 	}
-	return done
 }
 
-func (sender *Sender) send(bin *Bin) error {
+func (sender *Sender) done(f []SendFile) {
+	if len(f) == 0 {
+		return
+	}
+	for _, c := range sender.ch.Done {
+		c <- f
+	}
+}
+
+func (sender *Sender) httpBin(bin *Bin) error {
 	var err error
 	for i := range bin.Parts {
 		_, err = bin.Parts[i].GetHash()

@@ -4,7 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ARM-DOE/sts/logging"
@@ -12,7 +14,7 @@ import (
 
 func main() {
 	app := newApp()
-	app.start()
+	app.run()
 }
 
 // getRoot returns the STS root.  It will use $STS_DATA and fall back to the directory
@@ -52,19 +54,24 @@ func InitPath(root string, path string, isdir bool) string {
 
 type app struct {
 	debug    bool
+	once     bool
 	mode     string
 	root     string
 	confPath string
 	conf     *Conf
 	in       *AppIn
 	out      []*AppOut
+	inStop   chan<- bool
+	inDone   <-chan bool
+	outStop  map[chan<- bool]<-chan bool
 }
 
 func newApp() *app {
 	// Initialize command line arguments
 	help := flag.Bool("help", false, "Print the help message")
 	debug := flag.Bool("debug", false, "Log program flow")
-	mode := flag.String("mode", "", "Mode: 'send' or 'receive'")
+	mode := flag.String("mode", "send", "Mode: 'send' or 'receive' or 'both'")
+	loop := flag.Bool("loop", false, "Run in a loop (applies to send mode only)")
 	confPath := flag.String("conf", "", "Configuration file path")
 
 	// Parse command line
@@ -76,42 +83,51 @@ func newApp() *app {
 		os.Exit(1)
 	}
 
-	// Parse configuration and initialize directories
-	if *confPath == "" {
-		*confPath = filepath.Join(getRoot(), "conf", "dist."+*mode+".yaml")
+	a := &app{
+		debug:    *debug,
+		mode:     strings.ToLower(*mode),
+		once:     !*loop,
+		confPath: *confPath,
+		root:     getRoot(),
 	}
-	conf, err := NewConf(*confPath)
+
+	// Parse configuration
+	if a.confPath == "" {
+		a.confPath = filepath.Join(getRoot(), "conf", "dist."+a.mode+".yaml")
+	}
+	conf, err := NewConf(a.confPath)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to parse configuration: %s\n%s", *confPath, err.Error()))
 	}
+	a.conf = conf
 
-	a := &app{
-		debug:    *debug,
-		mode:     *mode,
-		confPath: *confPath,
-		conf:     conf,
-		root:     getRoot(),
-	}
 	return a
 }
 
-func (a *app) start() {
-	if a.mode == "receive" || a.mode == "" {
-		a.startIn()
-	}
-	if a.mode == "send" || a.mode == "" {
-		a.startOut()
-	}
+func (a *app) run() {
+	a.startIn()
+	a.startOut(a.once)
 
-	// TODO: Add mechanism for graceful shutdown by sending "empty" data down the input channels
-	// signaling to channel listeners to stop listening.  See documentation on Go pipelines.
-	for {
-		// This is a daemon, so keep on running.
-		time.Sleep(5 * time.Second)
+	if !a.once { // Run until we get a signal to shutdown.
+		sc := make(chan os.Signal, 1)
+		signal.Notify(sc, os.Interrupt)
+
+		logging.Debug("Waiting for signal...")
+
+		<-sc // Block until we get a signal.
+
+		// Shutdown gracefully.
+		a.stopOut()
 	}
+	a.doneOut()
+	a.stopIn()
+	a.doneIn()
 }
 
 func (a *app) startIn() {
+	if a.mode != "receive" && a.mode != "both" {
+		return
+	}
 	if a.conf.Receive == nil || a.conf.Receive.Dirs == nil || a.conf.Receive.Server == nil {
 		panic("Missing required RECEIVER configuration")
 	}
@@ -120,22 +136,61 @@ func (a *app) startIn() {
 		root:    a.root,
 		rawConf: a.conf.Receive,
 	}
-	a.in.Start()
+	stop := make(chan bool)
+	a.inStop = stop
+	a.inDone = a.in.Start(stop)
 	time.Sleep(1 * time.Second) // Give it time to start the server.
 }
 
-func (a *app) startOut() {
+func (a *app) stopIn() {
+	if a.inStop != nil {
+		a.inStop <- true
+	}
+}
+
+func (a *app) doneIn() {
+	if a.inDone != nil {
+		<-a.inDone
+	}
+}
+
+func (a *app) startOut(once bool) {
+	if a.mode != "send" && a.mode != "both" {
+		return
+	}
 	if a.conf.Send == nil || a.conf.Send.Sources == nil || len(a.conf.Send.Sources) < 1 {
 		panic("Missing required SENDER configuration")
 	}
 	logging.Init([]string{logging.Send, logging.Msg}, InitPath(a.root, a.conf.Send.Dirs.Logs, true), a.debug)
+	a.outStop = make(map[chan<- bool]<-chan bool)
 	for _, source := range a.conf.Send.Sources {
 		out := &AppOut{
 			root:    a.root,
 			dirConf: a.conf.Send.Dirs,
 			rawConf: source,
 		}
-		out.Start()
+		c := make(chan bool)
+		if once {
+			a.outStop[c] = out.Start(nil)
+		} else {
+			a.outStop[c] = out.Start(c)
+		}
 		a.out = append(a.out, out)
+	}
+}
+
+func (a *app) stopOut() {
+	if a.outStop != nil {
+		for stop := range a.outStop {
+			stop <- true
+		}
+	}
+}
+
+func (a *app) doneOut() {
+	if a.outStop != nil {
+		for _, done := range a.outStop {
+			<-done
+		}
 	}
 }

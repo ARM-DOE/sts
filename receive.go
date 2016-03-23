@@ -48,21 +48,32 @@ func NewReceiver(conf *ReceiverConf, f *Finalizer) *Receiver {
 }
 
 // Serve starts HTTP server.
-func (rcv *Receiver) Serve() {
+func (rcv *Receiver) Serve(stop <-chan bool) {
 	http.HandleFunc("/data", rcv.routeData)
 	http.HandleFunc("/validate", rcv.routeValidate)
 	http.HandleFunc("/partials", rcv.routePartials)
 
-	var err error
-	addr := fmt.Sprintf(":%d", rcv.Conf.Port)
-	if rcv.Conf.TLSCert != "" && rcv.Conf.TLSKey != "" {
-		_, err = httputils.ServeTLS(addr, rcv.Conf.TLSCert, rcv.Conf.TLSKey)
-	} else {
-		_, err = httputils.Serve(addr)
-	}
-	if err != nil {
-		panic(err.Error())
-	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func(wg *sync.WaitGroup, port int, cert, key string) {
+		defer wg.Done()
+		addr := fmt.Sprintf(":%d", port)
+		var err error
+		if cert != "" && key != "" {
+			err = httputils.ListenAndServeTLS(addr, cert, key, nil)
+		} else {
+			err = httputils.ListenAndServe(addr, nil)
+		}
+		// According to:
+		// https://golang.org/pkg/net/http/#Server.Serve
+		// ...Serve() always returns a non-nil error.  I guess we'll ignore.
+		if err != nil {
+			// panic(err)
+		}
+	}(&wg, rcv.Conf.Port, rcv.Conf.TLSCert, rcv.Conf.TLSKey)
+	<-stop
+	httputils.Close()
+	wg.Wait()
 }
 
 func (rcv *Receiver) getLock(path string) *sync.Mutex {
@@ -166,7 +177,15 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rcv *Receiver) initStageFile(filePath string, size int64) {
-	if _, err := os.Stat(filePath + CompExt); os.IsNotExist(err) {
+	lock := rcv.getLock(filePath)
+	lock.Lock()
+	defer lock.Unlock()
+	var err error
+	info, err := os.Stat(filePath + PartExt)
+	if !os.IsNotExist(err) && info.Size() == size {
+		return
+	}
+	if _, err = os.Stat(filePath + CompExt); os.IsNotExist(err) {
 		logging.Debug("RECEIVE Removing Stale Companion:", filePath+CompExt)
 		os.Remove(filePath + CompExt)
 	}
@@ -193,14 +212,8 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 
 	path := filepath.Join(rcv.Conf.StageDir, source, pr.Meta.Path)
 	hash := fileutils.NewMD5()
-	lock := rcv.getLock(path)
 
-	lock.Lock()
-	_, err = os.Stat(path + PartExt)
-	if os.IsNotExist(err) {
-		rcv.initStageFile(path, pr.Meta.FileSize)
-	}
-	lock.Unlock()
+	rcv.initStageFile(path, pr.Meta.FileSize)
 
 	// Read the part and write it to the right place in the staged "partial"
 	fh, err := os.OpenFile(path+PartExt, os.O_WRONLY, 0600)
@@ -230,6 +243,7 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 	}
 
 	// Make sure we're the only one updating the companion
+	lock := rcv.getLock(path)
 	lock.Lock()
 	defer lock.Unlock()
 

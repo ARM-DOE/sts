@@ -20,12 +20,25 @@ const ConfirmFailed = 1
 // ConfirmPassed is the indicator that file confirmation succeeded.
 const ConfirmPassed = 2
 
-// Poller continually asks the receiver to confirm that files allocated as -1 were successfully
-// assembled. Broker constantly feeds Poller new files while allocating bins.
+// Poller continually asks the receiver to confirm that files allocated as -1 were
+// successfully assembled. Broker constantly feeds Poller new files while allocating
+// bins.
 type Poller struct {
 	Files  map[string]*pollFile
 	client *http.Client
 	conf   *SenderConf
+}
+
+// PollerChan is the struct used to house the channels in support of flow
+// through the poller.
+type PollerChan struct {
+	In   <-chan []SendFile
+	Fail chan<- []SendFile
+	Done []chan<- []DoneFile
+
+	// Need a separate stop indicator rather than the closing of the "in" channel
+	// because of the looping nature of this component.
+	Stop <-chan bool
 }
 
 // Implements PollFile and DoneFile interfaces
@@ -47,6 +60,10 @@ func (f *pollFile) GetStarted() int64 {
 	return f.time.UnixNano()
 }
 
+func (f *pollFile) GetSuccess() bool {
+	return !f.time.IsZero()
+}
+
 // NewPoller creates a new Poller instance with all default variables instantiated.
 func NewPoller(conf *SenderConf) *Poller {
 	p := &Poller{}
@@ -60,28 +77,56 @@ func NewPoller(conf *SenderConf) *Poller {
 	return p
 }
 
-// Start runs the poller in a loop and operates on the input channels.
-func (poller *Poller) Start(inChan chan []SendFile, failChan chan SendFile, doneChan []chan []DoneFile) {
+// Start runs the poller and goes until we get input on the stop channel.
+func (poller *Poller) Start(ch *PollerChan) {
 	var t time.Time
 	var err error
 	fail := []SendFile{}
 	poll := []PollFile{}
-	done := make([][]DoneFile, len(doneChan))
+	done := make([][]DoneFile, len(ch.Done))
+	loop := 0
 	pause := time.Millisecond * 100
 	for {
+		select {
+		// We needed a way to communicate shutdown without closing the main input channel because the poller
+		// operates on a loop with failed files.
+		case s, ok := <-ch.Stop:
+			if s || !ok {
+				ch.Stop = nil // Select will always drop to default (starting next iteration).
+			}
+		default:
+			// If we got the shutdown signal that means everything is in our court.
+			// So if we have nothing in the queue and nothing looped back for a resend, then we're done.
+			if ch.Stop == nil && len(poller.Files) == 0 && loop == 0 {
+				empty := true
+				for i, dc := range ch.Done {
+					if len(done[i]) > 0 {
+						empty = false
+						continue
+					}
+					close(dc)
+				}
+				if empty {
+					close(ch.Fail)
+					return
+				}
+			}
+			break
+		}
 		time.Sleep(pause) // To keep from thrashing
 		for {
-			for len(fail) > 0 { // Send out any failed.
+			if len(fail) > 0 { // Send out any failed.
+				if ch.Stop == nil {
+					loop += len(fail) // Remember how many are in the loop so we know when to shutdown.
+				}
 				select {
-				case failChan <- fail[0]:
-					fail = fail[1:]
-					continue
+				case ch.Fail <- fail:
+					fail = []SendFile{}
 				default:
 					break
 				}
-				break
 			}
-			for i, dc := range doneChan { // Send out any done.
+			for i, dc := range ch.Done { // Send out any done.
 				if len(done[i]) > 0 {
 					select {
 					case dc <- done[i]:
@@ -92,8 +137,22 @@ func (poller *Poller) Start(inChan chan []SendFile, failChan chan SendFile, done
 				}
 			}
 			select {
-			case files := <-inChan: // Get incoming.
+			case files, ok := <-ch.In: // Get incoming.
+				if !ok {
+					// Shouldn't ever get here since incoming channel should be open
+					// until loop channel closed, which only happens [above] just before
+					// returning.  But leaving it here for completeness' sake.
+					ch.In = nil
+					break
+				}
 				for _, file := range files {
+					if file.GetCancel() {
+						df := &pollFile{file: file}
+						for i := range done {
+							done[i] = append(done[i], df)
+						}
+						continue
+					}
 					poller.addFile(file)
 				}
 				continue
@@ -116,6 +175,9 @@ func (poller *Poller) Start(inChan chan []SendFile, failChan chan SendFile, done
 			continue
 		}
 		f, d, err = poller.Poll(poll)
+		if loop > 0 {
+			loop -= len(d) // Offset the loop counter so we know when the "retry" loop is empty.
+		}
 		fail = append(fail, f...)
 		for i := range done {
 			done[i] = append(done[i], d...)

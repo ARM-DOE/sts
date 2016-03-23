@@ -1,7 +1,6 @@
 package httputils
 
 import (
-	"crypto/rand"
 	"crypto/tls"
 	"net"
 	"net/http"
@@ -15,43 +14,43 @@ var gCertLock sync.RWMutex
 var gHosts map[string]string
 var gHostLock sync.RWMutex
 
-// ServeTLS starts a secure HTTP server based on the provided address and cert paths.
-func ServeTLS(addr string, certPath string, keyPath string) (net.Listener, error) {
-	cert, err := loadCert(certPath, keyPath)
-	if err != nil {
-		return nil, err
+// DefaultServer is the default Server used by the functions in this
+// package. It's used as to simplify using the graceful server.
+var DefaultServer *Server
+
+// ListenAndServe listens on the TCP network address addr using the
+// DefaultServer. If the handler is nil, http.DefaultServeMux is used.
+func ListenAndServe(addr string, handler http.Handler) error {
+	h := handler
+	if h == nil {
+		h = http.DefaultServeMux
 	}
-	tlsConfig := tls.Config{
-		Certificates:       []tls.Certificate{cert},
-		ClientAuth:         tls.RequireAnyClientCert,
-		InsecureSkipVerify: true} // Remove this in production - for self-signed keys
-	tlsConfig.Rand = rand.Reader
-	// Setup SSL server
-	server := http.Server{}
-	server.Addr = addr
-	listener, err := tls.Listen("tcp", server.Addr, &tlsConfig)
-	if err != nil {
-		return nil, err
+	if DefaultServer == nil {
+		DefaultServer = NewServer(&http.Server{Addr: addr, Handler: h})
 	}
-	// Start serving requests
-	go server.Serve(listener)
-	return listener, nil
+	return DefaultServer.ListenAndServe()
 }
 
-// Serve starts a regular HTTP server based on the provided address.
-func Serve(addr string) (net.Listener, error) {
-	server := http.Server{}
-	server.Addr = addr
-	listener, err := net.Listen("tcp", server.Addr)
-	if err != nil {
-		return nil, err
+// ListenAndServeTLS acts identically to ListenAndServe except that is
+// expects HTTPS connections using the given certificate and key.
+func ListenAndServeTLS(addr, certFile, keyFile string, handler http.Handler) error {
+	h := handler
+	if h == nil {
+		h = http.DefaultServeMux
 	}
-	go server.Serve(listener)
-	return listener, nil
+	if DefaultServer == nil {
+		DefaultServer = NewServer(&http.Server{Addr: addr, Handler: h})
+	}
+	return DefaultServer.ListenAndServeTLS(certFile, keyFile)
+}
+
+// Close gracefully shuts down the DefaultServer.
+func Close() error {
+	return DefaultServer.Close()
 }
 
 // GetClient returns a secure http.Client instance pointer based on cert paths.
-func GetClient(clientCertPath string, clientKeyPath string) (*http.Client, error) {
+func GetClient(clientCertPath, clientKeyPath string) (*http.Client, error) {
 	var tlsConfig tls.Config
 	if clientCertPath != "" && clientKeyPath != "" {
 		cert, err := loadCert(clientCertPath, clientKeyPath)
@@ -60,7 +59,8 @@ func GetClient(clientCertPath string, clientKeyPath string) (*http.Client, error
 		}
 		tlsConfig = tls.Config{
 			Certificates:       []tls.Certificate{cert},
-			InsecureSkipVerify: true} // Remove this in production - for self-signed keys
+			InsecureSkipVerify: true, // TODO: Get real certs.
+		}
 	} else {
 		tlsConfig = tls.Config{}
 	}
@@ -93,6 +93,114 @@ func GetHostname(r *http.Request) string {
 	host := strings.TrimSuffix(hosts[0], ".")
 	gHosts[ip] = host
 	return host
+}
+
+// Server is net/http compatible graceful server.
+// https://github.com/icub3d/graceful/blob/master/graceful.go
+type Server struct {
+	s  *http.Server
+	wg sync.WaitGroup
+	l  net.Listener
+}
+
+// NewServer turns the given net/http server into a graceful server.
+func NewServer(srv *http.Server) *Server {
+	return &Server{
+		s: srv,
+	}
+}
+
+// ListenAndServe works like net/http.Server.ListenAndServe except
+// that it gracefully shuts down when Close() is called. When that
+// occurs, no new connections will be allowed and existing connections
+// will be allowed to finish. This will not return until all existing
+// connections have closed.
+func (s *Server) ListenAndServe() error {
+	addr := s.s.Addr
+	if addr == "" {
+		addr = ":http"
+	}
+	var err error
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	return s.Serve(l)
+}
+
+// ListenAndServeTLS works like ListenAndServe but with TLS using the
+// given cert and key files.
+func (s *Server) ListenAndServeTLS(certFile, keyFile string) error {
+	addr := s.s.Addr
+	if addr == "" {
+		addr = ":https"
+	}
+	config := &tls.Config{}
+	if s.s.TLSConfig != nil {
+		*config = *s.s.TLSConfig
+	}
+	if config.NextProtos == nil {
+		config.NextProtos = []string{"http/1.1"}
+	}
+	cert, err := loadCert(certFile, keyFile)
+	if err != nil {
+		return err
+	}
+	config.Certificates = []tls.Certificate{cert}
+	config.InsecureSkipVerify = true // TODO: Get real certs.
+	l, err := tls.Listen("tcp", addr, config)
+	if err != nil {
+		return err
+	}
+	return s.Serve(l)
+}
+
+// Serve works like ListenAndServer but using the given listener.
+func (s *Server) Serve(l net.Listener) error {
+	s.l = l
+	err := s.s.Serve(&gracefulListener{s.l, s})
+	s.wg.Wait()
+	return err
+}
+
+// Close gracefully shuts down the listener. This should be called
+// when the server should stop listening for new connection and finish
+// any open connections.
+func (s *Server) Close() error {
+	err := s.l.Close()
+	return err
+}
+
+// gracefulListener implements the net.Listener interface. When accept
+// for the underlying listener returns a connection, it adds 1 to the
+// servers wait group. The connection will be a gracefulConn which
+// will call Done() when it finished.
+type gracefulListener struct {
+	net.Listener
+	s *Server
+}
+
+func (g *gracefulListener) Accept() (net.Conn, error) {
+	c, err := g.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	g.s.wg.Add(1)
+	return &gracefulConn{Conn: c, s: g.s}, nil
+}
+
+// gracefulConn implements the net.Conn interface. When it closes, it
+// calls Done() on the servers waitgroup.
+type gracefulConn struct {
+	net.Conn
+	s    *Server
+	once sync.Once
+}
+
+func (g *gracefulConn) Close() error {
+	err := g.Conn.Close()
+	g.once.Do(g.s.wg.Done)
+	return err
 }
 
 func loadCert(certPath string, keyPath string) (tls.Certificate, error) {

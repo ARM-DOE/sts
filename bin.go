@@ -52,7 +52,6 @@ type Bin struct {
 	Parts     []*Part // All the instances of Part that the Bin contains
 	Bytes     int64   // Maximum amount of bytes that the Bin is able to store
 	BytesLeft int64   // Unallocated bytes in the Bin
-	Path      string  // Path to cached bin on disk
 }
 
 // NewBin creates a new Bin reference.
@@ -84,6 +83,31 @@ func (bin *Bin) Add(file SendFile) bool {
 	}
 
 	return false
+}
+
+// Validate loops over the bin parts and extracts (removes) any changed or otherwise problem files
+// and returns them (after setting them to canceled).
+func (bin *Bin) Validate() []SendFile {
+	var pass []*Part
+	var fail []SendFile
+	b := int64(0)
+	for _, p := range bin.Parts {
+		if p.File.GetCancel() { // If another part of this file was already canceled.
+			fail = append(fail, p.File)
+			continue
+		}
+		changed, err := p.File.Stat()
+		if changed || err != nil {
+			p.File.SetCancel(true)
+			fail = append(fail, p.File)
+			continue
+		}
+		pass = append(pass, p)
+		b += p.End - p.Beg
+	}
+	bin.Parts = pass
+	bin.Bytes = b
+	return fail
 }
 
 // BinEncoder is the interface for encoing a bin.

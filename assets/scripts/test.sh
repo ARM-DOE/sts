@@ -9,18 +9,21 @@ exe="$GOPATH/bin/sts"
 conf="$PWD/$basedir/../dist.conf.yaml"
 debug="--debug"
 
-if [[ ! -n $1 ]] || [[ $1 ==  "send" ]]; then
+if [ -z "$1"] || ["z$1" ==  "zboth"]; then
+    echo "Cleaning up data..."
     rm -rf $STS_DATA/.sts
     rm -rf $STS_DATA/data
     # cp -rp $STS_DATA/test/.sts $STS_DATA/
     # cp -rp $STS_DATA/test/data $STS_DATA/
+    echo "Making new data..."
     $PWD/$basedir/makedata.py
+    sleep 1
 fi
 
-if [ -n $1 ]; then
-    $exe $debug --conf=$conf 2>&1 &
+if [ -z $1 ]; then
+    $exe $debug --conf=$conf --mode=both
 else
-    $exe $debug --conf=$conf --mode=$1 2>&1 &
+    $exe $debug --conf=$conf --mode=$1
 fi
 
 # sleep 8

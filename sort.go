@@ -83,6 +83,10 @@ func (file *sortedFile) GetTime() int64 {
 	return file.file.GetTime()
 }
 
+func (file *sortedFile) Reset() (bool, error) {
+	return file.file.Reset()
+}
+
 func (file *sortedFile) GetGroup() string {
 	return file.group
 }
@@ -162,15 +166,22 @@ func NewSorter(tagData []*Tag, groupBy *regexp.Regexp) *Sorter {
 }
 
 // Start starts the daemon that listens for files on inChan and doneChan and puts files on outChan.
-func (sorter *Sorter) Start(inChan chan []ScanFile, outChan chan SortFile, doneChan chan []DoneFile) {
+func (sorter *Sorter) Start(inChan <-chan []ScanFile, outChan chan<- SortFile, doneChan <-chan []DoneFile) {
 	for {
 		select {
-		case foundFiles := <-inChan:
+		case foundFiles, ok := <-inChan:
+			if !ok {
+				inChan = nil
+				break
+			}
 			for _, foundFile := range foundFiles {
 				logging.Debug("SORT File In:", foundFile.GetRelPath())
 				sorter.Add(foundFile)
 			}
-		case doneFiles := <-doneChan:
+		case doneFiles, ok := <-doneChan:
+			if !ok {
+				return // doneChan closed; we can exit now.
+			}
 			for _, doneFile := range doneFiles {
 				logging.Debug("SORT File Done:", doneFile.GetRelPath())
 				sorter.Done(doneFile)
@@ -186,6 +197,9 @@ func (sorter *Sorter) Start(inChan chan []ScanFile, outChan chan SortFile, doneC
 				default:
 					continue
 				}
+			} else if inChan == nil && outChan != nil {
+				close(outChan) // Only close once there are no more in the queue.
+				outChan = nil
 			}
 			time.Sleep(100 * time.Millisecond) // To avoid thrashing.
 			break
@@ -343,7 +357,7 @@ func (sorter *Sorter) Done(file DoneFile) {
 		grp := sorter.getGroupConf(sorter.getGroup(file.GetRelPath()))
 		del = grp.Delete
 	}
-	if del {
+	if del && file.GetSuccess() {
 		logging.Debug("SORT Delete:", file.GetPath())
 		err := os.Remove(file.GetPath())
 		if err != nil {

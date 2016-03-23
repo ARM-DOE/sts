@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync"
 	"time"
 
+	"github.com/ARM-DOE/sts/fileutils"
 	"github.com/ARM-DOE/sts/httputils"
 	"github.com/ARM-DOE/sts/logging"
 )
@@ -20,14 +22,15 @@ type AppOut struct {
 	dirConf  *SendDirs
 	rawConf  *SendSource
 	conf     *SenderConf
+	once     bool
 	scanChan chan []ScanFile
 	sortChan chan SortFile
-	sendChan chan SendFile
+	loopChan chan []SendFile
 	pollChan chan []SendFile
 	doneChan []chan []DoneFile
 	scanner  *Scanner
 	sorter   *Sorter
-	senders  []*Sender
+	sender   *Sender
 	poller   *Poller
 }
 
@@ -51,6 +54,7 @@ func (a *AppOut) setDefaults() {
 
 func (a *AppOut) initConf() {
 	a.conf = &SenderConf{
+		Threads:      a.rawConf.Threads,
 		Compress:     a.rawConf.Compress,
 		SourceName:   a.rawConf.Name,
 		TargetName:   a.rawConf.Target.Name,
@@ -84,7 +88,7 @@ func (a *AppOut) initConf() {
 func (a *AppOut) initComponents() {
 	a.scanChan = make(chan []ScanFile, 1) // One batch at a time.
 	a.sortChan = make(chan SortFile, a.rawConf.Threads*2)
-	a.sendChan = make(chan SendFile, a.rawConf.Threads*2)
+	a.loopChan = make(chan []SendFile, a.rawConf.Threads*2)
 	a.pollChan = make(chan []SendFile, a.rawConf.Threads*2)
 	a.doneChan = []chan []DoneFile{
 		make(chan []DoneFile, a.rawConf.Threads*2),
@@ -96,6 +100,7 @@ func (a *AppOut) initComponents() {
 
 	a.scanner = NewScanner(outDir, cacheDir, time.Second*5, a.rawConf.MinAge, true, 0)
 	a.sorter = NewSorter(a.rawConf.Tags, a.rawConf.GroupBy)
+	a.sender = NewSender(a.conf)
 	a.poller = NewPoller(a.conf)
 
 	for _, tag := range a.rawConf.Tags {
@@ -105,10 +110,6 @@ func (a *AppOut) initComponents() {
 		if tag.Method == MethodNone || tag.Method == MethodDisk {
 			a.scanner.AddIgnore(tag.Pattern)
 		}
-	}
-
-	for i := 0; i < a.rawConf.Threads; i++ {
-		a.senders = append(a.senders, NewSender(a.conf))
 	}
 }
 
@@ -164,14 +165,11 @@ func (a *AppOut) getRecoverable() (send []ScanFile, poll []PollFile, err error) 
 		if found {
 			// Partially sent.  Need to gracefully recover.
 			rf := &partialFile{
-				path:    file.GetPath(),
-				relPath: file.GetRelPath(),
-				size:    file.GetSize(),
-				time:    file.GetTime(),
-				hash:    cmp.Hash,
-				prev:    cmp.PrevFile,
-				alloc:   [][2]int64{},
-				sent:    0,
+				file:  file,
+				hash:  cmp.Hash,
+				prev:  cmp.PrevFile,
+				alloc: [][2]int64{},
+				sent:  0,
 			}
 			for _, p := range cmp.Parts {
 				rf.addAllocPart(p.Beg, p.End)
@@ -228,7 +226,12 @@ func (a *AppOut) recover() {
 }
 
 // Start initializes and starts the outbound components.
-func (a *AppOut) Start() {
+// If the "stop" channel is nil then we should only run once (on a single scan).
+func (a *AppOut) Start(stop <-chan bool) <-chan bool {
+	if stop == nil {
+		a.once = true // Not really using this yet but seemed like a good idea.
+	}
+
 	// Validate configuration and set defaults.
 	a.initConf()
 
@@ -238,19 +241,71 @@ func (a *AppOut) Start() {
 	// Recover any unfinished business from last run.
 	a.recover()
 
-	// Start the sender threads.
-	for _, sender := range a.senders {
-		go sender.StartPrep(a.sortChan, a.sendChan)
-		go sender.StartSend(a.sendChan, a.pollChan)
+	var wg sync.WaitGroup
+	wg.Add(4) // One for each component.
+
+	// Need to make a separate array for the write-only references to the done channels sent to the poller.
+	var dc []chan<- []DoneFile
+	for _, c := range a.doneChan {
+		dc = append(dc, c)
 	}
 
-	// Start the other component threads.
-	go a.poller.Start(a.pollChan, a.sendChan, a.doneChan[:len(a.doneChan)])
-	go a.sorter.Start(a.scanChan, a.sortChan, a.doneChan[0])
-	go a.scanner.Start(a.scanChan, a.doneChan[1])
+	pollStop := make(chan bool)
+
+	// Start the poller.
+	go func(poller *Poller, in <-chan []SendFile, fail chan<- []SendFile, stop <-chan bool, out ...chan<- []DoneFile) {
+		defer wg.Done()
+		poller.Start(&PollerChan{
+			In:   in,
+			Fail: fail,
+			Done: out,
+			Stop: stop,
+		})
+	}(a.poller, a.pollChan, a.loopChan, pollStop, dc...)
+
+	// Start the sender.
+	go func(sender *Sender, in <-chan SortFile, loop <-chan []SendFile, close chan<- bool, out ...chan<- []SendFile) {
+		defer wg.Done()
+		sender.Start(&SenderChan{
+			In:    in,
+			Retry: loop,
+			Done:  out,
+			Close: close,
+		})
+	}(a.sender, a.sortChan, a.loopChan, pollStop, a.pollChan)
+
+	// Start the sorter.
+	go func(sorter *Sorter, in <-chan []ScanFile, out chan<- SortFile, done <-chan []DoneFile) {
+		defer wg.Done()
+		sorter.Start(in, out, done)
+	}(a.sorter, a.scanChan, a.sortChan, a.doneChan[0])
+
+	// Start the scanner.
+	var scanStop chan bool
+	if stop != nil {
+		scanStop = make(chan bool)
+	}
+	go func(scanner *Scanner, out chan<- []ScanFile, done <-chan []DoneFile, stop <-chan bool) {
+		defer wg.Done()
+		scanner.Start(out, done, stop)
+	}(a.scanner, a.scanChan, a.doneChan[1], scanStop)
 
 	// Ready.
 	logging.Debug(fmt.Sprintf("SENDER Ready: %s -> %s", a.conf.SourceName, a.conf.TargetName))
+
+	done := make(chan bool)
+	go func(a *AppOut, stop <-chan bool, done chan<- bool) {
+		if stop != nil {
+			<-stop // Block until we're told to stop.
+		}
+		if scanStop != nil {
+			close(scanStop) // Start the chain reaction to stop.
+		}
+		wg.Wait()   // Wait for all goroutines to return.
+		close(done) // Close the done channel to let caller know we're all done.
+	}(a, stop, done)
+
+	return done
 }
 
 // Implements PollFile and DoneFile
@@ -274,30 +329,27 @@ func (f *askFile) GetStarted() int64 {
 
 // Implements RecoverFile
 type partialFile struct {
-	path    string
-	relPath string
-	prev    string
-	size    int64
-	time    int64
-	hash    string
-	alloc   [][2]int64
-	sent    int64
+	file  ScanFile
+	prev  string
+	hash  string
+	alloc [][2]int64
+	sent  int64
 }
 
 func (p *partialFile) GetPath() string {
-	return p.path
+	return p.file.GetPath()
 }
 
 func (p *partialFile) GetRelPath() string {
-	return p.relPath
+	return p.file.GetRelPath()
 }
 
 func (p *partialFile) GetSize() int64 {
-	return p.size
+	return p.file.GetSize()
 }
 
 func (p *partialFile) GetTime() int64 {
-	return p.time
+	return p.file.GetTime()
 }
 
 func (p *partialFile) GetHash() string {
@@ -316,7 +368,7 @@ func (p *partialFile) GetNextAlloc() (int64, int64) {
 		}
 		b = p.alloc[i][1]
 	}
-	return b, p.size
+	return b, p.file.GetSize()
 }
 
 func (p *partialFile) GetBytesAlloc() int64 {
@@ -362,5 +414,13 @@ func (p *partialFile) AddSent(b int64) {
 }
 
 func (p *partialFile) IsSent() bool {
-	return p.sent == p.size
+	return p.sent == p.file.GetSize()
+}
+
+func (p *partialFile) Reset() (changed bool, err error) {
+	changed, err = p.file.Reset()
+	if changed {
+		p.hash, err = fileutils.FileMD5(p.file.GetPath())
+	}
+	return
 }

@@ -93,6 +93,19 @@ func (f *foundFile) GetTime() int64 {
 	return f.Time
 }
 
+func (f *foundFile) Reset() (changed bool, err error) {
+	info, err := os.Stat(f.path)
+	if err != nil {
+		return
+	}
+	if info.Size() != f.Size || info.ModTime().Unix() != f.Time {
+		changed = true
+		f.Size = info.Size()
+		f.Time = info.ModTime().Unix()
+	}
+	return
+}
+
 // ScanFileList is used for sorting ScanFiles.
 type ScanFileList []ScanFile
 
@@ -145,48 +158,83 @@ func (scanner *Scanner) AddIgnore(pattern string) {
 }
 
 // Start starts the daemon that puts files on the outChan and reads from the doneChan.
-func (scanner *Scanner) Start(outChan chan []ScanFile, doneChan chan []DoneFile) {
+// If stopChan is nil, only scan once and trigger shutdown.
+func (scanner *Scanner) Start(outChan chan<- []ScanFile, doneChan <-chan []DoneFile, stopChan <-chan bool) {
 	for {
-		ndone := 0
-		for {
-			select {
-			case doneFiles := <-doneChan:
-				for _, doneFile := range doneFiles {
-					logging.Debug("SCAN File Done:", doneFile.GetPath())
-					scanner.queue.remove(doneFile.GetPath())
-					ndone++
-				}
-				continue
-			default:
+		select {
+		case <-stopChan:
+			stopChan = nil // So we don't get here again.
+		default:
+			if outChan != nil && scanner.out(outChan) > 0 {
 				break
-			}
-			if ndone > 0 && scanner.outOnce {
-				scanner.queue.cache(scanner.cachePath)
 			}
 			time.Sleep(time.Millisecond * 100) // So we don't thrash.
 			break
 		}
-
-		// Make sure it's been long enough for another scan.
-		if scanner.queue.ScanTime > time.Now().Unix()-int64(scanner.delay.Seconds()) {
-			continue
-		}
-
-		files, success := scanner.scan()
-		if !success || len(files) == 0 {
-			continue
-		}
-
-		// Send to outChan.
-		select {
-		case outChan <- files:
-			for _, file := range files {
-				scanner.queue.Files[file.GetPath()].queued = true
+		// Important that we let at least one scan happen becuase if stopChan is passed
+		// in nil, then we just want a single scan.
+		if outChan != nil && stopChan == nil { // We only want to close a channel once.
+			close(outChan)
+			outChan = nil
+			if doneChan == nil {
+				return
 			}
-		default:
-			break
+		}
+		for {
+			n := scanner.done(doneChan)
+			if n < 0 {
+				return // Channel closed; we're done.
+			}
+			if n > 0 {
+				continue // Loop until we have no more.
+			}
+			break // Nothing to do.
 		}
 	}
+}
+
+func (scanner *Scanner) out(ch chan<- []ScanFile) int {
+	// Make sure it's been long enough for another scan.
+	if scanner.queue.ScanTime > time.Now().Unix()-int64(scanner.delay.Seconds()) {
+		return 0
+	}
+
+	files, success := scanner.scan()
+	if !success || len(files) == 0 {
+		return 0
+	}
+
+	// Send to outChan.
+	select {
+	case ch <- files:
+		for _, file := range files {
+			scanner.queue.Files[file.GetPath()].queued = true
+		}
+		return len(files)
+	default:
+		break
+	}
+	return 0
+}
+
+func (scanner *Scanner) done(ch <-chan []DoneFile) int {
+	select {
+	case doneFiles, ok := <-ch:
+		if !ok {
+			return -1
+		}
+		for _, doneFile := range doneFiles {
+			logging.Debug("SCAN File Done:", doneFile.GetPath())
+			scanner.queue.remove(doneFile.GetPath())
+		}
+		if scanner.outOnce {
+			scanner.queue.cache(scanner.cachePath)
+		}
+		return len(doneFiles)
+	default:
+		break
+	}
+	return 0
 }
 
 // GetScanTime returns the last scan time.
@@ -202,7 +250,11 @@ func (scanner *Scanner) GetScanFiles() ScanFileList {
 			continue
 		}
 		if _, err := os.Stat(path); os.IsNotExist(err) {
-			logging.Error("File disappeared:", path)
+			if scanner.outOnce {
+				// Would be strange in a scenario where files are only queued once
+				// for a file to disappear between its first scan and now.
+				logging.Error("File disappeared:", path)
+			}
 			scanner.queue.remove(path)
 			continue
 		}
@@ -218,8 +270,9 @@ func (scanner *Scanner) GetScanFiles() ScanFileList {
 	return files
 }
 
-// SetQueued is for manually marking files as being queued.  This way if code outside this component adds
-// a file to the outgoing channel, it shouldn't happen a second time.
+// SetQueued is for manually marking files as being queued.  This way if code outside
+// this component adds a file to the outgoing channel, it shouldn't happen a second
+// time.
 func (scanner *Scanner) SetQueued(path string) {
 	if f, ok := scanner.queue.Files[path]; ok {
 		logging.Debug("SCAN Set Queued:", path, f.queued)

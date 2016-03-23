@@ -42,7 +42,10 @@ func NewFinalizer(conf *ReceiverConf) *Finalizer {
 // Start starts the finalizer daemon that listens on the provided channel.
 func (f *Finalizer) Start(inChan chan []ScanFile) {
 	for {
-		files := <-inChan
+		files, ok := <-inChan
+		if !ok {
+			return
+		}
 		for _, file := range files {
 			_, err := f.finalize(file)
 			if err != nil {

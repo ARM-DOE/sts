@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/ARM-DOE/sts/fileutils"
@@ -32,7 +33,7 @@ func (a *AppIn) initConf() {
 }
 
 // Start initializes and starts the receiver.
-func (a *AppIn) Start() {
+func (a *AppIn) Start(stop <-chan bool) <-chan bool {
 	a.initConf()
 
 	a.scanChan = make(chan []ScanFile)
@@ -50,9 +51,38 @@ func (a *AppIn) Start() {
 	a.scanner.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(PartExt)))
 	a.scanner.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(CompExt)))
 
-	go a.finalizer.Start(a.scanChan)
-	go a.scanner.Start(a.scanChan, nil)
-	go a.server.Serve()
+	var wg sync.WaitGroup
+	wg.Add(3)
+
+	scanStop := make(chan bool)
+	httpStop := make(chan bool)
+
+	go func(a *AppIn, wg *sync.WaitGroup) {
+		defer wg.Done()
+		a.finalizer.Start(a.scanChan)
+		logging.Debug("IN Finalize Done")
+	}(a, &wg)
+	go func(a *AppIn, wg *sync.WaitGroup, stop <-chan bool) {
+		defer wg.Done()
+		a.scanner.Start(a.scanChan, nil, stop)
+		logging.Debug("IN Scanner Done")
+	}(a, &wg, scanStop)
+	go func(a *AppIn, wg *sync.WaitGroup, stop <-chan bool) {
+		defer wg.Done()
+		a.server.Serve(stop)
+		logging.Debug("IN Server Done")
+	}(a, &wg, httpStop)
 
 	logging.Debug(fmt.Sprintf("RECEIVER Ready: Port %d", a.conf.Port))
+
+	done := make(chan bool)
+	go func(stop <-chan bool, scanStop chan<- bool, done chan<- bool) {
+		<-stop
+		logging.Debug("IN Got Shutdown Signal")
+		close(scanStop)
+		close(httpStop)
+		wg.Wait()
+		close(done)
+	}(stop, scanStop, done)
+	return done
 }

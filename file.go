@@ -6,16 +6,19 @@ type ScanFile interface {
 	GetRelPath() string
 	GetSize() int64
 	GetTime() int64
+	Reset() (bool, error)
 }
 
 // SortFile is the interface for a file as needed for sorting.
 // Implements ScanFile.
 type SortFile interface {
-	GetOrigFile() ScanFile
 	GetPath() string
 	GetRelPath() string
 	GetSize() int64
 	GetTime() int64
+	Reset() (bool, error)
+
+	GetOrigFile() ScanFile
 	GetGroup() string
 	GetNext() SortFile
 	GetPrev() SortFile
@@ -32,6 +35,8 @@ type SendFile interface {
 	GetRelPath() string
 	GetSize() int64
 	GetTime() int64
+	Reset() (bool, error)
+
 	GetHash() string
 	GetPrevName() string
 	GetStarted() int64 // Expects UnixNano
@@ -42,6 +47,9 @@ type SendFile interface {
 	AddSent(int64)
 	TimeMs() int64
 	IsSent() bool
+	SetCancel(bool)
+	GetCancel() bool
+	Stat() (bool, error)
 }
 
 // RecoverFile is a partial duplicate of SendFile and will be the underlying file reference
@@ -53,6 +61,8 @@ type RecoverFile interface {
 	GetRelPath() string
 	GetSize() int64
 	GetTime() int64
+	Reset() (bool, error)
+
 	GetHash() string
 	GetPrevName() string
 	GetNextAlloc() (int64, int64)
@@ -73,6 +83,7 @@ type PollFile interface {
 type DoneFile interface {
 	GetPath() string
 	GetRelPath() string
+	GetSuccess() bool
 }
 
 // ConfirmFile is used by both the poller and receiver for validating full-file
