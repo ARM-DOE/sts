@@ -185,7 +185,7 @@ func (rcv *Receiver) initStageFile(filePath string, size int64) {
 	if !os.IsNotExist(err) && info.Size() == size {
 		return
 	}
-	if _, err = os.Stat(filePath + CompExt); os.IsNotExist(err) {
+	if _, err = os.Stat(filePath + CompExt); !os.IsNotExist(err) {
 		logging.Debug("RECEIVE Removing Stale Companion:", filePath+CompExt)
 		os.Remove(filePath + CompExt)
 	}
@@ -223,14 +223,15 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 	fh.Seek(pr.Meta.Beg, 0)
 	logging.Debug("RECEIVE Seek:", pr.Meta.Path, pr.Meta.Beg)
 	bytes := make([]byte, hash.BlockSize)
-	var nb int
+	var n int
 	wrote := 0
 	for {
 		// The number of bytes read can often be less than the size of the passed buffer.
-		nb, err = pr.Read(bytes)
-		wrote += nb
-		hash.Update(bytes[0:nb])
-		fh.Write(bytes[0:nb])
+		n, err = pr.Read(bytes)
+		// logging.Debug("RECEIVE Bytes Read", n, path, (pr.Meta.End-pr.Meta.Beg)-int64(wrote))
+		wrote += n
+		hash.Update(bytes[:n])
+		fh.Write(bytes[:n])
 		if err != nil {
 			logging.Debug("RECEIVE:", err.Error())
 			break
@@ -266,6 +267,6 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 		}
 		logging.Debug("RECEIVE File Done:", path)
 	}
-	logging.Debug("RECEIVE Park OK:", path)
+	logging.Debug("RECEIVE Part OK:", path)
 	return nil
 }

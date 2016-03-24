@@ -80,7 +80,7 @@ func (a *AppOut) initConf() {
 		panic("TLS enabled but missing either TLSCert or TLSKey")
 	}
 	if a.rawConf.GroupBy.String() == "" {
-		a.rawConf.GroupBy, _ = regexp.Compile(`^([\.]*)\.`) // Default is up to the first dot of the relative path.
+		a.rawConf.GroupBy, _ = regexp.Compile(`^([^\.]*)`) // Default is up to the first dot of the relative path.
 	}
 	a.setDefaults()
 }

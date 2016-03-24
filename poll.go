@@ -92,6 +92,7 @@ func (poller *Poller) Start(ch *PollerChan) {
 		// operates on a loop with failed files.
 		case s, ok := <-ch.Stop:
 			if s || !ok {
+				logging.Debug("POLL Got Shutdown Signal")
 				ch.Stop = nil // Select will always drop to default (starting next iteration).
 			}
 		default:
@@ -116,11 +117,13 @@ func (poller *Poller) Start(ch *PollerChan) {
 		time.Sleep(pause) // To keep from thrashing
 		for {
 			if len(fail) > 0 { // Send out any failed.
+				logging.Debug("POLL Failed:", len(fail))
 				if ch.Stop == nil {
 					loop += len(fail) // Remember how many are in the loop so we know when to shutdown.
 				}
 				select {
 				case ch.Fail <- fail:
+					logging.Debug("POLL Looping Back:", len(fail))
 					fail = []SendFile{}
 				default:
 					break

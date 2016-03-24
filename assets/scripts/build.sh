@@ -11,7 +11,7 @@ if [ -f $GOPATH/bin/sts ]
   then
     echo "-- Cleaning old build"
     rm $GOPATH/bin/sts
-    rm -r $GOPATH/pkg
+    rm -rf $GOPATH/pkg
 fi
 
 echo "-- Preparing"

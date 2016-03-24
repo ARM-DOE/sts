@@ -152,7 +152,7 @@ func (f *sendFile) IsSent() bool {
 
 func (f *sendFile) Stat() (bool, error) {
 	f.lock.Lock()
-	defer f.lock.RUnlock()
+	defer f.lock.Unlock()
 	return f.file.GetOrigFile().Reset()
 }
 
@@ -380,6 +380,7 @@ func (sender *Sender) startRebin(wg *sync.WaitGroup) {
 		}
 		var cancel []SendFile
 		for _, sf := range f {
+			logging.Debug("SEND Resend:", sf.GetRelPath())
 			// If we need to resend a file, let's make sure it hasn't changed...
 			changed, err := sf.Reset()
 			if err != nil {

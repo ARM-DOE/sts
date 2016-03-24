@@ -112,7 +112,8 @@ func (f *Finalizer) finalize(file ScanFile) (bool, error) {
 	if hash != cmp.Hash {
 		f.toCache(cmp.SourceName, file, false)
 		cmp.Delete()
-		return false, fmt.Errorf("Failed validation: %s", file.GetRelPath())
+		os.Remove(file.GetPath())
+		return false, fmt.Errorf("Failed validation: %s", file.GetPath())
 	}
 
 	logging.Debug("FINAL Finalizing", file.GetRelPath())
@@ -122,7 +123,7 @@ func (f *Finalizer) finalize(file ScanFile) (bool, error) {
 	os.MkdirAll(filepath.Dir(finalPath), os.ModePerm)
 	err = os.Rename(file.GetPath(), finalPath)
 	if err != nil {
-		return false, fmt.Errorf("Failed to move %s to %s: %s", file.GetRelPath(), finalPath, err.Error())
+		return false, fmt.Errorf("Failed to move %s to %s: %s", file.GetPath(), finalPath, err.Error())
 	}
 
 	// Log it.
