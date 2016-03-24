@@ -5,7 +5,7 @@ SEND: # Outgoing configuration
     logs  : data/log # For log files; appends "outgoing_to/{target}", "messages"
   sources: # Supports multiple sources where omitted entries will inherit from previous sources hierarchically
     - name          : stsout-1 # Name of the source
-      threads       : 4        # Maximum number of concurrent senders
+      threads       : 10       # Maximum number of concurrent connections
       min-age       : 1s       # How old a file must be before being added to the "outgoing" queue
       timeout       : 1h       # The HTTP timeout for a single request
       bin-size      : 1MB      # The generally-desired size for a given HTTP request (BEFORE any compression)
@@ -21,12 +21,16 @@ SEND: # Outgoing configuration
         http-tls-key  : ../client.key  # Client key
       tags: # Tags are for configuration based on file patterns (omitted attributes are inherited)
         - pattern   : DEFAULT # The file "tag" pattern
-          priority  : 5       # Relative importance (higher the number, greater the importance)
+          priority  : 0       # Relative importance (higher the number, greater the importance)
           order     : fifo    # File order (fifo (first in, first out) or none)
           delete    : true    # Whether or not to delete files after reception confirmation
           method    : http    # Transfer method (http)
-        - pattern   : ^xs/
-          method    : none
+        - pattern   : ^info/
+          priority  : 3
+        - pattern   : ^comlogs/
+          priority  : 2
+        - pattern   : ^collection/C1/
+          priority  : 1
 
 RECEIVE: # Incoming configuration.
     dirs: # Incoming directory configuration.

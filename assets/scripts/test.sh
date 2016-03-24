@@ -13,15 +13,17 @@ if [ -z "$1"] || ["z$1" ==  "zboth"]; then
     echo "Cleaning up data..."
     rm -rf $STS_DATA/.sts
     rm -rf $STS_DATA/data
+    mkdir -p $STS_DATA/data/out/stsin-1
+    tar -C $STS_DATA/data/out/stsin-1 -xf $STS_DATA/sts.tar
     # cp -rp $STS_DATA/test/.sts $STS_DATA/
     # cp -rp $STS_DATA/test/data $STS_DATA/
-    echo "Making new data..."
-    $PWD/$basedir/makedata.py
+    # echo "Making new data..."
+    # $PWD/$basedir/makedata.py
     sleep 1
 fi
 
 if [ -z $1 ]; then
-    $exe $debug --conf=$conf --mode=both
+    $exe $debug --conf=$conf --mode=both --loop
 else
     $exe $debug --conf=$conf --mode=$1
 fi
