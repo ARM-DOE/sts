@@ -37,6 +37,9 @@ func NewPart(file SendFile, beg int64, end int64) *Part {
 
 // GetHash uses StreamMD5 to digest the file part and return its MD5.
 func (part *Part) GetHash() (string, error) {
+	if part.Beg == 0 && part.End == part.File.GetSize() && part.File.GetHash() != "" {
+		return part.File.GetHash(), nil
+	}
 	if part.Hash == "" {
 		var err error
 		part.Hash, err = fileutils.PartialMD5(part.File.GetPath(), part.Beg, part.End)
@@ -77,7 +80,7 @@ func (bin *Bin) Add(file SendFile) bool {
 		part := NewPart(file, beg, end)
 		bin.Parts = append(bin.Parts, part)
 		bin.BytesLeft -= bytes
-		logging.Debug("BIN Allocating:", file.GetRelPath(), beg, end)
+		// logging.Debug("BIN Allocating:", file.GetRelPath(), beg, end)
 		file.AddAlloc(bytes)
 		return true
 	}
@@ -134,6 +137,7 @@ type ZBinWriter struct {
 	bw     *BinWriter
 	buff   *bytes.Buffer
 	writer *gzip.Writer
+	n      int
 }
 
 // NewZBinWriter returns a new ZBinWriter instance.
@@ -157,18 +161,35 @@ func (z *ZBinWriter) Read(buff []byte) (n int, err error) {
 		n = int(math.Min(float64(len(buff)), float64(len(z.meta)-z.bytes)))
 		copy(buff, z.meta[z.bytes:n])
 	} else {
-		n, err = z.bw.Read(buff)
+		// We don't want to read the full length because of the possibility that the gzipped
+		// content will actually be slightly larger than the original.  Rare, but happens.
+		if z.n == 0 {
+			z.n = int(math.Ceil(float64(len(buff)) * float64(0.9)))
+		}
+		n, err = z.bw.Read(buff[:z.n])
 		// logging.Debug("BIN Raw Bytes:", n, err)
 		if n > 0 {
 			z.writer.Write(buff[:n])
+			z.writer.Flush()
 		}
-		if err == io.EOF {
+		if z.bw.eop {
+			if z.bw.eob {
+				logging.Debug("BIN End-of-Bin")
+			} else {
+				logging.Debug("BIN End-of-Part")
+			}
 			z.writer.Close() // Close is important so we get the last few bytes.
-			z.writer = nil   // Need to create a new one for each file.
+			z.writer.Reset(z.buff)
 		}
 		bytes := z.buff.Bytes()
 		n = len(bytes)
-		copy(buff[:n], bytes)
+		if n > len(buff) {
+			// TODO: figure out a way to recover from this.
+			err = fmt.Errorf("Bin gzip buffer got overrun by %d bytes", n-len(buff))
+			n = 0
+			return
+		}
+		copy(buff, bytes)
 	}
 	z.bytes += n
 	// logging.Debug("BIN Zip Bytes:", n)
@@ -203,7 +224,8 @@ type BinWriter struct {
 	partIndex    int      // The index of the next Part from bin.Parts
 	partProgress int64    // A sum of the byte counts read from the current file.
 	fh           *os.File // The file handle of the currently open File that corresponds to the Bin Part
-	eof          bool     // Set to true when an EOF is returned so that further calls to read do not cause an error.
+	eop          bool     // Set to true when a part is completely read.
+	eob          bool     // Set to true when when the bin is completely read.
 }
 
 // NewBinWriter returns a new BinWriter instance.
@@ -212,10 +234,7 @@ func NewBinWriter(bin *Bin) *BinWriter {
 		return nil
 	}
 	bw := &BinWriter{}
-	bw.eof = false
 	bw.bin = bin
-	bw.partIndex = 0
-	bw.startNextPart()
 	return bw
 }
 
@@ -224,7 +243,7 @@ func (bw *BinWriter) startNextPart() error {
 		bw.fh.Close()
 	}
 	if bw.partIndex == len(bw.bin.Parts) { // If the file index will cause an error next time it is used for slicing, the Bin is finished processing.
-		bw.eof = true
+		bw.eob = true
 		return nil
 	}
 	var err error
@@ -235,27 +254,36 @@ func (bw *BinWriter) startNextPart() error {
 	if err != nil {
 		return fmt.Errorf("Could not open file %s while writing bin: %s", bw.binPart.File.GetPath(), err.Error())
 	}
-	// logging.Debug("BIN Next Part:", bw.binPart.File.GetRelPath())
+	logging.Debug("BIN Next Part:", bw.binPart.File.GetRelPath(), bw.binPart.Beg)
 	bw.fh.Seek(bw.binPart.Beg, 0)
 	return nil
 }
 
 // Read implements io.Reader and is responsible for reading "parts" of files to the input []byte.
 func (bw *BinWriter) Read(out []byte) (n int, err error) {
-	if bw.eof {
-		// logging.Debug("BIN Done, #Parts:", len(bw.bin.Parts))
-		return 0, io.EOF
-	}
-	// Calculate bytes left
-	// bytesLeft := (bw.binPart.End - bw.binPart.Beg) - bw.partProgress
-	// Read from file
-	n, err = bw.fh.Read(out)
-	// bytesLeft -= int64(n)
-	bw.partProgress += int64(n)
-	// logging.Debug("BIN Bytes Read", n, bw.binPart.File.GetRelPath())
-	if err == io.EOF || n == 0 {
+	if bw.fh == nil {
 		bw.startNextPart()
-		err = nil
+	}
+	bw.eop = false
+	// Calculate bytes left
+	bytesLeft := (bw.binPart.End - bw.binPart.Beg) - bw.partProgress
+	n = len(out)
+	if bytesLeft < int64(n) {
+		// If this part of the file is smaller than the buffer and we're not to the
+		// end of the file yet, we don't want to lose bytes.
+		n = int(bytesLeft)
+	}
+	// Read from file
+	n, err = bw.fh.Read(out[:n])
+	bytesLeft -= int64(n)
+	bw.partProgress += int64(n)
+	// logging.Debug("BIN Bytes Read", n, bw.binPart.File.GetRelPath(), bytesLeft)
+	if err == io.EOF || n == 0 || bytesLeft == 0 {
+		err = bw.startNextPart()
+		bw.eop = true
+		if err == nil && bw.eob {
+			err = io.EOF
+		}
 	}
 	return
 }
