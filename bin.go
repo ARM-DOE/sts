@@ -42,7 +42,7 @@ func (part *Part) GetHash() (string, error) {
 	}
 	if part.Hash == "" {
 		var err error
-		part.Hash, err = fileutils.PartialMD5(part.File.GetPath(), part.Beg, part.End)
+		part.Hash, err = fileutils.PartialMD5(part.File.GetPath(true), part.Beg, part.End)
 		if err != nil {
 			return "", err
 		}
@@ -250,9 +250,9 @@ func (bw *BinWriter) startNextPart() error {
 	bw.partProgress = 0
 	bw.binPart = bw.bin.Parts[bw.partIndex]
 	bw.partIndex++
-	bw.fh, err = os.Open(bw.binPart.File.GetPath())
+	bw.fh, err = os.Open(bw.binPart.File.GetPath(true))
 	if err != nil {
-		return fmt.Errorf("Could not open file %s while writing bin: %s", bw.binPart.File.GetPath(), err.Error())
+		return fmt.Errorf("Could not open file %s while writing bin: %s", bw.binPart.File.GetPath(true), err.Error())
 	}
 	logging.Debug("BIN Next Part:", bw.binPart.File.GetRelPath(), bw.binPart.Beg)
 	bw.fh.Seek(bw.binPart.Beg, 0)

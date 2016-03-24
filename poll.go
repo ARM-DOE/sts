@@ -49,7 +49,7 @@ type pollFile struct {
 }
 
 func (f *pollFile) GetPath() string {
-	return f.file.GetPath()
+	return f.file.GetPath(false)
 }
 
 func (f *pollFile) GetRelPath() string {

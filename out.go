@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sync"
@@ -151,14 +150,13 @@ func (a *AppOut) getRecoverable() (send []ScanFile, poll []PollFile, err error) 
 	}
 	fmap := make(map[string]ScanFile)
 	for _, file := range files {
-		// Make sure size/time still match.  If not, just need to send the whole thing again.
-		info, err := os.Stat(file.GetPath())
+		changed, err := file.Reset()
 		if err != nil {
-			logging.Error("Failed to stat partially sent file:", file.GetPath(), err.Error())
+			logging.Error("Failed to stat partially sent file:", file.GetPath(false), err.Error())
 			continue
 		}
-		if info.Size() != file.GetSize() || info.ModTime().Unix() != file.GetTime() {
-			logging.Debug("RECOVER Ignore Changed File:", file.GetPath())
+		if changed {
+			logging.Debug("RECOVER Ignore Changed File:", file.GetPath(false))
 			continue
 		}
 		cmp, found := pmap[file.GetRelPath()]
@@ -181,7 +179,7 @@ func (a *AppOut) getRecoverable() (send []ScanFile, poll []PollFile, err error) 
 		} else {
 			// Either fully sent or not at all.  Need to poll to find out which.
 			poll = append(poll, &askFile{
-				path:    file.GetPath(),
+				path:    file.GetPath(false),
 				relPath: file.GetRelPath(),
 				start:   file.GetTime() * 1e9, // Expects nanoseconds
 			})
@@ -219,7 +217,7 @@ func (a *AppOut) recover() {
 	}
 	if len(send) > 0 {
 		for _, f := range send {
-			a.scanner.SetQueued(f.GetPath()) // So they don't get added again.
+			a.scanner.SetQueued(f.GetPath(false)) // So they don't get added again.
 		}
 		a.scanChan <- send // Sneakily insert these files into the send queue ahead of everything else.
 	}
@@ -336,8 +334,8 @@ type partialFile struct {
 	sent  int64
 }
 
-func (p *partialFile) GetPath() string {
-	return p.file.GetPath()
+func (p *partialFile) GetPath(follow bool) string {
+	return p.file.GetPath(follow)
 }
 
 func (p *partialFile) GetRelPath() string {
@@ -420,7 +418,7 @@ func (p *partialFile) IsSent() bool {
 func (p *partialFile) Reset() (changed bool, err error) {
 	changed, err = p.file.Reset()
 	if changed {
-		p.hash, err = fileutils.FileMD5(p.file.GetPath())
+		p.hash, err = fileutils.FileMD5(p.file.GetPath(true))
 	}
 	return
 }

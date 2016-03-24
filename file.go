@@ -2,7 +2,7 @@ package main
 
 // ScanFile is the interface for a file as found on disk.
 type ScanFile interface {
-	GetPath() string
+	GetPath(bool) string
 	GetRelPath() string
 	GetSize() int64
 	GetTime() int64
@@ -12,7 +12,7 @@ type ScanFile interface {
 // SortFile is the interface for a file as needed for sorting.
 // Implements ScanFile.
 type SortFile interface {
-	GetPath() string
+	GetPath(bool) string
 	GetRelPath() string
 	GetSize() int64
 	GetTime() int64
@@ -31,7 +31,7 @@ type SortFile interface {
 // SendFile is the interface for a file as needed for sending.
 // Implements ScanFile.
 type SendFile interface {
-	GetPath() string
+	GetPath(bool) string
 	GetRelPath() string
 	GetSize() int64
 	GetTime() int64
@@ -57,7 +57,7 @@ type SendFile interface {
 // with only those parts of the file that haven't already been received.
 // Also implements ScanFile in order to be inserted into the pipeline at the sorter.
 type RecoverFile interface {
-	GetPath() string
+	GetPath(bool) string
 	GetRelPath() string
 	GetSize() int64
 	GetTime() int64

@@ -29,15 +29,17 @@ func newScanQueue(scanDir string) *scanQueue {
 	return q
 }
 
-func (q *scanQueue) add(path string, size int64, time int64) ScanFile {
+func (q *scanQueue) add(path string) ScanFile {
 	file, has := q.Files[path]
 	if !has {
 		file = &foundFile{}
 		file.path = path
 		q.Files[path] = file
 	}
-	file.Size = size
-	file.Time = time
+	if _, err := file.Reset(); err != nil {
+		logging.Error("Failed to add to queue:", path, err.Error())
+		delete(q.Files, path)
+	}
 	return file
 }
 
@@ -72,17 +74,28 @@ func (q *scanQueue) toRelPath(path string, nested int) string {
 type foundFile struct {
 	path    string
 	relPath string
-	Size    int64 `json:"size"`
-	Time    int64 `json:"mtime"`
+	Size    int64  `json:"size"`
+	Time    int64  `json:"mtime"`
+	Link    string `json:"p"`
 	queued  bool
 }
 
-func (f *foundFile) GetPath() string {
+func (f *foundFile) GetPath(follow bool) string {
+	if follow && f.Link != "" {
+		return f.Link
+	}
 	return f.path
 }
 
 func (f *foundFile) GetRelPath() string {
 	return f.relPath
+}
+
+func (f *foundFile) GetLinkedPath() string {
+	if f.Link != "" {
+		return f.Link
+	}
+	return f.path
 }
 
 func (f *foundFile) GetSize() int64 {
@@ -98,10 +111,33 @@ func (f *foundFile) Reset() (changed bool, err error) {
 	if err != nil {
 		return
 	}
-	if info.Size() != f.Size || info.ModTime().Unix() != f.Time {
+	var size, time int64
+	if info.Mode() == os.ModeSymlink {
+		var p string
+		var i os.FileInfo
+		if p, err = os.Readlink(f.path); err != nil {
+			return
+		}
+		if i, err = os.Stat(p); err != nil {
+			return
+		}
+		if i.IsDir() {
+			err = fmt.Errorf("Found sym link to directory")
+			return
+		}
+		size = i.Size()
+		if f.Link != p {
+			changed = true
+			f.Link = p
+		}
+	} else {
+		size = info.Size()
+		time = info.ModTime().Unix()
+	}
+	if size != f.Size || time != f.Time {
 		changed = true
-		f.Size = info.Size()
-		f.Time = info.ModTime().Unix()
+		f.Size = size
+		f.Time = time
 	}
 	return
 }
@@ -208,7 +244,7 @@ func (scanner *Scanner) out(ch chan<- []ScanFile) int {
 	select {
 	case ch <- files:
 		for _, file := range files {
-			scanner.queue.Files[file.GetPath()].queued = true
+			scanner.queue.Files[file.GetPath(false)].queued = true
 		}
 		return len(files)
 	default:
@@ -263,6 +299,7 @@ func (scanner *Scanner) GetScanFiles() ScanFileList {
 			relPath: scanner.queue.toRelPath(path, scanner.nested),
 			Size:    info.Size,
 			Time:    info.Time,
+			Link:    info.Link,
 			queued:  false,
 		})
 	}
@@ -298,13 +335,12 @@ func (scanner *Scanner) scan() (ScanFileList, bool) {
 
 func (scanner *Scanner) handleNode(path string, info os.FileInfo, err error) error {
 	if info == nil || info.IsDir() || scanner.shouldIgnore(path) {
-		return nil
+		return err
 	}
 	fTime := info.ModTime()
-	fSize := info.Size()
 	if fTime.Unix() < (time.Now().Unix() - int64(scanner.minAge.Seconds())) {
 		if !scanner.outOnce || fTime.After(time.Unix(scanner.queue.ScanTime, 0)) {
-			scanner.queue.add(path, fSize, fTime.Unix())
+			scanner.queue.add(path)
 		}
 	}
 	return nil

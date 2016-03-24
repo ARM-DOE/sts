@@ -80,8 +80,8 @@ func (file *sortedFile) GetOrigFile() ScanFile {
 	return file.file
 }
 
-func (file *sortedFile) GetPath() string {
-	return file.file.GetPath()
+func (file *sortedFile) GetPath(follow bool) string {
+	return file.file.GetPath(follow)
 }
 
 func (file *sortedFile) GetRelPath() string {
@@ -229,7 +229,7 @@ func (sorter *Sorter) Start(inChan <-chan []ScanFile, outChan chan<- SortFile, d
 // Add adds a new file to the list.
 func (sorter *Sorter) add(f ScanFile) {
 	var exists bool
-	_, exists = sorter.files[f.GetPath()]
+	_, exists = sorter.files[f.GetPath(false)]
 	if exists {
 		return
 	}
@@ -243,7 +243,7 @@ func (sorter *Sorter) add(f ScanFile) {
 		sorter.addGroup(sgrp)
 	}
 	sorter.insertFile(file)
-	sorter.files[file.GetPath()] = file
+	sorter.files[file.GetPath(false)] = file
 }
 
 func (sorter *Sorter) getGroup(relPath string) string {

@@ -29,15 +29,15 @@ func newSendFile(f SortFile) (file *sendFile, err error) {
 	if _, ok := f.GetOrigFile().(RecoverFile); ok {
 		file.hash = f.GetOrigFile().(RecoverFile).GetHash()
 	} else {
-		file.hash, err = fileutils.FileMD5(f.GetPath())
+		file.hash, err = fileutils.FileMD5(f.GetPath(true))
 	}
 	return
 }
 
-func (f *sendFile) GetPath() string {
+func (f *sendFile) GetPath(follow bool) string {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
-	return f.file.GetPath()
+	return f.file.GetPath(follow)
 }
 
 func (f *sendFile) GetRelPath() string {
@@ -171,7 +171,7 @@ func (f *sendFile) Reset() (changed bool, err error) {
 		return
 	}
 	if changed {
-		f.hash, err = fileutils.FileMD5(f.GetPath())
+		f.hash, err = fileutils.FileMD5(f.GetPath(true))
 		if err != nil {
 			return
 		}
@@ -312,7 +312,7 @@ func (sender *Sender) startWrap(wg *sync.WaitGroup) {
 		logging.Debug("SEND Found:", f.GetRelPath())
 		sf, err := newSendFile(f)
 		if err != nil {
-			logging.Error("Failed to get file ready to send:", f.GetPath(), err.Error())
+			logging.Error("Failed to get file ready to send:", f.GetPath(false), err.Error())
 			return
 		}
 		sender.ch.sendFile <- sf
@@ -384,13 +384,13 @@ func (sender *Sender) startRebin(wg *sync.WaitGroup) {
 			// If we need to resend a file, let's make sure it hasn't changed...
 			changed, err := sf.Reset()
 			if err != nil {
-				logging.Error("Failed to reset:", sf.GetPath(), err.Error())
+				logging.Error("Failed to reset:", sf.GetPath(false), err.Error())
 				sf.SetCancel(true)
 				cancel = append(cancel, sf)
 				continue
 			}
 			if changed {
-				logging.Debug("SEND File Changed:", sf.GetPath())
+				logging.Debug("SEND File Changed:", sf.GetPath(false))
 			}
 			sender.ch.sendFile <- sf
 		}

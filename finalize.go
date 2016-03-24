@@ -67,7 +67,7 @@ func (f *Finalizer) IsFinal(source string, relPath string, sentTime int64) (bool
 
 func (f *Finalizer) finalize(file ScanFile) (bool, error) {
 	// Check it.
-	info, err := os.Stat(file.GetPath())
+	info, err := os.Stat(file.GetPath(false))
 	if os.IsNotExist(err) {
 		return false, nil // Was probably just picked up by the scanner again before getting moved.
 	} else if err != nil {
@@ -75,9 +75,9 @@ func (f *Finalizer) finalize(file ScanFile) (bool, error) {
 	}
 
 	// Read about it.
-	cmp, err := ReadCompanion(file.GetPath())
+	cmp, err := ReadCompanion(file.GetPath(true))
 	if err != nil {
-		os.Remove(file.GetPath())
+		os.Remove(file.GetPath(false))
 		return false, fmt.Errorf("Missing companion: %s", file.GetRelPath())
 	}
 
@@ -105,15 +105,15 @@ func (f *Finalizer) finalize(file ScanFile) (bool, error) {
 	}
 
 	// Validate it.
-	hash, err := fileutils.FileMD5(file.GetPath())
+	hash, err := fileutils.FileMD5(file.GetPath(true))
 	if err != nil {
 		return false, fmt.Errorf("Failed to calculate MD5 of %s: %s", file.GetRelPath(), err.Error())
 	}
 	if hash != cmp.Hash {
 		f.toCache(cmp.SourceName, file, false)
 		cmp.Delete()
-		os.Remove(file.GetPath())
-		return false, fmt.Errorf("Failed validation: %s", file.GetPath())
+		os.Remove(file.GetPath(false))
+		return false, fmt.Errorf("Failed validation: %s", file.GetPath(false))
 	}
 
 	logging.Debug("FINAL Finalizing", file.GetRelPath())
@@ -121,9 +121,9 @@ func (f *Finalizer) finalize(file ScanFile) (bool, error) {
 	// Move it.
 	finalPath := filepath.Join(f.Conf.FinalDir, cmp.SourceName, file.GetRelPath())
 	os.MkdirAll(filepath.Dir(finalPath), os.ModePerm)
-	err = os.Rename(file.GetPath(), finalPath)
+	err = os.Rename(file.GetPath(false), finalPath)
 	if err != nil {
-		return false, fmt.Errorf("Failed to move %s to %s: %s", file.GetPath(), finalPath, err.Error())
+		return false, fmt.Errorf("Failed to move %s to %s: %s", file.GetPath(false), finalPath, err.Error())
 	}
 
 	// Log it.
