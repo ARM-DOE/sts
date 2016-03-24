@@ -25,28 +25,41 @@ func newSortedGroup(group string, conf *Tag) *sortedGroup {
 	return t
 }
 
-func (t *sortedGroup) insertAfter(prev *sortedGroup) {
+func (t *sortedGroup) remove() {
 	if t.prev != nil {
 		t.prev.next = t.next
 	}
 	if t.next != nil {
 		t.next.prev = t.prev
 	}
+}
+
+func (t *sortedGroup) addAfter(prev *sortedGroup) {
 	t.next = prev.next
 	t.prev = prev
 	prev.next = t
+	if t.next != nil {
+		t.next.prev = t
+	}
 }
 
-func (t *sortedGroup) insertBefore(next *sortedGroup) {
-	if t.prev != nil {
-		t.prev.next = t.next
-	}
-	if t.next != nil {
-		t.next.prev = t.prev
-	}
+func (t *sortedGroup) addBefore(next *sortedGroup) {
 	t.next = next
 	t.prev = next.prev
 	next.prev = t
+	if t.prev != nil {
+		t.prev.next = t
+	}
+}
+
+func (t *sortedGroup) insertAfter(prev *sortedGroup) {
+	t.remove()
+	t.addAfter(prev)
+}
+
+func (t *sortedGroup) insertBefore(next *sortedGroup) {
+	t.remove()
+	t.addBefore(next)
 }
 
 type sortedFile struct {
@@ -121,6 +134,9 @@ func (file *sortedFile) InsertAfter(prev SortFile) {
 	file.SetNext(prev.GetNext())
 	file.SetPrev(prev)
 	prev.SetNext(file)
+	if file.GetNext() != nil {
+		file.GetNext().SetPrev(file)
+	}
 }
 
 func (file *sortedFile) InsertBefore(next SortFile) {
@@ -133,6 +149,9 @@ func (file *sortedFile) InsertBefore(next SortFile) {
 	file.SetNext(next)
 	file.SetPrev(next.GetPrev())
 	next.SetPrev(file)
+	if file.GetPrev() != nil {
+		file.GetPrev().SetNext(file)
+	}
 }
 
 // Sorter is responsible for sorting files based on tag configuration.
@@ -176,7 +195,7 @@ func (sorter *Sorter) Start(inChan <-chan []ScanFile, outChan chan<- SortFile, d
 			}
 			for _, foundFile := range foundFiles {
 				logging.Debug("SORT File In:", foundFile.GetRelPath())
-				sorter.Add(foundFile)
+				sorter.add(foundFile)
 			}
 		case doneFiles, ok := <-doneChan:
 			if !ok {
@@ -208,7 +227,7 @@ func (sorter *Sorter) Start(inChan <-chan []ScanFile, outChan chan<- SortFile, d
 }
 
 // Add adds a new file to the list.
-func (sorter *Sorter) Add(f ScanFile) {
+func (sorter *Sorter) add(f ScanFile) {
 	var exists bool
 	_, exists = sorter.files[f.GetPath()]
 	if exists {
@@ -221,7 +240,7 @@ func (sorter *Sorter) Add(f ScanFile) {
 		conf := sorter.getGroupConf(file.group)
 		sgrp := newSortedGroup(file.group, conf)
 		sorter.groupMap[file.group] = sgrp
-		sorter.insertGroup(sgrp)
+		sorter.addGroup(sgrp)
 	}
 	sorter.insertFile(file)
 	sorter.files[file.GetPath()] = file
@@ -260,22 +279,20 @@ func (sorter *Sorter) clearNext(out SortFile) {
 func (sorter *Sorter) delayGroup(g *sortedGroup) {
 	p := g.conf.Priority
 	n := g
+	// Find last group of same priority.
 	for n.next != nil && n.next.conf.Priority == p {
 		n = n.next
 	}
-	if n != g {
-		if g == sorter.group {
-			sorter.group = g.next
-		}
-		if n.conf.Priority < g.conf.Priority {
-			g.insertBefore(n)
-			if n == sorter.group {
-				sorter.group = g
-			}
-		} else {
-			g.insertAfter(n)
-		}
+	if n == g {
+		return // We only have one group of this priority.
 	}
+	if g == sorter.group {
+		// Point to the next one if we're moving the first group.
+		sorter.group = g.next
+	}
+	// Move this group after the last one of same priority.
+	logging.Debug("SORT Moved Group:", n.group, g.group)
+	g.insertAfter(n)
 }
 
 func (sorter *Sorter) getGroupConf(g string) *Tag {
@@ -293,7 +310,7 @@ func (sorter *Sorter) getGroupConf(g string) *Tag {
 	return conf
 }
 
-func (sorter *Sorter) insertGroup(grp *sortedGroup) {
+func (sorter *Sorter) addGroup(grp *sortedGroup) {
 	g := sorter.group
 	if g == nil {
 		sorter.group = grp
@@ -301,14 +318,14 @@ func (sorter *Sorter) insertGroup(grp *sortedGroup) {
 	}
 	for g != nil {
 		if grp.conf.Priority > g.conf.Priority {
-			grp.insertBefore(g)
+			grp.addBefore(g)
 			if g == sorter.group {
 				sorter.group = grp
 			}
 			break
 		}
 		if g.next == nil {
-			grp.insertAfter(g)
+			grp.addAfter(g)
 			break
 		}
 		g = g.next
