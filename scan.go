@@ -29,18 +29,18 @@ func newScanQueue(scanDir string) *scanQueue {
 	return q
 }
 
-func (q *scanQueue) add(path string) ScanFile {
+func (q *scanQueue) add(path string) (f ScanFile, err error) {
 	file, has := q.Files[path]
 	if !has {
 		file = &foundFile{}
 		file.path = path
 		q.Files[path] = file
 	}
-	if _, err := file.Reset(); err != nil {
-		logging.Error("Failed to add to queue:", path, err.Error())
-		delete(q.Files, path)
+	if _, err = file.Reset(); err != nil {
+		q.remove(path)
 	}
-	return file
+	f = file
+	return
 }
 
 func (q *scanQueue) remove(path string) {
@@ -48,10 +48,16 @@ func (q *scanQueue) remove(path string) {
 }
 
 func (q *scanQueue) load(path string) error {
+	if path == "" {
+		return nil
+	}
 	return fileutils.LoadJSON(path, q)
 }
 
 func (q *scanQueue) cache(path string) error {
+	if path == "" {
+		return nil
+	}
 	return fileutils.WriteJSON(path, q)
 }
 
@@ -157,40 +163,46 @@ func (f ScanFileList) Swap(i, j int) { f[i], f[j] = f[j], f[i] }
 
 // Scanner is responsible for traversing a directory tree for files.
 type Scanner struct {
-	delay   time.Duration
-	minAge  time.Duration
-	outOnce bool
-	nested  int
-	ignore  []string
-
+	conf      *ScannerConf
 	queue     *scanQueue
+	aged      map[string]int
 	cachePath string
 }
 
-// NewScanner returns a Scanner instance.
-func NewScanner(scanDir string, cacheDir string, scanDelay time.Duration, minAge time.Duration, outOnce bool, nested int) *Scanner {
-	scanner := &Scanner{}
-
-	scanner.delay = scanDelay
-	scanner.outOnce = outOnce
-	scanner.minAge = minAge
-	scanner.nested = nested // The number of path "elements" after the scanDir to start the "relPath"
-	scanner.ignore = make([]string, 0)
-
-	scanner.queue = newScanQueue(scanDir)
-
-	scanner.cachePath = filepath.Join(cacheDir, toCacheName(scanDir))
-	scanner.queue.load(scanner.cachePath)
-
-	scanner.AddIgnore(`\.DS_Store$`)
-	scanner.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutils.LockExt)))
-	scanner.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(DisabledName)))
-	return scanner
+// ScannerConf are the external configuration
+type ScannerConf struct {
+	ScanDir  string
+	CacheDir string
+	Delay    time.Duration
+	MinAge   time.Duration
+	MaxAge   time.Duration
+	OutOnce  bool
+	Nested   int
+	Ignore   []string
 }
 
 // AddIgnore adds a pattern to the list that is used for filtering files from the scan list.
-func (scanner *Scanner) AddIgnore(pattern string) {
-	scanner.ignore = append(scanner.ignore, pattern)
+func (c *ScannerConf) AddIgnore(pattern string) {
+	c.Ignore = append(c.Ignore, pattern)
+}
+
+// NewScanner returns a Scanner instance.
+func NewScanner(conf *ScannerConf) *Scanner {
+	scanner := &Scanner{}
+	scanner.conf = conf
+	scanner.aged = make(map[string]int)
+
+	scanner.queue = newScanQueue(conf.ScanDir)
+
+	if conf.CacheDir != "" {
+		scanner.cachePath = filepath.Join(conf.CacheDir, toCacheName(conf.ScanDir))
+		scanner.queue.load(scanner.cachePath)
+	}
+
+	conf.AddIgnore(`\.DS_Store$`)
+	conf.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutils.LockExt)))
+	conf.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(DisabledName)))
+	return scanner
 }
 
 // Start starts the daemon that puts files on the outChan and reads from the doneChan.
@@ -231,7 +243,7 @@ func (scanner *Scanner) Start(outChan chan<- []ScanFile, doneChan <-chan []DoneF
 
 func (scanner *Scanner) out(ch chan<- []ScanFile) int {
 	// Make sure it's been long enough for another scan.
-	if scanner.queue.ScanTime > time.Now().Unix()-int64(scanner.delay.Seconds()) {
+	if scanner.queue.ScanTime > time.Now().Unix()-int64(scanner.conf.Delay.Seconds()) {
 		return 0
 	}
 
@@ -263,7 +275,7 @@ func (scanner *Scanner) done(ch <-chan []DoneFile) int {
 			logging.Debug("SCAN File Done:", doneFile.GetPath())
 			scanner.queue.remove(doneFile.GetPath())
 		}
-		if scanner.outOnce {
+		if scanner.conf.OutOnce {
 			scanner.queue.cache(scanner.cachePath)
 		}
 		return len(doneFiles)
@@ -282,11 +294,11 @@ func (scanner *Scanner) GetScanTime() time.Time {
 func (scanner *Scanner) GetScanFiles() ScanFileList {
 	files := make(ScanFileList, 0)
 	for path, info := range scanner.queue.Files {
-		if scanner.outOnce && info.queued {
+		if scanner.conf.OutOnce && info.queued {
 			continue
 		}
 		if _, err := os.Stat(path); os.IsNotExist(err) {
-			if scanner.outOnce {
+			if scanner.conf.OutOnce {
 				// Would be strange in a scenario where files are only queued once
 				// for a file to disappear between its first scan and now.
 				logging.Error("File disappeared:", path)
@@ -296,7 +308,7 @@ func (scanner *Scanner) GetScanFiles() ScanFileList {
 		}
 		files = append(files, &foundFile{
 			path:    path,
-			relPath: scanner.queue.toRelPath(path, scanner.nested),
+			relPath: scanner.queue.toRelPath(path, scanner.conf.Nested),
 			Size:    info.Size,
 			Time:    info.Time,
 			Link:    info.Link,
@@ -325,30 +337,43 @@ func (scanner *Scanner) scan() (ScanFileList, bool) {
 	}
 	start := time.Now().Unix()
 	filepath.Walk(scanner.queue.ScanDir, scanner.handleNode)
-	// Cache the queue (if we need to make sure files are only sent once)
-	if scanner.outOnce {
-		scanner.queue.ScanTime = start - int64(scanner.minAge.Seconds()) - 1
+	// Cache the queue (if we need to make sure files are only sent once).
+	if scanner.conf.OutOnce {
+		scanner.queue.ScanTime = start - int64(scanner.conf.MinAge.Seconds()) - 1
 		scanner.queue.cache(scanner.cachePath)
 	}
 	return scanner.GetScanFiles(), true
 }
 
 func (scanner *Scanner) handleNode(path string, info os.FileInfo, err error) error {
-	if info == nil || info.IsDir() || scanner.shouldIgnore(path) {
-		return err
+	if info == nil || err != nil || info.IsDir() || scanner.shouldIgnore(path) {
+		return nil
 	}
 	fTime := info.ModTime()
-	if fTime.Unix() < (time.Now().Unix() - int64(scanner.minAge.Seconds())) {
-		if !scanner.outOnce || fTime.After(time.Unix(scanner.queue.ScanTime, 0)) {
-			scanner.queue.add(path)
+	fAge := time.Now().Sub(fTime)
+	if fAge < scanner.conf.MinAge {
+		return nil
+	}
+	if !scanner.conf.OutOnce || fTime.After(time.Unix(scanner.queue.ScanTime, 0)) {
+		_, err = scanner.queue.add(path)
+		if err != nil && scanner.conf.OutOnce {
+			logging.Error("Failed to add file to queue:", err.Error())
+			return nil
+		}
+		if scanner.conf.MaxAge > 0 {
+			n := int(fAge / scanner.conf.MaxAge)
+			if count, exists := scanner.aged[path]; n > 0 && (!exists || n > count) {
+				logging.Error(fmt.Sprintf("Stale file found: %s (%dh)", path, int(fAge.Hours())))
+				scanner.aged[path] = n
+			}
 		}
 	}
 	return nil
 }
 
 func (scanner *Scanner) shouldIgnore(path string) bool {
-	relPath := scanner.queue.toRelPath(path, scanner.nested)
-	for _, pattern := range scanner.ignore {
+	relPath := scanner.queue.toRelPath(path, scanner.conf.Nested)
+	for _, pattern := range scanner.conf.Ignore {
 		matched, err := regexp.MatchString(pattern, relPath)
 		if err != nil || matched {
 			return true
@@ -358,10 +383,5 @@ func (scanner *Scanner) shouldIgnore(path string) bool {
 }
 
 func toCacheName(dir string) string {
-	return fmt.Sprintf("%s.json", strings.Replace(strings.TrimRight(dir, string(os.PathSeparator)), string(os.PathSeparator), "_", -1))
+	return fmt.Sprintf("%s.json", strings.Replace(strings.TrimRight(dir, string(os.PathSeparator)), string(os.PathSeparator), "--", -1))
 }
-
-// Not used currently but might come in handy sometime.
-// func fromCacheName(name string) string {
-// 	return strings.TrimRight(strings.Replace(name, "_", string(os.PathSeparator), -1), ".json")
-// }

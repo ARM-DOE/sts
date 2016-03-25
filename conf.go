@@ -39,45 +39,46 @@ const (
 
 // Conf is the outermost struct for holding STS configuration.
 type Conf struct {
-	Send    *SendConf    `yaml:"SEND"`
-	Receive *ReceiveConf `yaml:"RECEIVE"`
+	Out *OutConf `yaml:"OUT"`
+	In  *InConf  `yaml:"IN"`
 
 	path string
 }
 
-// SendConf is the struct for housing all outgoing configuration.
-type SendConf struct {
-	Dirs    *SendDirs     `yaml:"dirs"`
-	Sources []*SendSource `yaml:"sources"`
+// OutConf is the struct for housing all outgoing configuration.
+type OutConf struct {
+	Dirs    *OutDirs     `yaml:"dirs"`
+	Sources []*OutSource `yaml:"sources"`
 }
 
-// SendDirs is the struct for managing the outgoing directory configuration items.
-type SendDirs struct {
+// OutDirs is the struct for managing the outgoing directory configuration items.
+type OutDirs struct {
 	Out   string `yaml:"out"`
 	Logs  string `yaml:"logs"`
 	Disk  string `yaml:"disk"`
 	Cache string `yaml:"cache"`
 }
 
-// SendSource is the struct for managing the configuration of an outgoing source.
-type SendSource struct {
+// OutSource is the struct for managing the configuration of an outgoing source.
+type OutSource struct {
 	Name         string
 	Threads      int
 	MinAge       time.Duration
+	MaxAge       time.Duration
 	MaxRetries   int
 	Timeout      time.Duration
 	BinSize      units.Base2Bytes
 	Compress     bool
 	PollDelay    time.Duration
 	PollInterval time.Duration
-	Target       *SendTarget
+	Target       *OutTarget
 	GroupBy      *regexp.Regexp
 	Tags         []*Tag
 }
 
 // UnmarshalYAML implements the Unmarshaler interface for handling custom member(s).
 // https://godoc.org/gopkg.in/yaml.v2
-func (ss *SendSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
+func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 	var aux struct {
 		Name         string        `yaml:"name"`
 		Threads      int           `yaml:"threads"`
@@ -88,7 +89,7 @@ func (ss *SendSource) UnmarshalYAML(unmarshal func(interface{}) error) (err erro
 		Compress     bool          `yaml:"compress"`
 		PollDelay    time.Duration `yaml:"poll-delay"`
 		PollInterval time.Duration `yaml:"poll-interval"`
-		Target       *SendTarget   `yaml:"target"`
+		Target       *OutTarget    `yaml:"target"`
 		GroupBy      string        `yaml:"group-by"`
 		Tags         []*Tag        `yaml:"tags"`
 	}
@@ -123,8 +124,8 @@ type Tag struct {
 	Delete   bool   `yaml:"delete"`
 }
 
-// SendTarget houses the configuration for the target host for a given source.
-type SendTarget struct {
+// OutTarget houses the configuration for the target host for a given source.
+type OutTarget struct {
 	Name    string `yaml:"name"`
 	Host    string `yaml:"http-host"`
 	TLS     bool   `yaml:"http-tls"`
@@ -132,22 +133,21 @@ type SendTarget struct {
 	TLSKey  string `yaml:"http-tls-key"`
 }
 
-// ReceiveConf is the struct for housing all incoming configuration.
-type ReceiveConf struct {
-	Dirs   *ReceiveDirs   `yaml:"dirs"`
-	Server *ReceiveServer `yaml:"server"`
+// InConf is the struct for housing all incoming configuration.
+type InConf struct {
+	Dirs   *InDirs   `yaml:"dirs"`
+	Server *InServer `yaml:"server"`
 }
 
-// ReceiveDirs is the struct for managing the incoming directory configuration items.
-type ReceiveDirs struct {
+// InDirs is the struct for managing the incoming directory configuration items.
+type InDirs struct {
 	Logs  string `yaml:"logs"`
-	Cache string `yaml:"cache"`
 	Stage string `yaml:"stage"`
 	Final string `yaml:"final"`
 }
 
-// ReceiveServer is the struct for managing the incoming HTTP host.
-type ReceiveServer struct {
+// InServer is the struct for managing the incoming HTTP host.
+type InServer struct {
 	Port    int    `yaml:"http-port"`
 	TLS     bool   `yaml:"http-tls"`
 	TLSCert string `yaml:"http-tls-cert"`
@@ -172,16 +172,16 @@ func NewConf(path string) (*Conf, error) {
 	if err != nil {
 		panic(err.Error())
 	}
-	if conf.Send != nil {
-		if len(conf.Send.Sources) > 0 {
-			var src *SendSource
-			var tgt *SendSource
-			for i := 0; i < len(conf.Send.Sources); i++ {
+	if conf.Out != nil {
+		if len(conf.Out.Sources) > 0 {
+			var src *OutSource
+			var tgt *OutSource
+			for i := 0; i < len(conf.Out.Sources); i++ {
 				if src != nil {
-					tgt = conf.Send.Sources[i]
+					tgt = conf.Out.Sources[i]
 					copyStruct(tgt, src)
 				}
-				src = conf.Send.Sources[i]
+				src = conf.Out.Sources[i]
 				if len(src.Tags) > 1 {
 					tdef := src.Tags[0]
 					for i := 1; i < len(src.Tags); i++ {

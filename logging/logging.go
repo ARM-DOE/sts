@@ -12,11 +12,11 @@ import (
 	"time"
 )
 
-// Send is the log directory for send log entries to match legacy STS.
-const Send = "outgoing_to"
+// Out is the log directory for send log entries to match legacy STS.
+const Out = "outgoing_to"
 
-// Receive is the log directory for incoming log entries to match legacy STS.
-const Receive = "incoming_from"
+// In is the log directory for incoming log entries to match legacy STS.
+const In = "incoming_from"
 
 // Disk is the log directory for disk read/write messages to match legacy STS.
 const Disk = "to_disk"
@@ -81,7 +81,7 @@ func Error(params ...interface{}) {
 	logger.lock.Lock()
 	defer logger.lock.Unlock()
 	_, file, line, _ := runtime.Caller(1) // Get file name and line number of the caller of this function
-	params = append([]interface{}{fmt.Sprintf("%s:%d", filepath.Base(file), line)}, params...)
+	params = append([]interface{}{fmt.Sprintf("ERROR %s:%d", filepath.Base(file), line)}, params...)
 	fmt.Fprintln(os.Stderr, params...)
 	logger.rotate()
 	logger.logger.Println(params...)
@@ -103,7 +103,7 @@ func Disked(msg string, hash string, size int64, prefix ...string) {
 
 // Sent writes a formatted string to the "outgoing_to" log file.
 func Sent(msg string, hash string, size int64, ms int64, prefix ...string) {
-	logger, exists := gLoggers[Send]
+	logger, exists := gLoggers[Out]
 	if !exists {
 		return
 	}
@@ -117,7 +117,7 @@ func Sent(msg string, hash string, size int64, ms int64, prefix ...string) {
 
 // Received writes a formatted string to the "incoming_from" log file.
 func Received(msg string, hash string, size int64, prefix ...string) {
-	logger, exists := gLoggers[Receive]
+	logger, exists := gLoggers[In]
 	if !exists {
 		return
 	}
@@ -127,6 +127,11 @@ func Received(msg string, hash string, size int64, prefix ...string) {
 	line := fmt.Sprintf("%s:%s:%d:%d:", msg, hash, size, time.Now().Unix())
 	logger.logger.Println(line)
 	logger.fh.Sync()
+}
+
+// FindReceived looks for a file name in the incoming log history.
+func FindReceived(text string, nDays int, start int64, prefix ...string) bool {
+	return GetLogger(In).search(text+":", nDays, start, prefix...)
 }
 
 func getPath(basePath string, mode string, time time.Time, prefix ...string) string {
@@ -194,10 +199,10 @@ func (logger *Logger) close() {
 	}
 }
 
-// Search will look for a given text pattern in the log history.
+// search will look for a given text pattern in the log history.
 // If "start" is nonzero it will search from start to current.
 // If "start" is zero it will search from current back nDays.
-func (logger *Logger) Search(text string, nDays int, start int64, prefix ...string) bool {
+func (logger *Logger) search(text string, nDays int, start int64, prefix ...string) bool {
 	logger.lock.RLock()
 	defer logger.lock.RUnlock()
 	fwd := true

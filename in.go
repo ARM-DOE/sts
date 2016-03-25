@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"sync"
 	"time"
@@ -13,7 +14,7 @@ import (
 // AppIn is the struct container for the incoming portion of the STS app.
 type AppIn struct {
 	root      string
-	rawConf   *ReceiveConf
+	rawConf   *InConf
 	conf      *ReceiverConf
 	scanChan  chan []ScanFile
 	scanner   *Scanner
@@ -29,6 +30,14 @@ func (a *AppIn) initConf() {
 	if a.rawConf.Server.TLS {
 		a.conf.TLSCert = a.rawConf.Server.TLSCert
 		a.conf.TLSKey = a.rawConf.Server.TLSKey
+		for _, p := range []*string{&a.conf.TLSCert, &a.conf.TLSKey} {
+			if *p == "" {
+				panic("TLS enabled but missing TLS Cert and/or TLS Key")
+			}
+			if *p != "" && !filepath.IsAbs(*p) {
+				*p = filepath.Join(a.root, *p)
+			}
+		}
 	}
 }
 
@@ -38,8 +47,15 @@ func (a *AppIn) Start(stop <-chan bool) <-chan bool {
 
 	a.scanChan = make(chan []ScanFile)
 
+	scanConf := ScannerConf{
+		ScanDir: a.conf.StageDir,
+		MaxAge:  time.Hour * 1,
+		Delay:   time.Second * 1,
+		Nested:  1,
+	}
+
 	a.finalizer = NewFinalizer(a.conf)
-	a.scanner = NewScanner(a.conf.StageDir, InitPath(a.root, a.rawConf.Dirs.Cache, true), time.Second*1, 0, false, 1)
+	a.scanner = NewScanner(&scanConf)
 	a.server = NewReceiver(a.conf, a.finalizer)
 
 	// TODO: on startup, receiver should check for .cmp files with .part counterparts where the .cmp
@@ -47,9 +63,9 @@ func (a *AppIn) Start(stop <-chan bool) <-chan bool {
 	// is renamed.  I could flip that but then there could be a race condition on reading a companion file
 	// that hasn't been updated yet (finalize).
 
-	a.scanner.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutils.LockExt)))
-	a.scanner.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(PartExt)))
-	a.scanner.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(CompExt)))
+	scanConf.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutils.LockExt)))
+	scanConf.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(PartExt)))
+	scanConf.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(CompExt)))
 
 	var wg sync.WaitGroup
 	wg.Add(3)

@@ -12,15 +12,19 @@ import (
 	"github.com/ARM-DOE/sts/logging"
 )
 
+const modeSend = "out"
+const modeRecv = "in"
+const modeBoth = "both"
+
 func main() {
 	app := newApp()
 	app.run()
 }
 
-// getRoot returns the STS root.  It will use $STS_DATA and fall back to the directory
+// getRoot returns the STS root.  It will use $STS_HOME and fall back to the directory
 // of the executable plus "/sts".
 func getRoot() string {
-	root := os.Getenv("STS_DATA")
+	root := os.Getenv("STS_HOME")
 	if root == "" {
 		var err error
 		root, err = filepath.Abs(filepath.Dir(os.Args[0]))
@@ -93,7 +97,13 @@ func newApp() *app {
 
 	// Parse configuration
 	if a.confPath == "" {
-		a.confPath = filepath.Join(getRoot(), "conf", "dist."+a.mode+".yaml")
+		if a.mode == modeBoth {
+			a.confPath = filepath.Join(getRoot(), "conf", "sts.yaml")
+		} else {
+			a.confPath = filepath.Join(getRoot(), "conf", "sts."+a.mode+".yaml")
+		}
+	} else if !filepath.IsAbs(a.confPath) {
+		a.confPath = filepath.Join(getRoot(), a.confPath)
 	}
 	conf, err := NewConf(a.confPath)
 	if err != nil {
@@ -125,16 +135,16 @@ func (a *app) run() {
 }
 
 func (a *app) startIn() {
-	if a.mode != "receive" && a.mode != "both" {
+	if a.mode != modeRecv && a.mode != modeBoth {
 		return
 	}
-	if a.conf.Receive == nil || a.conf.Receive.Dirs == nil || a.conf.Receive.Server == nil {
+	if a.conf.In == nil || a.conf.In.Dirs == nil || a.conf.In.Server == nil {
 		panic("Missing required RECEIVER configuration")
 	}
-	logging.Init([]string{logging.Receive, logging.Msg}, InitPath(a.root, a.conf.Receive.Dirs.Logs, true), a.debug)
+	logging.Init([]string{logging.In, logging.Msg}, InitPath(a.root, a.conf.In.Dirs.Logs, true), a.debug)
 	a.in = &AppIn{
 		root:    a.root,
-		rawConf: a.conf.Receive,
+		rawConf: a.conf.In,
 	}
 	stop := make(chan bool)
 	a.inStop = stop
@@ -155,18 +165,18 @@ func (a *app) doneIn() {
 }
 
 func (a *app) startOut(once bool) {
-	if a.mode != "send" && a.mode != "both" {
+	if a.mode != modeSend && a.mode != modeBoth {
 		return
 	}
-	if a.conf.Send == nil || a.conf.Send.Sources == nil || len(a.conf.Send.Sources) < 1 {
+	if a.conf.Out == nil || a.conf.Out.Sources == nil || len(a.conf.Out.Sources) < 1 {
 		panic("Missing required SENDER configuration")
 	}
-	logging.Init([]string{logging.Send, logging.Msg}, InitPath(a.root, a.conf.Send.Dirs.Logs, true), a.debug)
+	logging.Init([]string{logging.Out, logging.Msg}, InitPath(a.root, a.conf.Out.Dirs.Logs, true), a.debug)
 	a.outStop = make(map[chan<- bool]<-chan bool)
-	for _, source := range a.conf.Send.Sources {
+	for _, source := range a.conf.Out.Sources {
 		out := &AppOut{
 			root:    a.root,
-			dirConf: a.conf.Send.Dirs,
+			dirConf: a.conf.Out.Dirs,
 			rawConf: source,
 		}
 		c := make(chan bool)

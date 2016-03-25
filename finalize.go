@@ -59,7 +59,7 @@ func (f *Finalizer) Start(inChan chan []ScanFile) {
 func (f *Finalizer) IsFinal(source string, relPath string, sentTime int64) (bool, bool) {
 	success, found := f.fromCache(source, relPath)
 	if !found {
-		success = logging.GetLogger(logging.Receive).Search(relPath, 0, sentTime, source)
+		success = logging.FindReceived(relPath, 0, sentTime, source)
 		return success, success
 	}
 	return success, true
@@ -86,20 +86,23 @@ func (f *Finalizer) finalize(file ScanFile) (bool, error) {
 		stagedPrevFile := filepath.Join(f.Conf.StageDir, cmp.SourceName, cmp.PrevFile)
 		_, err = os.Stat(stagedPrevFile + PartExt)
 		if !os.IsNotExist(err) {
+			logging.Debug("FINAL Previous File in Progress:", file.GetRelPath(), cmp.PrevFile)
 			return false, nil
 		}
 		_, err = os.Stat(stagedPrevFile)
 		if !os.IsNotExist(err) {
+			logging.Debug("FINAL Waiting for Previous File:", file.GetRelPath(), cmp.PrevFile)
 			return false, nil
 		}
 		success, found := f.fromCache(cmp.SourceName, cmp.PrevFile)
 		if !found {
-			found = logging.GetLogger(logging.Receive).Search(cmp.PrevFile, LogSearchDays, 0, cmp.SourceName)
+			found = logging.FindReceived(cmp.PrevFile, LogSearchDays, 0, cmp.SourceName)
 			if !found {
-				logging.Debug("FINAL Not Found in Logs", file.GetRelPath(), cmp.PrevFile)
+				logging.Debug("FINAL Previous File Not Found in Log:", file.GetRelPath(), cmp.PrevFile)
 				return false, nil
 			}
 		} else if !success {
+			logging.Debug("FINAL Previous File Failed:", file.GetRelPath(), cmp.PrevFile)
 			return false, nil
 		}
 	}
@@ -132,6 +135,7 @@ func (f *Finalizer) finalize(file ScanFile) (bool, error) {
 	// Remember it.
 	f.toCache(cmp.SourceName, file, true)
 
+	// Clean it.
 	err = cmp.Delete()
 	if err != nil {
 		return true, fmt.Errorf("Failed to remove companion file for %s: %s", cmp.Path, err.Error())

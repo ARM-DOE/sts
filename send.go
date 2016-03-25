@@ -250,7 +250,7 @@ func NewSender(conf *SenderConf) *Sender {
 func (sender *Sender) Start(ch *SenderChan) {
 	sender.ch = ch
 	sender.ch.sendFile = make(chan SendFile, sender.conf.Threads)
-	sender.ch.sendBin = make(chan *Bin, sender.conf.Threads)
+	sender.ch.sendBin = make(chan *Bin, sender.conf.Threads*2)
 	var wgWrap, wgBin, wgRebin, wgSend sync.WaitGroup
 	nWrap, nBin, nRebin, nSend := 1, 1, 1, sender.conf.Threads
 	wgWrap.Add(nWrap)
@@ -271,7 +271,9 @@ func (sender *Sender) Start(ch *SenderChan) {
 	}
 	wgWrap.Wait()
 	logging.Debug("SEND Wrapping Done")
-	sender.ch.sendFile <- nil // Trigger a shutdown without closing the channel.
+	for i := 0; i < nBin; i++ {
+		sender.ch.sendFile <- nil // Trigger a shutdown without closing the channel.
+	}
 	wgBin.Wait()
 	logging.Debug("SEND Binning Done")
 	for i := 0; i < nSend; i++ {
@@ -279,6 +281,7 @@ func (sender *Sender) Start(ch *SenderChan) {
 	}
 	wgSend.Wait()
 	logging.Debug("SEND Sending Done")
+
 	// Once we're here, everything has been sent to the out channel(s) and all we need to
 	// do is resend anything that comes in on the retry channel.
 	sender.ch.Close <- true // Communicate shutdown.
@@ -331,37 +334,44 @@ func (sender *Sender) startBin(wg *sync.WaitGroup) {
 		if f == nil {
 			select {
 			case f, ok = <-in:
-				if f == nil || !ok {
+				if !ok || f == nil {
 					in = nil
+					continue
 				}
-			default:
-				time.Sleep(wait)
-				waited += wait
-				if waited > time.Second && b != nil && len(b.Parts) > 0 {
-					sender.ch.sendBin <- b
-					b = nil
-				}
-				if in == nil {
-					return
-				}
-				continue
-			}
-			if f != nil {
+				logging.Debug("SEND Binning Found:", f.GetRelPath())
 				waited = time.Millisecond * 0
 				if f.IsSent() {
 					for _, c := range sender.ch.Done {
 						c <- []SendFile{f}
 					}
+					f = nil
 					continue
 				}
-			} else {
+			default:
+				time.Sleep(wait)
+				waited += wait
+				if (in == nil || waited > time.Second) && b != nil && len(b.Parts) > 0 {
+					// Time to send the bin even if it's not full.
+					sender.ch.sendBin <- b
+					b = nil
+				}
+				if in == nil {
+					logging.Debug("SEND Exit Binning", b)
+					return
+				}
 				continue
 			}
 		}
 		if b == nil {
 			b = NewBin(int64(sender.conf.BinSize)) // Start new bin.
 		}
-		if !b.Add(f) || f.GetBytesAlloc() == f.GetSize() { // File is fully allocated.
+		added, err := b.Add(f)
+		if err != nil {
+			logging.Error("Failed to generate partial:", f.GetRelPath(), err.Error())
+			f = nil
+			continue
+		}
+		if !added || f.GetBytesAlloc() == f.GetSize() { // File is fully allocated.
 			f = nil
 		}
 		if b.IsFull() {
@@ -402,8 +412,11 @@ func (sender *Sender) startSend(wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
 		b, ok := <-sender.ch.sendBin
-		if b == nil || !ok {
+		if !ok || b == nil {
 			break
+		}
+		for _, p := range b.Parts {
+			logging.Debug("SEND Bin Part:", &b, p.File.GetRelPath(), p.Beg, p.End)
 		}
 		sender.sendBin(b)
 	}
@@ -453,14 +466,7 @@ func (sender *Sender) done(f []SendFile) {
 	}
 }
 
-func (sender *Sender) httpBin(bin *Bin) error {
-	var err error
-	for i := range bin.Parts {
-		_, err = bin.Parts[i].GetHash()
-		if err != nil {
-			return fmt.Errorf("Failed to compute bin part hash: %s", err.Error())
-		}
-	}
+func (sender *Sender) httpBin(bin *Bin) (err error) {
 	var bw BinEncoder
 	if sender.conf.Compress {
 		bw = NewZBinWriter(NewBinWriter(bin))
@@ -470,12 +476,12 @@ func (sender *Sender) httpBin(bin *Bin) error {
 	}
 	meta, err := bw.EncodeMeta()
 	if err != nil {
-		return err
+		return
 	}
 	url := fmt.Sprintf("%s://%s/data", sender.conf.Protocol(), sender.conf.TargetHost)
 	req, err := http.NewRequest("PUT", url, bw)
 	if err != nil {
-		return err
+		return
 	}
 	req.Header.Add(HeaderSourceName, sender.conf.SourceName)
 	req.Header.Add(HeaderBinData, meta)
@@ -488,14 +494,16 @@ func (sender *Sender) httpBin(bin *Bin) error {
 	}
 	resp, err := sender.client.Do(req)
 	if err != nil {
-		return err
+		return
 	}
 	if resp.StatusCode == 206 {
-		return fmt.Errorf("Bin failed validation")
+		err = fmt.Errorf("Bin failed validation")
+		return
 	} else if resp.StatusCode != 200 {
-		return fmt.Errorf("Bin failed with response code: %d", resp.StatusCode)
+		err = fmt.Errorf("Bin failed with response code: %d", resp.StatusCode)
+		return
 	}
 	resp.Body.Close()
 	req.Close = true
-	return nil
+	return
 }

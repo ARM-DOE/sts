@@ -18,8 +18,8 @@ import (
 // AppOut is the struct container for the outgoing portion of the STS app.
 type AppOut struct {
 	root     string
-	dirConf  *SendDirs
-	rawConf  *SendSource
+	dirConf  *OutDirs
+	rawConf  *OutSource
 	conf     *SenderConf
 	once     bool
 	scanChan chan []ScanFile
@@ -76,10 +76,15 @@ func (a *AppOut) initConf() {
 		panic("Target host missing from configuration")
 	}
 	if a.rawConf.Target.TLS && (a.conf.TLSCert == "" || a.conf.TLSKey == "") {
-		panic("TLS enabled but missing either TLSCert or TLSKey")
+		panic("TLS enabled but missing TLS Cert and/or TLS Key")
 	}
 	if a.rawConf.GroupBy.String() == "" {
 		a.rawConf.GroupBy, _ = regexp.Compile(`^([^\.]*)`) // Default is up to the first dot of the relative path.
+	}
+	for _, p := range []*string{&a.conf.TLSCert, &a.conf.TLSKey} {
+		if *p != "" && !filepath.IsAbs(*p) {
+			*p = filepath.Join(a.root, *p)
+		}
 	}
 	a.setDefaults()
 }
@@ -97,7 +102,17 @@ func (a *AppOut) initComponents() {
 	outDir := InitPath(a.root, filepath.Join(a.dirConf.Out, a.rawConf.Target.Name), true)
 	cacheDir := InitPath(a.root, a.dirConf.Cache, true)
 
-	a.scanner = NewScanner(outDir, cacheDir, time.Second*5, a.rawConf.MinAge, true, 0)
+	scanConf := ScannerConf{
+		ScanDir:  outDir,
+		CacheDir: cacheDir,
+		Delay:    time.Second * 5,
+		MinAge:   a.rawConf.MinAge,
+		MaxAge:   a.rawConf.MaxAge,
+		OutOnce:  true,
+		Nested:   0,
+	}
+
+	a.scanner = NewScanner(&scanConf)
 	a.sorter = NewSorter(a.rawConf.Tags, a.rawConf.GroupBy)
 	a.sender = NewSender(a.conf)
 	a.poller = NewPoller(a.conf)
@@ -107,7 +122,7 @@ func (a *AppOut) initComponents() {
 			continue
 		}
 		if tag.Method == MethodNone || tag.Method == MethodDisk {
-			a.scanner.AddIgnore(tag.Pattern)
+			scanConf.AddIgnore(tag.Pattern)
 		}
 	}
 }

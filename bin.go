@@ -26,28 +26,18 @@ type Part struct {
 	Hash string   // MD5 of the data in the part file from Start:End
 }
 
-// NewPart creates a new Part reference.
-func NewPart(file SendFile, beg int64, end int64) *Part {
-	p := &Part{}
+// NewPart creates a new Part reference including the hash if necessary.
+func NewPart(file SendFile, beg, end int64) (p *Part, err error) {
+	p = &Part{}
 	p.File = file
 	p.Beg = beg
 	p.End = end
-	return p
-}
-
-// GetHash uses StreamMD5 to digest the file part and return its MD5.
-func (part *Part) GetHash() (string, error) {
-	if part.Beg == 0 && part.End == part.File.GetSize() && part.File.GetHash() != "" {
-		return part.File.GetHash(), nil
+	if beg == 0 && end == file.GetSize() && file.GetHash() != "" {
+		p.Hash = file.GetHash()
+	} else {
+		p.Hash, err = fileutils.PartialMD5(file.GetPath(true), beg, end)
 	}
-	if part.Hash == "" {
-		var err error
-		part.Hash, err = fileutils.PartialMD5(part.File.GetPath(true), part.Beg, part.End)
-		if err != nil {
-			return "", err
-		}
-	}
-	return part.Hash, nil
+	return
 }
 
 // Bin is the struct for managing the chunk of data sent in a single request.
@@ -72,20 +62,24 @@ func (bin *Bin) IsFull() bool {
 }
 
 // Add adds what it can of the input SendFile to the bin.  Returns false if no bytes were added.
-func (bin *Bin) Add(file SendFile) bool {
+func (bin *Bin) Add(file SendFile) (added bool, err error) {
 	beg, end := file.GetNextAlloc()
 	end = int64(math.Min(float64(end), float64(beg+bin.BytesLeft)+float64(bin.Bytes)*BinFluff))
 	bytes := int64(end - beg)
 	if bytes > 0 {
-		part := NewPart(file, beg, end)
-		bin.Parts = append(bin.Parts, part)
+		var p *Part
+		p, err = NewPart(file, beg, end)
+		if err != nil {
+			return
+		}
+		bin.Parts = append(bin.Parts, p)
 		bin.BytesLeft -= bytes
-		// logging.Debug("BIN Allocating:", file.GetRelPath(), beg, end)
+		logging.Debug("BIN Allocating:", file.GetRelPath(), beg, end)
 		file.AddAlloc(bytes)
-		return true
+		added = true
+		return
 	}
-
-	return false
+	return
 }
 
 // Validate loops over the bin parts and extracts (removes) any changed or otherwise problem files
@@ -167,7 +161,7 @@ func (z *ZBinWriter) Read(buff []byte) (n int, err error) {
 			z.n = int(math.Ceil(float64(len(buff)) * float64(0.9)))
 		}
 		n, err = z.bw.Read(buff[:z.n])
-		// logging.Debug("BIN Raw Bytes:", n, err)
+		logging.Debug("BIN Raw Bytes:", n, err)
 		if n > 0 {
 			z.writer.Write(buff[:n])
 			z.writer.Flush()
@@ -192,7 +186,7 @@ func (z *ZBinWriter) Read(buff []byte) (n int, err error) {
 		copy(buff, bytes)
 	}
 	z.bytes += n
-	// logging.Debug("BIN Zip Bytes:", n)
+	logging.Debug("BIN Zip Bytes:", n)
 	return
 }
 
@@ -277,7 +271,7 @@ func (bw *BinWriter) Read(out []byte) (n int, err error) {
 	n, err = bw.fh.Read(out[:n])
 	bytesLeft -= int64(n)
 	bw.partProgress += int64(n)
-	// logging.Debug("BIN Bytes Read", n, bw.binPart.File.GetRelPath(), bytesLeft)
+	logging.Debug("BIN Bytes Read", n, bw.binPart.File.GetRelPath(), bytesLeft)
 	if err == io.EOF || n == 0 || bytesLeft == 0 {
 		err = bw.startNextPart()
 		bw.eop = true
@@ -332,13 +326,13 @@ func (pr *PartReader) Read(out []byte) (n int, err error) {
 	}
 	pr.pos += n
 	if pr.pos == int(total) {
-		// logging.Debug("BIN Part Done", pr.pos)
+		logging.Debug("BIN Part Done", pr.pos)
 		return n, io.EOF
 	}
 	if pr.pos > int(total) {
 		logging.Error("BIN Part Overflow:", pr.pos-int(total))
 	}
-	// logging.Debug("BIN Part Read", n, pr.pos, total, err)
+	logging.Debug("BIN Part Read", n, pr.pos, total, err)
 	return
 }
 
