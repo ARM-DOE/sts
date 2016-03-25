@@ -1,2 +1,4 @@
 .DS_Store
-run
+assets/test/sts.tar
+assets/test/run/data
+assets/test/run/.sts
