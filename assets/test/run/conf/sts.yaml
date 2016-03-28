@@ -5,15 +5,15 @@ OUT: # Outgoing configuration
     logs  : data/log # For log files; appends "outgoing_to/{target}", "messages"
   sources: # Supports multiple sources where omitted entries will inherit from previous sources hierarchically
     - name          : stsout-1 # Name of the source
-      threads       : 10       # Maximum number of concurrent connections
+      threads       : 8        # Maximum number of concurrent connections
       min-age       : 1s       # How old a file must be before being added to the "outgoing" queue
       max-age       : 1h       # How old a file can be before getting logged as "stale" (remains in the queue)
       timeout       : 1h       # The HTTP timeout for a single request
-      bin-size      : 1MB      # The generally-desired size for a given HTTP request (BEFORE any compression)
+      bin-size      : 10MB     # The generally-desired size for a given HTTP request (BEFORE any compression)
       compress      : true     # Use GZIP compression (NOTE: bin-size is based on file size BEFORE compression)
-      poll-delay    : 5s       # How long to wait after file sent before final validation
-      poll-interval : 1s       # How long to wait between polling requests
-      max-retries   : 10       # How many times to "poll" for the successful reception of a file before re-sending
+      poll-delay    : 2s       # How long to wait after file sent before final validation
+      poll-interval : 5s       # How long to wait between polling requests
+      poll-attempts : 10       # How many times to "poll" for the successful reception of a file before re-sending
       target: # Target-specific configuration
         name          : stsin-1           # Name of the target
         http-host     : localhost:8081    # Target host, including port
