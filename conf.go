@@ -65,12 +65,12 @@ type OutSource struct {
 	Threads      int
 	MinAge       time.Duration
 	MaxAge       time.Duration
-	MaxRetries   int
 	Timeout      time.Duration
 	BinSize      units.Base2Bytes
 	Compress     bool
 	PollDelay    time.Duration
 	PollInterval time.Duration
+	PollAttempts int
 	Target       *OutTarget
 	GroupBy      *regexp.Regexp
 	Tags         []*Tag
@@ -83,12 +83,12 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 		Name         string        `yaml:"name"`
 		Threads      int           `yaml:"threads"`
 		MinAge       time.Duration `yaml:"min-age"`
-		MaxRetries   int           `yaml:"max-retries"`
 		Timeout      time.Duration `yaml:"timeout"`
 		BinSize      string        `yaml:"bin-size"`
 		Compress     bool          `yaml:"compress"`
 		PollDelay    time.Duration `yaml:"poll-delay"`
 		PollInterval time.Duration `yaml:"poll-interval"`
+		PollAttempts int           `yaml:"poll-attempts"`
 		Target       *OutTarget    `yaml:"target"`
 		GroupBy      string        `yaml:"group-by"`
 		Tags         []*Tag        `yaml:"tags"`
@@ -99,7 +99,6 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 	ss.Name = aux.Name
 	ss.Threads = aux.Threads
 	ss.MinAge = aux.MinAge
-	ss.MaxRetries = aux.MaxRetries
 	ss.Timeout = aux.Timeout
 	if ss.BinSize, err = units.ParseBase2Bytes(aux.BinSize); err != nil {
 		return
@@ -107,6 +106,7 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 	ss.Compress = aux.Compress
 	ss.PollDelay = aux.PollDelay
 	ss.PollInterval = aux.PollInterval
+	ss.PollAttempts = aux.PollAttempts
 	ss.Target = aux.Target
 	if ss.GroupBy, err = regexp.Compile(aux.GroupBy); err != nil {
 		return
