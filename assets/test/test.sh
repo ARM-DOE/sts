@@ -24,16 +24,23 @@ tar -C $STS_HOME/data/out/stsin-1 -xf $PWD/$basedir/sts.tar
 # sleep 1
 
 echo "Running in background..."
-$cmd > /dev/null 2>&1 &
+$cmd > /dev/null &
 
-sleep 3 # Wait for it do some stuff.
+sleep 4 # Wait for it do some stuff.
 
 echo "Simulating crash..."
 pkill $exe
 sleep 1 # Wait for it to die.
 
+echo "-------------------------------------------------------------------------"
+echo "STAGE DIR:"
+find $STS_HOME/data/stage -type f
+echo "-------------------------------------------------------------------------"
+echo "IN DIR:"
+find $STS_HOME/data/in -type f | sort
+
 echo "Restarting..."
-$cmd > /dev/null 2>&1
+$cmd > /dev/null
 
 # TODO: automate log/dir checking to confirm:
 # 1) files sent in order
@@ -44,10 +51,11 @@ echo "-------------------------------------------------------------------------"
 echo "ERRORS:"
 grep "ERROR" $STS_HOME/data/log/messages/*/*
 echo "-------------------------------------------------------------------------"
-echo "OUT COUNT (total vs unique):"
-total=`cut -d ":" -f 1 $STS_HOME/data/log/outgoing_to/*/*/* | wc -l`
- uniq=`cut -d ":" -f 1 $STS_HOME/data/log/outgoing_to/*/*/* | sort | uniq | wc -l`
-echo "$total == $uniq ?"
+echo "OUT DUPLICATES:"
+total=`cut -d ":" -f 1 $STS_HOME/data/log/outgoing_to/*/*/* | sort > /tmp/foo1`
+ uniq=`cut -d ":" -f 1 $STS_HOME/data/log/outgoing_to/*/*/* | sort | uniq > /tmp/foo2`
+diff /tmp/foo1 /tmp/foo2
+rm /tmp/foo*
 echo "-------------------------------------------------------------------------"
 echo "OUT DIR:"
 find $STS_HOME/data/out -type f
