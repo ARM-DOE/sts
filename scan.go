@@ -208,12 +208,14 @@ func NewScanner(conf *ScannerConf) *Scanner {
 // Start starts the daemon that puts files on the outChan and reads from the doneChan.
 // If stopChan is nil, only scan once and trigger shutdown.
 func (scanner *Scanner) Start(outChan chan<- []ScanFile, doneChan <-chan []DoneFile, stopChan <-chan bool) {
+	force := true // Force the first scan.
 	for {
 		select {
 		case <-stopChan:
 			stopChan = nil // So we don't get here again.
 		default:
-			if outChan != nil && scanner.out(outChan) > 0 {
+			if outChan != nil && scanner.out(outChan, force) > 0 {
+				force = false
 				break
 			}
 			time.Sleep(time.Millisecond * 100) // So we don't thrash.
@@ -241,9 +243,9 @@ func (scanner *Scanner) Start(outChan chan<- []ScanFile, doneChan <-chan []DoneF
 	}
 }
 
-func (scanner *Scanner) out(ch chan<- []ScanFile) int {
+func (scanner *Scanner) out(ch chan<- []ScanFile, force bool) int {
 	// Make sure it's been long enough for another scan.
-	if scanner.queue.ScanTime > time.Now().Unix()-int64(scanner.conf.Delay.Seconds()) {
+	if !force && time.Now().Sub(time.Unix(scanner.queue.ScanTime, 0)) < scanner.conf.Delay {
 		return 0
 	}
 

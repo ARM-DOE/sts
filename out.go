@@ -40,8 +40,8 @@ func (a *AppOut) setDefaults() {
 	if a.conf.Timeout == 0 {
 		a.conf.Timeout = 3600 * 60
 	}
-	if a.conf.MaxRetries == 0 {
-		a.conf.MaxRetries = 10
+	if a.conf.PollAttempts == 0 {
+		a.conf.PollAttempts = 10
 	}
 	if a.conf.PollInterval == 0 {
 		a.conf.PollInterval = 60
@@ -62,9 +62,9 @@ func (a *AppOut) initConf() {
 		TLSKey:       a.rawConf.Target.TLSKey,
 		BinSize:      a.rawConf.BinSize,
 		Timeout:      a.rawConf.Timeout,
-		MaxRetries:   a.rawConf.MaxRetries,
 		PollInterval: a.rawConf.PollInterval,
 		PollDelay:    a.rawConf.PollDelay,
+		PollAttempts: a.rawConf.PollAttempts,
 	}
 	if a.conf.SourceName == "" {
 		panic("Source name missing from configuration")
@@ -105,7 +105,7 @@ func (a *AppOut) initComponents() {
 	scanConf := ScannerConf{
 		ScanDir:  outDir,
 		CacheDir: cacheDir,
-		Delay:    time.Second * 5,
+		Delay:    time.Second * 10,
 		MinAge:   a.rawConf.MinAge,
 		MaxAge:   a.rawConf.MaxAge,
 		OutOnce:  true,
@@ -192,11 +192,12 @@ func (a *AppOut) getRecoverable() (send []ScanFile, poll []PollFile, err error) 
 			send = append(send, rf)
 
 		} else {
+			logging.Debug("RECOVER Found Poll", file.GetRelPath())
 			// Either fully sent or not at all.  Need to poll to find out which.
 			poll = append(poll, &askFile{
-				path:    file.GetPath(false),
-				relPath: file.GetRelPath(),
+				file:    file,
 				start:   file.GetTime() * 1e9, // Expects nanoseconds
+				success: true,
 			})
 		}
 		fmap[file.GetRelPath()] = file
@@ -217,16 +218,29 @@ func (a *AppOut) recover() {
 		panic(err.Error())
 	}
 	// Poll files need to be polled just once before moving on.
-	var done []DoneFile
 	if len(poll) > 0 {
-		_, done, err = a.poller.Poll(poll)
+		none, fail, done, err := a.poller.Poll(poll)
 		if err != nil {
 			panic(err.Error())
 		}
+		// It's important that we get these files in the same batch as the recoverable
+		// so that the file order stays intact.  Otherwise we might get a circular
+		// dependency since the recover group might include files that were meant to
+		// be put away after some of these that haven't been partially sent yet.
+		for _, f := range append(none, fail...) {
+			send = append(send, f.GetOrigFile().(ScanFile))
+		}
 		if len(done) > 0 {
-			logging.Debug("MAIN Found Already Done:", len(done))
+			// The scanner may not process the "done" list before sending files out
+			// so we need to mark them as already queued.
+			var d []DoneFile
+			for _, f := range done {
+				logging.Debug("RECOVER Found Already Done:", f.(DoneFile).GetRelPath())
+				a.scanner.SetQueued(f.(DoneFile).GetPath()) // So they don't get added again.
+				d = append(d, f.(DoneFile))
+			}
 			for _, dc := range a.doneChan {
-				dc <- done // The scanner will get this first before picking them up to send again.
+				dc <- d
 			}
 		}
 	}
@@ -321,23 +335,31 @@ func (a *AppOut) Start(stop <-chan bool) <-chan bool {
 	return done
 }
 
-// Implements PollFile and DoneFile
+// askFile needs to implement PollFile and DoneFile
 type askFile struct {
-	path    string
-	relPath string
+	file    ScanFile
 	start   int64
+	success bool
 }
 
 func (f *askFile) GetPath() string {
-	return f.path
+	return f.file.GetPath(false)
 }
 
 func (f *askFile) GetRelPath() string {
-	return f.relPath
+	return f.file.GetRelPath()
 }
 
 func (f *askFile) GetStarted() int64 {
 	return f.start
+}
+
+func (f *askFile) GetSuccess() bool {
+	return f.success
+}
+
+func (f *askFile) GetOrigFile() interface{} {
+	return f.file
 }
 
 // Implements RecoverFile

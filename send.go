@@ -73,8 +73,9 @@ func (f *sendFile) GetPrevName() string {
 			return p
 		}
 	}
-	if f.file.GetPrev() != nil {
-		return f.file.GetPrev().GetRelPath()
+	prev := f.file.GetPrevReq()
+	if prev != nil {
+		return prev.GetRelPath()
 	}
 	return ""
 }
@@ -202,9 +203,9 @@ type SenderConf struct {
 	TLSKey       string
 	BinSize      units.Base2Bytes
 	Timeout      time.Duration
-	MaxRetries   int
 	PollInterval time.Duration
 	PollDelay    time.Duration
+	PollAttempts int
 }
 
 // Protocol returns the protocl (http vs https) based on the configuration.
@@ -425,36 +426,36 @@ func (sender *Sender) startSend(wg *sync.WaitGroup) {
 // sendBin sends a bin in a loop to handle errors and keep trying.
 func (sender *Sender) sendBin(bin *Bin) {
 	// TODO: respond to partially successful requests.
+	nerr := 0
 	for {
-		nerr := 0
-		logging.Debug("SEND Bin:", bin.Bytes, bin.BytesLeft, len(bin.Parts))
 		err := sender.httpBin(bin)
-		if err != nil {
-			nerr++
-			logging.Error(err.Error())
-			canceled := bin.Validate()
-			if len(canceled) > 0 {
-				sender.done(canceled)
-				if len(bin.Parts) > 0 {
-					continue
-				}
-				break
-			}
-			time.Sleep(time.Duration(nerr) * time.Second) // Wait longer the more it fails.
-			continue
+		if err == nil {
+			break
 		}
-		var done []SendFile
-		for _, part := range bin.Parts {
-			part.File.AddSent(part.End - part.Beg)
-			if part.File.IsSent() {
-				f := part.File
-				logging.Sent(f.GetRelPath(), f.GetHash(), f.GetSize(), f.TimeMs(), sender.conf.TargetName)
-				done = append(done, f)
+		nerr++
+		logging.Error(err.Error())
+		canceled := bin.Validate()
+		if len(canceled) > 0 {
+			sender.done(canceled)
+			if len(bin.Parts) > 0 {
+				continue
 			}
+			break
 		}
-		sender.done(done)
-		break
+		time.Sleep(time.Duration(nerr) * time.Second) // Wait longer the more it fails.
 	}
+	var done []SendFile
+	for _, part := range bin.Parts {
+		logging.Debug("SEND Add Sent:", part.File.GetRelPath(), part.End-part.Beg)
+		part.File.AddSent(part.End - part.Beg)
+		if part.File.IsSent() {
+			f := part.File
+			logging.Debug("SEND Sent:", f.GetRelPath(), f.GetSize(), f.TimeMs())
+			logging.Sent(f.GetRelPath(), f.GetHash(), f.GetSize(), f.TimeMs(), sender.conf.TargetName)
+			done = append(done, f)
+		}
+	}
+	sender.done(done)
 }
 
 func (sender *Sender) done(f []SendFile) {

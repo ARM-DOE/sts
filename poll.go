@@ -64,6 +64,10 @@ func (f *pollFile) GetSuccess() bool {
 	return !f.time.IsZero()
 }
 
+func (f *pollFile) GetOrigFile() interface{} {
+	return f.file
+}
+
 // NewPoller creates a new Poller instance with all default variables instantiated.
 func NewPoller(conf *SenderConf) *Poller {
 	p := &Poller{}
@@ -170,25 +174,35 @@ func (poller *Poller) Start(ch *PollerChan) {
 		if len(poller.Files) < 1 {
 			continue
 		}
-		var f []SendFile
-		var d []DoneFile
+		var f []PollFile
+		var d []PollFile
 		f, poll = poller.buildList()
-		fail = append(fail, f...)
+		for _, ff := range f {
+			fail = append(fail, ff.GetOrigFile().(SendFile))
+		}
 		if len(poll) < 1 {
 			continue
 		}
-		f, d, err = poller.Poll(poll)
+		_, f, d, err = poller.Poll(poll)
+		if err != nil {
+			logging.Error(err.Error())
+		}
 		if loop > 0 {
 			loop -= len(d) // Offset the loop counter so we know when the "retry" loop is empty.
 		}
-		fail = append(fail, f...)
+		for _, ff := range f {
+			fail = append(fail, ff.GetOrigFile().(SendFile))
+			poller.removeFile(ff.(PollFile))
+		}
+		var df []DoneFile
+		for _, dd := range d {
+			df = append(df, dd.(DoneFile))
+			poller.removeFile(dd.(PollFile))
+		}
 		for i := range done {
-			done[i] = append(done[i], d...)
+			done[i] = append(done[i], df...)
 		}
-		if err != nil {
-			t = time.Now()
-			continue
-		}
+		t = time.Now()
 	}
 }
 
@@ -205,11 +219,12 @@ func (poller *Poller) removeFile(file PollFile) {
 	delete(poller.Files, file.GetRelPath())
 }
 
-func (poller *Poller) buildList() (fail []SendFile, poll []PollFile) {
+func (poller *Poller) buildList() (fail []PollFile, poll []PollFile) {
 	for _, pf := range poller.Files {
-		if poller.conf.MaxRetries > 0 && pf.nRetry > poller.conf.MaxRetries {
+		if poller.conf.PollAttempts > 0 && pf.nRetry > poller.conf.PollAttempts {
 			logging.Debug("POLL Rejected:", pf.file.GetRelPath())
-			fail = append(fail, pf.file)
+			fail = append(fail, pf)
+			poller.removeFile(pf)
 			continue
 		}
 		if time.Now().Sub(pf.time) > poller.conf.PollDelay {
@@ -222,18 +237,18 @@ func (poller *Poller) buildList() (fail []SendFile, poll []PollFile) {
 }
 
 // Poll attempts to confirm whether files have been properly received on target.
-func (poller *Poller) Poll(files []PollFile) (fail []SendFile, done []DoneFile, err error) {
+func (poller *Poller) Poll(files []PollFile) (none []PollFile, fail []PollFile, pass []PollFile, err error) {
 	fmap := make(map[string]PollFile)
 	var cf []*ConfirmFile
 	for _, f := range files {
 		cf = append(cf, &ConfirmFile{f.GetRelPath(), int64(f.GetStarted() / 1e9)}) // GetStarted() returns in nanoseconds
 		fmap[f.GetRelPath()] = f
+		logging.Debug("POLLing:", f.GetRelPath())
 	}
 	payloadJSON, err := json.Marshal(cf)
 	if err != nil {
 		return
 	}
-	logging.Debug("POLLing for:", len(files))
 	url := fmt.Sprintf("%s://%s/validate", poller.conf.Protocol(), poller.conf.TargetHost)
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payloadJSON))
 	req.Header.Add("Content-Type", "application/json")
@@ -256,24 +271,16 @@ func (poller *Poller) Poll(files []PollFile) (fail []SendFile, done []DoneFile, 
 		return
 	}
 	for path, code := range fileMap {
+		logging.Debug("POLL Result:", path, code)
 		pf := fmap[path]
-		df, ok := pf.(DoneFile)
-		if !ok {
-			_, ok = poller.Files[path]
-			if !ok {
-				continue
-			}
-			df = poller.Files[path].file.(DoneFile)
-		}
 		switch code {
+		case ConfirmNone:
+			none = append(none, pf)
 		case ConfirmPassed:
-			logging.Debug("POLL Confirmation:", path)
-			done = append(done, df)
+			pass = append(pass, pf)
 		case ConfirmFailed:
-			logging.Error("POLL Failed Confirmation:", path)
-			fail = append(fail, poller.Files[path].file.(SendFile))
+			fail = append(fail, pf)
 		}
-		poller.removeFile(pf)
 	}
 	return
 }

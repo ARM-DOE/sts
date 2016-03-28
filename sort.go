@@ -64,8 +64,7 @@ func (t *sortedGroup) insertBefore(next *sortedGroup) {
 
 type sortedFile struct {
 	file  ScanFile
-	group string
-	hash  string
+	group *sortedGroup
 	next  SortFile
 	prev  SortFile
 }
@@ -101,11 +100,7 @@ func (file *sortedFile) Reset() (bool, error) {
 }
 
 func (file *sortedFile) GetGroup() string {
-	return file.group
-}
-
-func (file *sortedFile) GetHash() string {
-	return file.hash
+	return file.group.group
 }
 
 func (file *sortedFile) GetNext() SortFile {
@@ -114,6 +109,13 @@ func (file *sortedFile) GetNext() SortFile {
 
 func (file *sortedFile) GetPrev() SortFile {
 	return file.prev
+}
+
+func (file *sortedFile) GetPrevReq() SortFile {
+	if file.group.conf.Order == OrderFIFO {
+		return file.GetPrev()
+	}
+	return nil
 }
 
 func (file *sortedFile) SetNext(next SortFile) {
@@ -210,7 +212,11 @@ func (sorter *Sorter) Start(inChan <-chan []ScanFile, outChan chan<- SortFile, d
 			if next != nil {
 				select { // We don't want to block if the send queue is full so we can keep accepting incoming files.
 				case outChan <- next:
-					logging.Debug("SORT File Out:", next.GetRelPath())
+					prev := ""
+					if next.GetPrev() != nil {
+						prev = next.GetPrev().GetRelPath()
+					}
+					logging.Debug("SORT File Out:", next.GetRelPath(), prev)
 					sorter.clearNext(next)
 					continue
 				default:
@@ -234,15 +240,16 @@ func (sorter *Sorter) add(f ScanFile) {
 		return
 	}
 	file := newSortedFile(f)
-	file.group = sorter.getGroup(file.GetRelPath())
-	_, exists = sorter.groupMap[file.group]
+	group := sorter.getGroup(file.GetRelPath())
+	sgrp, exists := sorter.groupMap[group]
 	if !exists {
-		conf := sorter.getGroupConf(file.group)
-		sgrp := newSortedGroup(file.group, conf)
-		sorter.groupMap[file.group] = sgrp
+		conf := sorter.getGroupConf(group)
+		sgrp = newSortedGroup(group, conf)
+		sorter.groupMap[group] = sgrp
 		sorter.addGroup(sgrp)
 	}
-	sorter.insertFile(file)
+	file.group = sgrp
+	sorter.addFile(file)
 	sorter.files[file.GetPath(false)] = file
 }
 
@@ -332,29 +339,39 @@ func (sorter *Sorter) addGroup(grp *sortedGroup) {
 	}
 }
 
-func (sorter *Sorter) insertFile(file SortFile) {
+func (sorter *Sorter) addFile(file SortFile) {
 	grp := sorter.groupMap[file.GetGroup()]
-	if grp.conf.Order == OrderNone {
-		return
-	}
 	f := sorter.next[grp.group]
 	if f == nil {
 		sorter.next[grp.group] = file
 		return
 	}
+	n := 0
 	for f != nil {
 		if grp.conf.Order == OrderFIFO && file.GetTime() < f.GetTime() {
 			file.InsertBefore(f)
-			if f == sorter.next[grp.group] {
-				sorter.next[grp.group] = file
-			}
 			break
 		}
+		// It's important that the sorting be the same every time in order to recover
+		// gracefully when order matters for delivery.  In other words, if a file has
+		// a required previous file the first time through, it better have the same one
+		// (or none) if passed through again after a crash recovery.  This is why we're
+		// also doing an alpha sort in addition to mod time because mod times can match
+		// but names cannot.
+		if file.GetRelPath() < f.GetRelPath() {
+			file.InsertBefore(f)
+			break
+		}
+		n++
 		if f.GetNext() == nil {
 			file.InsertAfter(f)
 			break
 		}
 		f = f.GetNext()
+	}
+	// If we inserted before the head file we need to update the pointer.
+	if n == 0 {
+		sorter.next[grp.group] = file
 	}
 }
 

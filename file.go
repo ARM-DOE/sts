@@ -22,6 +22,7 @@ type SortFile interface {
 	GetGroup() string
 	GetNext() SortFile
 	GetPrev() SortFile
+	GetPrevReq() SortFile
 	SetNext(SortFile)
 	SetPrev(SortFile)
 	InsertAfter(SortFile)
@@ -75,6 +76,7 @@ type RecoverFile interface {
 
 // PollFile is the interface for a file as needed for polling.
 type PollFile interface {
+	GetOrigFile() interface{} // Needs to be generic to accommodate polling at different stages.
 	GetRelPath() string
 	GetStarted() int64 // Expects UnixNano
 }
