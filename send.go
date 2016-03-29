@@ -16,7 +16,8 @@ type sendFile struct {
 	file       SortFile
 	hash       string
 	prevName   string
-	started    int64
+	started    time.Time
+	completed  time.Time
 	bytesAlloc int64
 	bytesSent  int64
 	cancel     bool
@@ -67,12 +68,6 @@ func (f *sendFile) GetHash() string {
 func (f *sendFile) GetPrevName() string {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
-	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
-		p := f.file.GetOrigFile().(RecoverFile).GetPrevName()
-		if p != "" {
-			return p
-		}
-	}
 	prev := f.file.GetPrevReq()
 	if prev != nil {
 		return prev.GetRelPath()
@@ -80,10 +75,32 @@ func (f *sendFile) GetPrevName() string {
 	return ""
 }
 
-func (f *sendFile) GetStarted() int64 {
+func (f *sendFile) SetStarted(t time.Time) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	if f.started.IsZero() || t.Before(f.started) {
+		f.started = t
+	}
+}
+
+func (f *sendFile) GetStarted() time.Time {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 	return f.started
+}
+
+func (f *sendFile) SetCompleted(t time.Time) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	if t.After(f.completed) {
+		f.completed = t
+	}
+}
+
+func (f *sendFile) GetCompleted() time.Time {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+	return f.completed
 }
 
 func (f *sendFile) GetNextAlloc() (int64, int64) {
@@ -107,9 +124,6 @@ func (f *sendFile) GetBytesAlloc() int64 {
 func (f *sendFile) AddAlloc(bytes int64) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
-	if f.started == 0 {
-		f.started = time.Now().UnixNano()
-	}
 	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
 		f.file.GetOrigFile().(RecoverFile).AddAlloc(bytes)
 		return
@@ -126,25 +140,30 @@ func (f *sendFile) GetBytesSent() int64 {
 	return f.bytesSent
 }
 
-func (f *sendFile) AddSent(bytes int64) {
+func (f *sendFile) AddSent(bytes int64) bool {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
 		f.file.GetOrigFile().(RecoverFile).AddSent(bytes)
-		return
+	} else {
+		f.bytesSent += bytes
 	}
-	f.bytesSent += bytes
+	return f.isSent()
 }
 
 func (f *sendFile) TimeMs() int64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
-	return int64((time.Now().UnixNano() - f.started) / 1e6)
+	return int64(f.completed.Sub(f.started).Nanoseconds() / 1e6)
 }
 
 func (f *sendFile) IsSent() bool {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
+	return f.isSent()
+}
+
+func (f *sendFile) isSent() bool {
 	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
 		return f.file.GetOrigFile().(RecoverFile).GetBytesSent() == f.file.GetSize()
 	}
@@ -160,7 +179,7 @@ func (f *sendFile) Stat() (bool, error) {
 func (f *sendFile) Reset() (changed bool, err error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
-	f.started = 0
+	f.started = time.Time{}
 	f.bytesAlloc = 0
 	f.bytesSent = 0
 	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
@@ -225,6 +244,7 @@ type SenderChan struct {
 	Close    chan<- bool
 	sendFile chan SendFile
 	sendBin  chan *Bin
+	doneBin  chan *Bin
 }
 
 // Sender is the struct for managing STS send operations.
@@ -252,24 +272,23 @@ func (sender *Sender) Start(ch *SenderChan) {
 	sender.ch = ch
 	sender.ch.sendFile = make(chan SendFile, sender.conf.Threads)
 	sender.ch.sendBin = make(chan *Bin, sender.conf.Threads*2)
-	var wgWrap, wgBin, wgRebin, wgSend sync.WaitGroup
-	nWrap, nBin, nRebin, nSend := 1, 1, 1, sender.conf.Threads
-	wgWrap.Add(nWrap)
-	for i := 0; i < nWrap; i++ {
-		go sender.startWrap(&wgWrap)
+	sender.ch.doneBin = make(chan *Bin, sender.conf.Threads)
+	var wgWrap, wgBin, wgRebin, wgSend, wgDone sync.WaitGroup
+	nWrap, nBin, nRebin, nSend, nDone := 1, 1, 1, sender.conf.Threads, 1
+	start := func(s func(wg *sync.WaitGroup), wg *sync.WaitGroup, n int) {
+		wg.Add(n)
+		for i := 0; i < n; i++ {
+			go s(wg)
+		}
 	}
-	wgBin.Add(nBin)
-	for i := 0; i < nBin; i++ {
-		go sender.startBin(&wgBin)
-	}
-	wgRebin.Add(nRebin)
-	for i := 0; i < nRebin; i++ {
-		go sender.startRebin(&wgRebin)
-	}
-	wgSend.Add(nSend)
-	for i := 0; i < nSend; i++ {
-		go sender.startSend(&wgSend)
-	}
+
+	// Start the go routines.
+	start(sender.startWrap, &wgWrap, nWrap)
+	start(sender.startBin, &wgBin, nBin)
+	start(sender.startRebin, &wgRebin, nRebin)
+	start(sender.startSend, &wgSend, nSend)
+	start(sender.startDone, &wgDone, nDone)
+
 	wgWrap.Wait()
 	logging.Debug("SEND Wrapping Done")
 	for i := 0; i < nBin; i++ {
@@ -282,25 +301,30 @@ func (sender *Sender) Start(ch *SenderChan) {
 	}
 	wgSend.Wait()
 	logging.Debug("SEND Sending Done")
+	for i := 0; i < nDone; i++ {
+		sender.ch.doneBin <- nil // Trigger a shutdown without closing the channel.
+	}
+	wgDone.Wait()
+	logging.Debug("SEND Completing Done")
 
 	// Once we're here, everything has been sent to the out channel(s) and all we need to
 	// do is resend anything that comes in on the retry channel.
 	sender.ch.Close <- true // Communicate shutdown.
 	close(sender.ch.Close)
-	wgBin.Add(nBin)
-	for i := 0; i < nBin; i++ {
-		go sender.startBin(&wgBin) // Restart the binners.
-	}
-	wgSend.Add(nSend)
-	for i := 0; i < nSend; i++ {
-		go sender.startSend(&wgSend) // Restart the senders.
-	}
+
+	// Restart to finish anything stuck in the pipe.
+	start(sender.startBin, &wgBin, nBin)
+	start(sender.startSend, &wgSend, nSend)
+	start(sender.startDone, &wgDone, nDone)
+
 	wgRebin.Wait() // Will only unblock once retry channel is closed. Then we can close out the loop.
 	logging.Debug("SEND Retrying Done")
 	close(sender.ch.sendFile)
 	wgBin.Wait()
 	close(sender.ch.sendBin)
 	wgSend.Wait()
+	close(sender.ch.doneBin)
+	wgDone.Wait()
 	for _, c := range sender.ch.Done {
 		close(c)
 	}
@@ -318,6 +342,19 @@ func (sender *Sender) startWrap(wg *sync.WaitGroup) {
 		if err != nil {
 			logging.Error("Failed to get file ready to send:", f.GetPath(false), err.Error())
 			return
+		}
+		if sf.IsSent() {
+			// If we get here then this is a "RecoverFile" that was fully sent
+			// before a crash and we need to make sure it got logged as "sent"
+			// and if not, we need to do it, even though we won't know how long
+			// the original transfer took.
+			if !logging.FindSent(sf.GetRelPath(), time.Unix(sf.GetTime(), 0), time.Now(), sender.conf.TargetName) {
+				logging.Sent(sf.GetRelPath(), sf.GetHash(), sf.GetSize(), 0, sender.conf.TargetName)
+			}
+			for _, c := range sender.ch.Done {
+				c <- []SendFile{sf}
+			}
+			continue
 		}
 		sender.ch.sendFile <- sf
 	}
@@ -341,13 +378,6 @@ func (sender *Sender) startBin(wg *sync.WaitGroup) {
 				}
 				logging.Debug("SEND Binning Found:", f.GetRelPath())
 				waited = time.Millisecond * 0
-				if f.IsSent() {
-					for _, c := range sender.ch.Done {
-						c <- []SendFile{f}
-					}
-					f = nil
-					continue
-				}
 			default:
 				time.Sleep(wait)
 				waited += wait
@@ -420,11 +450,35 @@ func (sender *Sender) startSend(wg *sync.WaitGroup) {
 			logging.Debug("SEND Bin Part:", &b, p.File.GetRelPath(), p.Beg, p.End)
 		}
 		sender.sendBin(b)
+		sender.ch.doneBin <- b
+	}
+}
+
+func (sender *Sender) startDone(wg *sync.WaitGroup) {
+	defer wg.Done()
+	for {
+		b, ok := <-sender.ch.doneBin
+		if !ok || b == nil {
+			break
+		}
+		var done []SendFile
+		for _, p := range b.Parts {
+			f := p.File
+			f.SetStarted(b.GetStarted())
+			if f.AddSent(p.End - p.Beg) {
+				f.SetCompleted(b.GetCompleted())
+				logging.Debug("SEND Sent:", f.GetRelPath(), f.GetSize(), f.GetStarted(), f.GetCompleted())
+				logging.Sent(f.GetRelPath(), f.GetHash(), f.GetSize(), f.TimeMs(), sender.conf.TargetName)
+				done = append(done, f)
+			}
+		}
+		sender.done(done)
 	}
 }
 
 // sendBin sends a bin in a loop to handle errors and keep trying.
 func (sender *Sender) sendBin(bin *Bin) {
+	bin.SetStarted()
 	// TODO: respond to partially successful requests.
 	nerr := 0
 	for {
@@ -444,18 +498,7 @@ func (sender *Sender) sendBin(bin *Bin) {
 		}
 		time.Sleep(time.Duration(nerr) * time.Second) // Wait longer the more it fails.
 	}
-	var done []SendFile
-	for _, part := range bin.Parts {
-		logging.Debug("SEND Add Sent:", part.File.GetRelPath(), part.End-part.Beg)
-		part.File.AddSent(part.End - part.Beg)
-		if part.File.IsSent() {
-			f := part.File
-			logging.Debug("SEND Sent:", f.GetRelPath(), f.GetSize(), f.TimeMs())
-			logging.Sent(f.GetRelPath(), f.GetHash(), f.GetSize(), f.TimeMs(), sender.conf.TargetName)
-			done = append(done, f)
-		}
-	}
-	sender.done(done)
+	bin.SetCompleted()
 }
 
 func (sender *Sender) done(f []SendFile) {
