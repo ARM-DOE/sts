@@ -14,8 +14,8 @@ import (
 // CacheAge is how long a finalized file is kept in memory.
 const CacheAge = time.Minute * 60
 
-// LogSearchDays is how far back (max) to look in the logs for a finalized file.
-const LogSearchDays = 30
+// LogSearch is how far back (max) to look in the logs for a finalized file.
+const LogSearch = time.Duration(30 * 24 * time.Hour)
 
 // Finalizer manages files that need to be validated against companions.
 type Finalizer struct {
@@ -56,10 +56,10 @@ func (f *Finalizer) Start(inChan chan []ScanFile) {
 }
 
 // IsFinal is for outside components to ask if the specified file has been finalized.
-func (f *Finalizer) IsFinal(source string, relPath string, sentTime int64) (bool, bool) {
+func (f *Finalizer) IsFinal(source string, relPath string, sent time.Time) (bool, bool) {
 	success, found := f.fromCache(source, relPath)
 	if !found {
-		success = logging.FindReceived(relPath, 0, sentTime, source)
+		success = logging.FindReceived(relPath, sent, time.Now(), source)
 		return success, success
 	}
 	return success, true
@@ -96,7 +96,7 @@ func (f *Finalizer) finalize(file ScanFile) (bool, error) {
 		}
 		success, found := f.fromCache(cmp.SourceName, cmp.PrevFile)
 		if !found {
-			found = logging.FindReceived(cmp.PrevFile, LogSearchDays, 0, cmp.SourceName)
+			found = logging.FindReceived(cmp.PrevFile, time.Now(), time.Now().Add(-LogSearch), cmp.SourceName)
 			if !found {
 				logging.Debug("FINAL Previous File Not Found in Log:", file.GetRelPath(), cmp.PrevFile)
 				return false, nil

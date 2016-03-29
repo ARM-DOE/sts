@@ -1,6 +1,8 @@
 package fileutils
 
 import (
+	"bufio"
+	"bytes"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -15,6 +17,24 @@ const LockExt = ".lck"
 
 // BlockSize is the number of bytes read into memory.
 const BlockSize = 8192
+
+// FindLine searches the given file for the provided byte array and returns that
+// line if found.
+func FindLine(path string, b []byte) string {
+	fh, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer fh.Close()
+	scanner := bufio.NewScanner(fh)
+	for scanner.Scan() {
+		fb := scanner.Bytes()
+		if bytes.Contains(fb, b) {
+			return string(fb)
+		}
+	}
+	return ""
+}
 
 // WriteJSON writes the input data in JSON format to the specified path.
 func WriteJSON(path string, data interface{}) error {

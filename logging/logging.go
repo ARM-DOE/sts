@@ -1,8 +1,6 @@
 package logging
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -10,6 +8,8 @@ import (
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/ARM-DOE/sts/fileutils"
 )
 
 // Out is the log directory for send log entries to match legacy STS.
@@ -115,6 +115,11 @@ func Sent(msg string, hash string, size int64, ms int64, prefix ...string) {
 	logger.fh.Sync()
 }
 
+// FindSent looks for a file name in the outgoing log history.
+func FindSent(text string, start time.Time, stop time.Time, prefix ...string) bool {
+	return GetLogger(Out).search(text+":", start, stop, prefix...)
+}
+
 // Received writes a formatted string to the "incoming_from" log file.
 func Received(msg string, hash string, size int64, prefix ...string) {
 	logger, exists := gLoggers[In]
@@ -130,8 +135,8 @@ func Received(msg string, hash string, size int64, prefix ...string) {
 }
 
 // FindReceived looks for a file name in the incoming log history.
-func FindReceived(text string, nDays int, start int64, prefix ...string) bool {
-	return GetLogger(In).search(text+":", nDays, start, prefix...)
+func FindReceived(text string, start time.Time, stop time.Time, prefix ...string) bool {
+	return GetLogger(In).search(text+":", start, stop, prefix...)
 }
 
 func getPath(basePath string, mode string, time time.Time, prefix ...string) string {
@@ -202,48 +207,35 @@ func (logger *Logger) close() {
 // search will look for a given text pattern in the log history.
 // If "start" is nonzero it will search from start to current.
 // If "start" is zero it will search from current back nDays.
-func (logger *Logger) search(text string, nDays int, start int64, prefix ...string) bool {
+func (logger *Logger) search(text string, start time.Time, stop time.Time, prefix ...string) bool {
 	logger.lock.RLock()
 	defer logger.lock.RUnlock()
-	fwd := true
-	now := time.Now().Unix()
-	if start == 0 {
-		start = now
-		fwd = false
-	} else {
-		d0 := int(now/86400) + 1
-		d1 := int(start / 86400)
-		nDays = d0 - d1
+	if start.IsZero() {
+		start = time.Now()
 	}
-	if nDays == 0 {
+	if stop.IsZero() {
+		stop = time.Now()
+	}
+	if start.Equal(stop) {
 		return false
 	}
-	logs := make([]string, nDays)
-	for i := range logs {
-		offset := int64(3600 * 24 * i)
-		if !fwd {
-			offset *= -1
-		}
-		timestamp := time.Unix(start+offset, 0)
-		logs[i] = logger.getPath(timestamp, prefix...)
+	offset := time.Duration(24 * time.Hour)
+	if stop.Before(start) {
+		offset *= -1
 	}
-	// Actually search through the log files for the file info
-	textBytes := []byte(text)
-	for _, log := range logs {
-		fh, err := os.Open(log)
-		if err != nil {
-			// The log probably just doesn't exist yet because we're looking in the future, no big deal
-			continue
+	b := []byte(text)
+	for {
+		path := logger.getPath(start, prefix...)
+		if fileutils.FindLine(path, b) != "" {
+			return true
 		}
-		// Use a byte scanner to find the text bytes in the log file
-		scanner := bufio.NewScanner(fh)
-		for scanner.Scan() {
-			if bytes.Contains(scanner.Bytes(), textBytes) {
-				fh.Close()
-				return true
-			}
+		if offset > 0 && start.After(stop) {
+			break
 		}
-		fh.Close()
+		if offset < 0 && start.Before(stop) {
+			break
+		}
+		start = start.Add(offset)
 	}
 	return false
 }
