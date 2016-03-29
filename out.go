@@ -196,7 +196,7 @@ func (a *AppOut) getRecoverable() (send []ScanFile, poll []PollFile, err error) 
 			// Either fully sent or not at all.  Need to poll to find out which.
 			poll = append(poll, &askFile{
 				file:    file,
-				start:   file.GetTime() * 1e9, // Expects nanoseconds
+				start:   time.Unix(file.GetTime(), 0),
 				success: true,
 			})
 		}
@@ -238,6 +238,10 @@ func (a *AppOut) recover() {
 				logging.Debug("RECOVER Found Already Done:", f.(DoneFile).GetRelPath())
 				a.scanner.SetQueued(f.(DoneFile).GetPath()) // So they don't get added again.
 				d = append(d, f.(DoneFile))
+				if !logging.FindSent(f.GetRelPath(), f.GetStarted(), time.Now(), a.conf.TargetName) {
+					// Log that it was sent if crashed between being sent and being logged.
+					logging.Sent(f.GetRelPath(), "", f.GetOrigFile().(ScanFile).GetSize(), 0, a.conf.TargetName)
+				}
 			}
 			for _, dc := range a.doneChan {
 				dc <- d
@@ -338,7 +342,7 @@ func (a *AppOut) Start(stop <-chan bool) <-chan bool {
 // askFile needs to implement PollFile and DoneFile
 type askFile struct {
 	file    ScanFile
-	start   int64
+	start   time.Time
 	success bool
 }
 
@@ -350,7 +354,7 @@ func (f *askFile) GetRelPath() string {
 	return f.file.GetRelPath()
 }
 
-func (f *askFile) GetStarted() int64 {
+func (f *askFile) GetStarted() time.Time {
 	return f.start
 }
 
@@ -389,10 +393,6 @@ func (p *partialFile) GetTime() int64 {
 
 func (p *partialFile) GetHash() string {
 	return p.hash
-}
-
-func (p *partialFile) GetPrevName() string {
-	return p.prev
 }
 
 func (p *partialFile) GetNextAlloc() (int64, int64) {
