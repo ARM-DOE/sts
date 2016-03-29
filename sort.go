@@ -13,9 +13,6 @@ type sortedGroup struct {
 	conf  *Tag
 	next  *sortedGroup
 	prev  *sortedGroup
-	bytes int64
-	files int
-	time  int64
 }
 
 func newSortedGroup(group string, conf *Tag) *sortedGroup {
@@ -205,7 +202,7 @@ func (sorter *Sorter) Start(inChan <-chan []ScanFile, outChan chan<- SortFile, d
 			}
 			for _, doneFile := range doneFiles {
 				logging.Debug("SORT File Done:", doneFile.GetRelPath())
-				sorter.Done(doneFile)
+				sorter.done(doneFile)
 			}
 		default:
 			next := sorter.getNext()
@@ -358,7 +355,7 @@ func (sorter *Sorter) addFile(file SortFile) {
 		// (or none) if passed through again after a crash recovery.  This is why we're
 		// also doing an alpha sort in addition to mod time because mod times can match
 		// but names cannot.
-		if file.GetRelPath() < f.GetRelPath() {
+		if grp.conf.Order != OrderNone && file.GetRelPath() < f.GetRelPath() {
 			file.InsertBefore(f)
 			break
 		}
@@ -376,7 +373,7 @@ func (sorter *Sorter) addFile(file SortFile) {
 }
 
 // Done will remove this file from the list and do any cleanup as specified by the tag.
-func (sorter *Sorter) Done(file DoneFile) {
+func (sorter *Sorter) done(file DoneFile) {
 	del := false
 	f, found := sorter.files[file.GetPath()]
 	if found {
