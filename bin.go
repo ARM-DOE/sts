@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ARM-DOE/sts/fileutils"
 	"github.com/ARM-DOE/sts/logging"
@@ -40,11 +41,18 @@ func NewPart(file SendFile, beg, end int64) (p *Part, err error) {
 	return
 }
 
+const binCreated = 0
+const binStarted = 1
+const binReadStarted = 2
+const binReadDone = 3
+const binDone = 4
+
 // Bin is the struct for managing the chunk of data sent in a single request.
 type Bin struct {
 	Parts     []*Part // All the instances of Part that the Bin contains
 	Bytes     int64   // Maximum amount of bytes that the Bin is able to store
 	BytesLeft int64   // Unallocated bytes in the Bin
+	times     map[int]time.Time
 }
 
 // NewBin creates a new Bin reference.
@@ -53,7 +61,33 @@ func NewBin(size int64) *Bin {
 	bin.Bytes = size
 	bin.BytesLeft = size
 	bin.Parts = make([]*Part, 0)
+	bin.times = make(map[int]time.Time)
+	bin.setTime(binCreated)
 	return bin
+}
+
+func (bin *Bin) setTime(id int) {
+	bin.times[id] = time.Now()
+}
+
+// GetStarted returns the time this bin started to be read.
+func (bin *Bin) GetStarted() time.Time {
+	return bin.times[binStarted]
+}
+
+// SetStarted marks the time this bin is "started".
+func (bin *Bin) SetStarted() {
+	bin.setTime(binStarted)
+}
+
+// GetCompleted returns the time this bin was marked "done".
+func (bin *Bin) GetCompleted() time.Time {
+	return bin.times[binDone]
+}
+
+// SetCompleted marks the time this bin is "done".
+func (bin *Bin) SetCompleted() {
+	bin.setTime(binDone)
 }
 
 // IsFull is for determining whether or not a bin has reached its acceptable capacity.
@@ -237,8 +271,12 @@ func (bw *BinWriter) startNextPart() error {
 		bw.fh.Close()
 	}
 	if bw.partIndex == len(bw.bin.Parts) { // If the file index will cause an error next time it is used for slicing, the Bin is finished processing.
+		bw.bin.setTime(binReadDone)
 		bw.eob = true
 		return nil
+	}
+	if bw.partIndex == 0 {
+		bw.bin.setTime(binReadStarted)
 	}
 	var err error
 	bw.partProgress = 0
