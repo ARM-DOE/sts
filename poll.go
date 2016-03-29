@@ -56,8 +56,8 @@ func (f *pollFile) GetRelPath() string {
 	return f.file.GetRelPath()
 }
 
-func (f *pollFile) GetStarted() int64 {
-	return f.time.UnixNano()
+func (f *pollFile) GetStarted() time.Time {
+	return f.time
 }
 
 func (f *pollFile) GetSuccess() bool {
@@ -241,7 +241,7 @@ func (poller *Poller) Poll(files []PollFile) (none []PollFile, fail []PollFile, 
 	fmap := make(map[string]PollFile)
 	var cf []*ConfirmFile
 	for _, f := range files {
-		cf = append(cf, &ConfirmFile{f.GetRelPath(), int64(f.GetStarted() / 1e9)}) // GetStarted() returns in nanoseconds
+		cf = append(cf, &ConfirmFile{f.GetRelPath(), f.GetStarted().Unix()})
 		fmap[f.GetRelPath()] = f
 		logging.Debug("POLLing:", f.GetRelPath())
 	}

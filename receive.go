@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ARM-DOE/sts/fileutils"
 	"github.com/ARM-DOE/sts/httputils"
@@ -132,7 +133,7 @@ func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
 	}
 	respMap := make(map[string]int, len(files))
 	for _, f := range files {
-		success, found := rcv.finalizer.IsFinal(source, f.RelPath, f.Started)
+		success, found := rcv.finalizer.IsFinal(source, f.RelPath, time.Unix(f.Started, 0))
 		code := ConfirmNone
 		if found && success {
 			code = ConfirmPassed
