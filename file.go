@@ -1,5 +1,7 @@
 package main
 
+import "time"
+
 // ScanFile is the interface for a file as found on disk.
 type ScanFile interface {
 	GetPath(bool) string
@@ -40,12 +42,15 @@ type SendFile interface {
 
 	GetHash() string
 	GetPrevName() string
-	GetStarted() int64 // Expects UnixNano
+	SetStarted(time.Time)
+	GetStarted() time.Time
+	SetCompleted(time.Time)
+	GetCompleted() time.Time
 	GetNextAlloc() (int64, int64)
 	GetBytesAlloc() int64
 	GetBytesSent() int64
 	AddAlloc(int64)
-	AddSent(int64)
+	AddSent(int64) bool // Returns IsSent() to keep the transaction atomic
 	TimeMs() int64
 	IsSent() bool
 	SetCancel(bool)
@@ -65,7 +70,6 @@ type RecoverFile interface {
 	Reset() (bool, error)
 
 	GetHash() string
-	GetPrevName() string
 	GetNextAlloc() (int64, int64)
 	GetBytesAlloc() int64
 	GetBytesSent() int64
@@ -78,7 +82,7 @@ type RecoverFile interface {
 type PollFile interface {
 	GetOrigFile() interface{} // Needs to be generic to accommodate polling at different stages.
 	GetRelPath() string
-	GetStarted() int64 // Expects UnixNano
+	GetStarted() time.Time
 }
 
 // DoneFile is the interface for a file as needed for completion.
