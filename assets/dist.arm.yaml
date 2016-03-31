@@ -4,7 +4,7 @@ OUT: # Outgoing configuration
     out   : /data/transfer/outgoing_to # Directory to watch for files to send; appends "/{target}"
     logs  : /data/logs/sts             # For log files; appends "outgoing_to/{target}" and "messages"
   sources: # Supports multiple sources where omitted entries will inherit from previous sources hierarchically
-    - name          : stsout-1 # Name of the source
+    - name          : ...      # Name of the source
       threads       : 8        # Maximum number of concurrent connections
       bin-size      : 10MB     # The generally-desired size for a given HTTP request (BEFORE any compression)
       compress      : true     # Use GZIP compression (NOTE: bin-size is based on file size BEFORE compression)
@@ -15,9 +15,9 @@ OUT: # Outgoing configuration
       poll-interval : 1m       # How long to wait between polling requests
       poll-attempts : 10       # How many times to "poll" for the successful reception of a file before re-sending
       target: # Target-specific configuration
-        name          : stsin-1        # Name of the target
-        http-host     : localhost:8081 # Target host, including port
-        http-tls      : true           # Whether or not the target host uses HTTPS
+        name          : ...        # Name of the target
+        http-host     : ...:1992   # Target host, including port
+        http-tls      : true       # Whether or not the target host uses HTTPS
         http-tls-cert : /apps/transfer/conf/client.pem  # Client certificate
         http-tls-key  : /apps/transfer/conf/client.key  # Client key
       tags: # Tags are for configuration based on file patterns (omitted attributes are inherited)
@@ -33,7 +33,7 @@ IN: # Incoming configuration.
         final : /data/transfer/incoming_from # Final location for incoming files; appends "/{source}"
         logs  : /data/logs/sts               # For log files; appends "incoming_from/{source}" and "messages"
     server: # Server configuration.
-        http-port     : 8081          # What port to listen on
+        http-port     : 1992          # What port to listen on
         http-tls      : true          # Whether or not to use HTTPS
         http-tls-cert : /apps/transfer/conf/server.pem # Server certificate
         http-tls-key  : /apps/transfer/conf/server.key # Server key

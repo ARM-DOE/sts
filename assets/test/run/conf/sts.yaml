@@ -10,13 +10,13 @@ OUT: # Outgoing configuration
       max-age       : 1h       # How old a file can be before getting logged as "stale" (remains in the queue)
       timeout       : 1h       # The HTTP timeout for a single request
       bin-size      : 10MB     # The generally-desired size for a given HTTP request (BEFORE any compression)
-      compress      : true     # Use GZIP compression (NOTE: bin-size is based on file size BEFORE compression)
+      compress      : false    # Use GZIP compression (NOTE: bin-size is based on file size BEFORE compression)
       poll-delay    : 2s       # How long to wait after file sent before final validation
       poll-interval : 5s       # How long to wait between polling requests
       poll-attempts : 10       # How many times to "poll" for the successful reception of a file before re-sending
       target: # Target-specific configuration
         name          : stsin-1           # Name of the target
-        http-host     : localhost:8081    # Target host, including port
+        http-host     : localhost:1992    # Target host, including port
         http-tls      : true              # Whether or not the target host uses HTTPS
         http-tls-cert : ../../client.pem  # Client certificate
         http-tls-key  : ../../client.key  # Client key
@@ -40,7 +40,7 @@ IN: # Incoming configuration.
         final : data/in    # Final location for incoming files; appends "source" name
         logs  : data/log   # For log files; appends "incoming_from/{source}", "messages"
     server: # Server configuration.
-        http-port     : 8081 # What port to listen on
+        http-port     : 1992 # What port to listen on
         http-tls      : true # Whether or not to use HTTPS
         http-tls-cert : ../../server.pem # Server certificate
         http-tls-key  : ../../server.key # Server key
