@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 )
 
 // LockExt is the file extension added to file names as contents are written.
@@ -34,6 +35,11 @@ func FindLine(path string, b []byte) string {
 		}
 	}
 	return ""
+}
+
+// GuessCompressed attempts to determine if a file is compressed.
+func GuessCompressed(path string) bool {
+	return filepath.Ext(path) == ".gz"
 }
 
 // WriteJSON writes the input data in JSON format to the specified path.

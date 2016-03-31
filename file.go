@@ -50,6 +50,7 @@ type SendFile interface {
 	GetBytesAlloc() int64
 	GetBytesSent() int64
 	AddAlloc(int64)
+	AddSendTime(time.Duration)
 	AddSent(int64) bool // Returns IsSent() to keep the transaction atomic
 	TimeMs() int64
 	IsSent() bool

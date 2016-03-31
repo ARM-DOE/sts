@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -160,19 +161,20 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusPartialContent) // respond with a 206
 		return
 	}
+	n := 0
 	for {
 		next, eof := reader.Next()
-		if eof { // Reached end of multipart file
+		if eof { // Reached end of multipart request
 			break
 		}
-		// TODO: Keep track of any succeessfully handled parts and return that count
-		// to the sender so those aren't resent.
-		err := rcv.parsePart(next, source)
+		err = rcv.parsePart(next, source)
 		if err != nil {
 			logging.Error(err.Error())
+			w.Header().Add(HeaderPartCount, strconv.Itoa(n))
 			w.WriteHeader(http.StatusPartialContent) // respond with a 206
 			return
 		}
+		n++
 	}
 	w.WriteHeader(http.StatusOK)
 }
@@ -201,14 +203,6 @@ func (rcv *Receiver) initStageFile(filePath string, size int64) {
 }
 
 func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
-
-	// Useful for simluating recovery.
-	// rand.Seed(time.Now().Unix())
-	// if rand.Intn(2) == 1 {
-	// 	logging.Debug("RECEIVE Bailing out early for fun")
-	// 	return nil
-	// }
-
 	logging.Debug("RECEIVE Process Part:", pr.Meta.Path, pr.Meta.FileSize)
 
 	path := filepath.Join(rcv.Conf.StageDir, source, pr.Meta.Path)

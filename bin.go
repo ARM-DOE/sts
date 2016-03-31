@@ -141,6 +141,25 @@ func (bin *Bin) Validate() []SendFile {
 	return fail
 }
 
+// Split splits a bin after n parts.
+// The new bin is from position "n" forward.
+func (bin *Bin) Split(n int) (b *Bin) {
+	if n < 1 || n >= len(bin.Parts) {
+		return nil
+	}
+	nb := int64(0)
+	for i := n; i < len(bin.Parts); i++ {
+		nb += bin.Parts[i].End - bin.Parts[i].Beg
+	}
+	b = NewBin(nb)
+	b.BytesLeft = 0
+	b.Parts = bin.Parts[n:]
+	bin.Parts = bin.Parts[:n]
+	bin.Bytes -= nb
+	bin.BytesLeft = 0
+	return b
+}
+
 // BinEncoder is the interface for encoing a bin.
 type BinEncoder interface {
 	Read([]byte) (int, error)
@@ -148,14 +167,16 @@ type BinEncoder interface {
 }
 
 // PartMeta is the struct that contains the part metadata needed on receiving end.
+// Keeping the JSON encoding as lite as possible to minimize payload.
 type PartMeta struct {
-	Path     string
-	PrevPath string
-	FileHash string
-	FileSize int64
-	Beg      int64
-	End      int64
-	Hash     string
+	Path       string `json:"n"`
+	PrevPath   string `json:"p"`
+	FileHash   string `json:"f"`
+	FileSize   int64  `json:"s"`
+	Compressed bool   `json:"z"`
+	Beg        int64  `json:"b"`
+	End        int64  `json:"e"`
+	Hash       string `json:"h"`
 }
 
 // ZBinWriter is a wrapper around BinWriter that gzips the bin content.
@@ -165,6 +186,7 @@ type ZBinWriter struct {
 	bw     *BinWriter
 	buff   *bytes.Buffer
 	writer *gzip.Writer
+	skip   bool
 	n      int
 }
 
@@ -189,6 +211,18 @@ func (z *ZBinWriter) Read(buff []byte) (n int, err error) {
 		n = int(math.Min(float64(len(buff)), float64(len(z.meta)-z.bytes)))
 		copy(buff, z.meta[z.bytes:n])
 	} else {
+		if z.bw.partProgress == 0 {
+			i := z.bw.partIndex
+			if i > 0 {
+				i-- // Usually the partIndex is one ahead but not true at the outset.
+			}
+			z.skip = !z.bw.meta[i].Compressed
+		}
+		if z.skip {
+			// If we think the file is already compressed, let's not waste the CPU cycles.
+			n, err = z.bw.Read(buff)
+			return
+		}
 		// We don't want to read the full length because of the possibility that the gzipped
 		// content will actually be slightly larger than the original.  Rare, but happens.
 		if z.n == 0 {
@@ -198,7 +232,7 @@ func (z *ZBinWriter) Read(buff []byte) (n int, err error) {
 		logging.Debug("BIN Raw Bytes:", n, err)
 		if n > 0 {
 			z.writer.Write(buff[:n])
-			z.writer.Flush()
+			z.writer.Flush() // Flush is important so we don't overrun the buffer later (on Close)
 		}
 		if z.bw.eop {
 			if z.bw.eob {
@@ -226,6 +260,9 @@ func (z *ZBinWriter) Read(buff []byte) (n int, err error) {
 
 // EncodeMeta is a wrapper around BinWriter's EncodeMeta.
 func (z *ZBinWriter) EncodeMeta() (meta string, err error) {
+	for i, p := range z.bw.meta {
+		p.Compressed = !fileutils.GuessCompressed(z.bw.bin.Parts[i].File.GetPath(true))
+	}
 	z.buff.Reset()
 	z.writer, err = gzip.NewWriterLevel(z.buff, gzip.BestCompression)
 	if err != nil {
@@ -248,12 +285,13 @@ func (z *ZBinWriter) EncodeMeta() (meta string, err error) {
 // BinWriter is the struct that manages writing a bin.
 type BinWriter struct {
 	bin          *Bin
-	binPart      *Part    // The instance of the Part currently being operated on from Bin.Parts
-	partIndex    int      // The index of the next Part from bin.Parts
-	partProgress int64    // A sum of the byte counts read from the current file.
-	fh           *os.File // The file handle of the currently open File that corresponds to the Bin Part
-	eop          bool     // Set to true when a part is completely read.
-	eob          bool     // Set to true when when the bin is completely read.
+	binPart      *Part       // The instance of the Part currently being operated on from Bin.Parts
+	partIndex    int         // The index of the next Part from bin.Parts
+	partProgress int64       // A sum of the byte counts read from the current file.
+	fh           *os.File    // The file handle of the currently open File that corresponds to the Bin Part
+	eop          bool        // Set to true when a part is completely read.
+	eob          bool        // Set to true when when the bin is completely read.
+	meta         []*PartMeta // The encoded metadata for this bin to be included in the payload.
 }
 
 // NewBinWriter returns a new BinWriter instance.
@@ -263,6 +301,19 @@ func NewBinWriter(bin *Bin) *BinWriter {
 	}
 	bw := &BinWriter{}
 	bw.bin = bin
+	bw.meta = make([]*PartMeta, len(bw.bin.Parts))
+	for i := 0; i < len(bw.bin.Parts); i++ {
+		part := bw.bin.Parts[i]
+		bw.meta[i] = &PartMeta{
+			Path:     part.File.GetRelPath(),
+			PrevPath: part.File.GetPrevName(),
+			FileHash: part.File.GetHash(),
+			FileSize: part.File.GetSize(),
+			Beg:      part.Beg,
+			End:      part.End,
+			Hash:     part.Hash,
+		}
+	}
 	return bw
 }
 
@@ -270,7 +321,7 @@ func (bw *BinWriter) startNextPart() error {
 	if bw.fh != nil {
 		bw.fh.Close()
 	}
-	if bw.partIndex == len(bw.bin.Parts) { // If the file index will cause an error next time it is used for slicing, the Bin is finished processing.
+	if bw.partIndex >= len(bw.bin.Parts) { // If the file index will cause an error next time it is used for slicing, the Bin is finished processing.
 		bw.bin.setTime(binReadDone)
 		bw.eob = true
 		return nil
@@ -322,20 +373,7 @@ func (bw *BinWriter) Read(out []byte) (n int, err error) {
 
 // EncodeMeta is responsible for serializing the bin metadata to JSON format.
 func (bw *BinWriter) EncodeMeta() (string, error) {
-	pm := make([]*PartMeta, len(bw.bin.Parts))
-	for i := 0; i < len(bw.bin.Parts); i++ {
-		part := bw.bin.Parts[i]
-		pm[i] = &PartMeta{
-			Path:     part.File.GetRelPath(),
-			PrevPath: part.File.GetPrevName(),
-			FileHash: part.File.GetHash(),
-			FileSize: part.File.GetSize(),
-			Beg:      part.Beg,
-			End:      part.End,
-			Hash:     part.Hash,
-		}
-	}
-	jsonBytes, err := json.Marshal(pm)
+	jsonBytes, err := json.Marshal(bw.meta)
 	if err != nil {
 		return "", err
 	}
@@ -357,7 +395,7 @@ func (pr *PartReader) Read(out []byte) (n int, err error) {
 	if left > len(out) {
 		left = len(out)
 	}
-	if pr.gzip != nil {
+	if pr.gzip != nil && pr.Meta.Compressed {
 		n, err = pr.gzip.Read(out[:left])
 	} else {
 		n, err = pr.raw.Read(out[:left])
@@ -413,7 +451,11 @@ func (br *BinReader) Next() (pr *PartReader, eof bool) {
 		eof = true
 		return
 	}
-	pr = &PartReader{br.meta[br.pi], br.gzip, br.raw, 0}
+	pr = &PartReader{
+		Meta: br.meta[br.pi],
+		gzip: br.gzip,
+		raw:  br.raw,
+	}
 	br.prev = pr
 	br.pi++
 	return

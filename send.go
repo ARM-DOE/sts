@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ type sendFile struct {
 	prevName   string
 	started    time.Time
 	completed  time.Time
+	sendTime   time.Duration
 	bytesAlloc int64
 	bytesSent  int64
 	cancel     bool
@@ -151,10 +153,17 @@ func (f *sendFile) AddSent(bytes int64) bool {
 	return f.isSent()
 }
 
+func (f *sendFile) AddSendTime(t time.Duration) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	f.sendTime += t
+}
+
 func (f *sendFile) TimeMs() int64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
-	return int64(f.completed.Sub(f.started).Nanoseconds() / 1e6)
+	// return int64(f.completed.Sub(f.started).Nanoseconds() / 1e6)
+	return int64(f.sendTime.Nanoseconds() / 1e6)
 }
 
 func (f *sendFile) IsSent() bool {
@@ -305,14 +314,14 @@ func (sender *Sender) Start(ch *SenderChan) {
 		sender.ch.doneBin <- nil // Trigger a shutdown without closing the channel.
 	}
 	wgDone.Wait()
-	logging.Debug("SEND Completing Done")
+	logging.Debug("SEND Output Done")
 
 	// Once we're here, everything has been sent to the out channel(s) and all we need to
 	// do is resend anything that comes in on the retry channel.
 	sender.ch.Close <- true // Communicate shutdown.
 	close(sender.ch.Close)
 
-	// Restart to finish anything stuck in the pipe.
+	// Restart to finish any retries.
 	start(sender.startBin, &wgBin, nBin)
 	start(sender.startSend, &wgSend, nSend)
 	start(sender.startDone, &wgDone, nDone)
@@ -450,7 +459,6 @@ func (sender *Sender) startSend(wg *sync.WaitGroup) {
 			logging.Debug("SEND Bin Part:", &b, p.File.GetRelPath(), p.Beg, p.End)
 		}
 		sender.sendBin(b)
-		sender.ch.doneBin <- b
 	}
 }
 
@@ -465,6 +473,10 @@ func (sender *Sender) startDone(wg *sync.WaitGroup) {
 		for _, p := range b.Parts {
 			f := p.File
 			f.SetStarted(b.GetStarted())
+			n := b.GetCompleted().Sub(b.GetStarted()).Nanoseconds()
+			r := float64(p.End-p.Beg) / float64(b.Bytes-b.BytesLeft)
+			d := time.Duration(float64(n) * r)
+			f.AddSendTime(time.Duration(d * time.Nanosecond))
 			if f.AddSent(p.End - p.Beg) {
 				f.SetCompleted(b.GetCompleted())
 				logging.Debug("SEND Sent:", f.GetRelPath(), f.GetSize(), f.GetStarted(), f.GetCompleted())
@@ -478,13 +490,20 @@ func (sender *Sender) startDone(wg *sync.WaitGroup) {
 
 // sendBin sends a bin in a loop to handle errors and keep trying.
 func (sender *Sender) sendBin(bin *Bin) {
-	bin.SetStarted()
-	// TODO: respond to partially successful requests.
 	nerr := 0
 	for {
-		err := sender.httpBin(bin)
+		bin.SetStarted()
+		n, err := sender.httpBin(bin)
 		if err == nil {
 			break
+		}
+		// If somehow part of the bin was successful, let's only resend where we
+		// left off.
+		if n > 0 && n < len(bin.Parts) {
+			b := bin.Split(n)
+			bin.SetCompleted()
+			sender.ch.doneBin <- bin
+			bin = b
 		}
 		nerr++
 		logging.Error(err.Error())
@@ -499,6 +518,7 @@ func (sender *Sender) sendBin(bin *Bin) {
 		time.Sleep(time.Duration(nerr) * time.Second) // Wait longer the more it fails.
 	}
 	bin.SetCompleted()
+	sender.ch.doneBin <- bin
 }
 
 func (sender *Sender) done(f []SendFile) {
@@ -510,7 +530,7 @@ func (sender *Sender) done(f []SendFile) {
 	}
 }
 
-func (sender *Sender) httpBin(bin *Bin) (err error) {
+func (sender *Sender) httpBin(bin *Bin) (n int, err error) {
 	var bw BinEncoder
 	if sender.conf.Compress {
 		bw = NewZBinWriter(NewBinWriter(bin))
@@ -541,7 +561,8 @@ func (sender *Sender) httpBin(bin *Bin) (err error) {
 		return
 	}
 	if resp.StatusCode == 206 {
-		err = fmt.Errorf("Bin failed validation")
+		n, _ = strconv.Atoi(resp.Header.Get(HeaderPartCount))
+		err = fmt.Errorf("Bin failed validation. Successful part(s): %s", resp.Header.Get(HeaderPartCount))
 		return
 	} else if resp.StatusCode != 200 {
 		err = fmt.Errorf("Bin failed with response code: %d", resp.StatusCode)
@@ -549,5 +570,6 @@ func (sender *Sender) httpBin(bin *Bin) (err error) {
 	}
 	resp.Body.Close()
 	req.Close = true
+	n = len(bin.Parts)
 	return
 }

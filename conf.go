@@ -18,6 +18,10 @@ const (
 	// HeaderBinData is the custom HTTP header that houses the JSON-encoded metadata for a bin.
 	HeaderBinData = "X-STS-BinData"
 
+	// HeaderPartCount is the custom HTTP resopnse header that indicates the number of parts
+	// successfully received.
+	HeaderPartCount = "X-STS-PartCount"
+
 	// DefaultTag is the name of the "default" tag.
 	DefaultTag = "DEFAULT"
 
