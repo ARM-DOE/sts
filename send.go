@@ -521,6 +521,7 @@ func (sender *Sender) sendBin(bin *Bin) {
 	sender.ch.doneBin <- bin
 }
 
+// done adds the slice of input files to each of the "done" channels.
 func (sender *Sender) done(f []SendFile) {
 	if len(f) == 0 {
 		return
@@ -530,6 +531,8 @@ func (sender *Sender) done(f []SendFile) {
 	}
 }
 
+// httpBin sends the input bin via http using the sender configuration struct info.
+// Returns the number of successfully received parts and any error encountered.
 func (sender *Sender) httpBin(bin *Bin) (n int, err error) {
 	var bw BinEncoder
 	if sender.conf.Compress {

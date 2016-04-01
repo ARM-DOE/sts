@@ -38,7 +38,7 @@ const (
 	MethodDisk = "disk"
 
 	// MethodNone indicates files are not to be sent.
-	MethodNone = "none" // TODO: not currently supported.
+	MethodNone = "none"
 )
 
 // Conf is the outermost struct for holding STS configuration.

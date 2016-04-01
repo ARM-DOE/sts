@@ -1,7 +1,76 @@
 Site Transfer Software (STS)
 ----------------------------
 
-STS is software used for transmitting data over wide-area networks with the following priorities: 1) in-order delivery, 2) confirmed hash validation, 3) efficient use of bandwidth, and 4) bandwidth sharing among "tags" (groups of files).
+STS is software used for transmitting data over wide-area networks with the following priorities:
+
+1. In-order delivery
+2. Confirmed transfer via hash validation
+3. Efficient use of bandwidth using HTTP and gzip compression
+4. Bandwidth sharing among configured groups of files to avoid starvation
+
+### Usage
+
+```
+$ sts -h
+Usage of sts:
+  -conf string
+    	Configuration file path
+  -debug
+    	Log program flow
+  -help
+    	Print the help message
+  -loop
+    	Run in a loop, i.e. don't exit until interrupted
+  -mode string
+    	Mode: "send" or "receive" or "both" (default "send")
+```
+
+### Example Configuration
+
+```yaml
+#-------------------------------------------------------------------------------
+# OUTGOING CONFIGURATION
+OUT:
+  dirs: # Outgoing directory configuration; relative to $STS_HOME or $PWD if not absolute
+    cache : .sts     # Used to store queue cache(s)
+    out   : data/out # Directory to watch for files to send; appends "/{target name}"
+    logs  : data/log # For log files; appends "outgoing_to/{target name}" and "messages"
+  sources: # Supports multiple sources where omitted entries will inherit from previous sources hierarchically
+    - name          : ...   # Name of the source
+      threads       : 8     # Maximum number of concurrent HTTP connections
+      bin-size      : 10MB  # The generally-desired size for a given HTTP request (BEFORE any compression)
+      compress      : true  # Use GZIP compression (NOTE: bin-size is based on file size BEFORE compression)
+      min-age       : 15s   # How old a file must be before being added to the "outgoing" queue
+      max-age       : 12h   # How old a file can be before getting logged as "stale" (remains in the queue)
+      timeout       : 1h    # The HTTP timeout for a single request
+      poll-delay    : 5s    # How long to wait after file sent before final validation
+      poll-interval : 1m    # How long to wait between polling requests
+      poll-attempts : 10    # How many times to "poll" for the successful reception of a file before re-sending
+      target: # Target-specific configuration
+        name          : ...      # Name of the target
+        http-host     : ...:1992 # Target host, including port
+        http-tls      : true     # Whether or not the target host uses HTTPS
+        http-tls-cert : conf/client.pem  # Client certificate
+        http-tls-key  : conf/client.key  # Client key
+      tags: # Tags are for configuration based on file patterns (omitted attributes are inherited)
+        - pattern   : DEFAULT # The file "tag" pattern
+          priority  : 0       # Relative importance (higher the number, greater the importance)
+          order     : fifo    # File order (fifo (first in, first out) or none)
+          delete    : true    # Whether or not to delete files after reception confirmation
+          method    : http    # Transfer method ("http", "disk", or "none")
+#-------------------------------------------------------------------------------
+# INCOMING CONFIGURATION
+IN:
+  dirs: # Incoming directory configuration; relative to $STS_HOME or $PWD if not absolute
+    stage : data/stage # Directory to stage data as it comes in; appends "/{source name}"
+    final : data/in    # Final location for incoming files; appends "/{source name}"
+    logs  : data/log   # For log files; appends "incoming_from/{source name}" and "messages"
+  server: # Server configuration.
+    http-port     : 1992  # What port to listen on
+    http-tls      : true  # Whether or not to use HTTPS
+    http-tls-cert : conf/server.pem # Server certificate path; relative to $STS_HOME or $PWD if not absolute
+    http-tls-key  : conf/server.key # Server key; relative to $STS_HOME or $PWD if not absolute
+```
 
 ### Definitions
 
@@ -11,62 +80,45 @@ STS is software used for transmitting data over wide-area networks with the foll
 **Thread**
   > A [Go routine](https://gobyexample.com/goroutines).
 
-**File Watcher**
-  > A thread that recursively scans the configured directory looking for new or updated files.
-
 **Queue Cache**
-  > A data store (currently kept in memory and occasionally cached to disk) to manage files to be sent.  It contains the path, size, and percentage currently allocated to bins.
+  > A data store (currently kept in memory and cached in JSON format to disk after each scan) to manage files in the outgoing queue.  It contains a file's path, size, and mod time.  Its purpose is to keep track of files found but not fully sent and validated such that on a crash recovery, files can be appropriately resent without duplication.
 
 **Bin**
-  > A bin is the payload of data pushed via HTTP to the configured receiver.  A bin is composed of N files or file parts up to the configured bin size.  Information about what is in a particular bin (not the data itself) is recorded in a cached bin file written to the bin store.
-
-**Bin Store**
-  > Configured directory where bin metadata are cached to disk.  The name of each bin file corresponds to the MD5 hash of its contents.
+  > A bin is the payload of data pushed via HTTP to the configured target.  A bin is composed of N files or file parts up to the configured bin size (before compression).
 
 **Stage Area**
   > Configured directory where files are received and reconstructed before being moved to the final configured location.
 
 ### Start-up
 
-If STS is configured to be a sender, three threads are started for managing the outgoing flow: **File Watcher**, **Outgoing Manager**, and **Validation Poller**.  A similar set of threads will exist for any additionally configured target host.  Each target has its own configuration block.  STS does not currently support the sending of files from a single source directory to multiple targets.  In send mode STS will also use a configurable number of threads used for actually making the HTTP requests to the configured target.
+If STS is configured to send, the first thing it will do is check the cache to see if any files are already in the queue from last run.  If so, a request is made to the target to find out what "partials" exist and corresponding companion metadata is returned.  From this, STS can determine which files are partially sent already and which ones need to be polled for validation.  Some of these might have already been fully received and some not at all.  STS will handle both of these cases to avoid duplicate transfers.
 
-If STS is configured to run as a receiver, two additional threads are started: 1) **HTTP Server** for receiving files and validation requests and 2) a **File Watcher** thread for watching the stage directory.
+Following the outgoing recovery logic, four components are started for managing the outgoing flow: **Watcher**, **Sorter**, **Sender**, and **Validator**.  A similar set of components will be started for any additionally configured source + target.  Each source + target has its own configuration block.  In send mode STS will also use a configurable number of threads used for making concurrent HTTP requests to the configured target.
+
+If STS is configured to run as a receiver, three additional components are started: 1) **HTTP Server** for receiving files and validation requests and 2) a **Watcher** for scanning the stage directory, and 3) a **Finalizer** that takes files from the Watcher and validates them (hash match and in-order delivery) before moving them to the "final" directory.
 
 ### Logical Flow
 
-1. _Source_ **File Watcher**: Files found in configured watch area and added (path, size) to the outgoing queue.
+1. _Source_ **Watcher**: Files found in configured watch directory are cached in memory (and on disk) and passed to the **Sorter**.
 
-  > If the queue file becomes corrupted or if the program crashes unexpectedly, the worst that can happen is the sending of duplicate data, which is obviously preferable to data loss.
-  
-  > The software is designed such that other technologies could be swapped in for the flat JSON file (e.g. [Redis](http://redis.io/)), which might provide better reliability at the expense of an additional dependency.
+  > If the queue cache becomes corrupted or if the program crashes unexpectedly, STS is will perform a recovery procedure on next run that will pick up where it left off without sending duplicate data.
 
-1. _Source_ **Outgoing Manager**: Based on configured priority and tagging, files or parts of files are added to bins and bin metadata is cached to the bin store.
-  
-  > The number of bins that exist at a time corresponds to the number of configured sending threads plus a buffer.
+1. _Source_ **Sorter**: Files received from **Watcher** are sorted in order of configured priority and/or in-order delivery.  **Sorter** passes files to the **Sender** such that groups of similar files (based on configurable pattern match) of the same priority are rotated in order to avoid starvation.
 
-1. _Source_ **Sender**: When a sender thread is ready for another bin it gets the next available one from the bin store by asking the Outgoing Manager.  It then POSTs the compressed bin to the target HTTP server.
+1. _Source_ **Sender**: Does these activities in parallel:
 
-  > A sender thread will only work on a given bin for a configured amount of time before it gives up.  The Outgoing Manager also considers a bin recyclable based on this interval.
+  1. Compute MD5 hash of each input file
+  1. Construct "bin" until full (or until input file stream is stagnant for a second)
+  1. POST "bin" to target HTTP server, optionally compressing the payload
+  1. Log successfully sent files and pass these to the **Validator**
 
-1. _Target_ **HTTP Server**: Receives bin from source host and writes data and companion metadata file to configured stage area.
+1. _Source_ **Validator**: Builds a batch of files to validate based on configurable time interval and makes a request to the target host to confirm files sent have been validated and finalized.  Files that fail validation are sent back to the **Sender**.  Files that pass validation are communicated to the **Watcher** (removes from queue) and **Sorter** (removes from list and does any cleanup action configured for its group).  After a configurable number of poll attempts do not yield success, files are passed back to the **Sender**.
 
-  > Each file is given a specific extension to indicate the file is not yet complete.  Once the last bin is written (Mutex locks are used to avoid conflict by multiple threads) the file is renamed to remove the previously added extension.
+1. _Target_ **HTTP Server**: Receives POSTed "bin" from source host and writes data and companion metadata file to configured stage area.  Each file is given a ".part" extension to indicate the file is not yet complete.  Once the last part is written (mutex locks are used to avoid conflict by multiple threads) the file is renamed to remove the previously added ".part" extension.
 
-1. _Target_ **HTTP Server**: Sends validation as response to initial bin POST request.
+1. _Target_ **Watcher**: Scans stage area for completed files and sends them to the **Finalizer**.
 
-1. _Source_ **Sender**: Removes validated bin from the bin store and updates the queue.
-
-1. _Source_ **Outgoing Manager**: For invalidated bins, the bin is made available to the next avaiable sending thread to be resent.
-
-1. _Target_ **File Watcher**: Watches for completed file and validates against its MD5.  After validation, the file is renamed into the final destination and then logged.
-
-  > An important note here is that files have to be renamed (moved) in the proper sorted order as determined by the Source Sender.  To accomplish this, a custom HTTP header attribute is used by the sender to indicate which file it must follow.  The Target File Watcher is responsible to make sure that a file gets moved only after its predecessor, if applicable, has been.
-  
-1. _Source_ **Validation Poller**: Once all parts of a file have been allocated to a bin, the poller sends periodic requests to the Target HTTP Server to confirm the file was received and validated.
-
-  > If, after some number of failed attempts, no validation is confirmed then the file will be put back on the queue to be resent.
-
-1. _Source_ **Validation Poller**: For validated files, queue is updated (entry removed) and file deleted from disk (if configured to do so).
+1. _Target_ **Finalizer**: Makes sure each input file matches the MD5 hash as stored in the "companion" file.  Also makes sure that a file is only finalized following its predecessor (if one specified in the companion file).
 
 
 ![Flowchart2](assets/sts-flow.png?raw=true)

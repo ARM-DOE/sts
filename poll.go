@@ -43,9 +43,9 @@ type PollerChan struct {
 
 // Implements PollFile and DoneFile interfaces
 type pollFile struct {
-	file   SendFile
-	time   time.Time
-	nRetry int
+	file  SendFile
+	time  time.Time
+	nPoll int
 }
 
 func (f *pollFile) GetPath() string {
@@ -186,6 +186,11 @@ func (poller *Poller) Start(ch *PollerChan) {
 		_, f, d, err = poller.Poll(poll)
 		if err != nil {
 			logging.Error(err.Error())
+		} else {
+			// Only increase the number of poll attempts if the poll request did not result in error.
+			for _, pf := range poll {
+				poller.Files[pf.GetRelPath()].nPoll++
+			}
 		}
 		if loop > 0 {
 			loop -= len(d) // Offset the loop counter so we know when the "retry" loop is empty.
@@ -221,7 +226,7 @@ func (poller *Poller) removeFile(file PollFile) {
 
 func (poller *Poller) buildList() (fail []PollFile, poll []PollFile) {
 	for _, pf := range poller.Files {
-		if poller.conf.PollAttempts > 0 && pf.nRetry > poller.conf.PollAttempts {
+		if poller.conf.PollAttempts > 0 && pf.nPoll > poller.conf.PollAttempts {
 			logging.Debug("POLL Rejected:", pf.file.GetRelPath())
 			fail = append(fail, pf)
 			poller.removeFile(pf)
@@ -230,7 +235,6 @@ func (poller *Poller) buildList() (fail []PollFile, poll []PollFile) {
 		if time.Now().Sub(pf.time) > poller.conf.PollDelay {
 			logging.Debug("POLL Request:", pf.file.GetRelPath())
 			poll = append(poll, pf)
-			pf.nRetry++
 		}
 	}
 	return

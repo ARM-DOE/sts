@@ -24,7 +24,7 @@ type Part struct {
 	File SendFile // The file for which this part applies
 	Beg  int64    // Beginning byte in the part
 	End  int64    // Ending byte in the part
-	Hash string   // MD5 of the data in the part file from Start:End
+	Hash string   // MD5 of the data in the part file from Beg:End
 }
 
 // NewPart creates a new Part reference including the hash if necessary.
@@ -439,9 +439,6 @@ func NewBinReader(encMeta string, body io.Reader, compressed bool) (br *BinReade
 	}
 	fromJSON := json.NewDecoder(strings.NewReader(encMeta))
 	err = fromJSON.Decode(&br.meta)
-	if err != nil {
-		return
-	}
 	return
 }
 

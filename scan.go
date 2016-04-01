@@ -169,7 +169,7 @@ type Scanner struct {
 	cachePath string
 }
 
-// ScannerConf are the external configuration
+// ScannerConf is the struct for external configuration.
 type ScannerConf struct {
 	ScanDir  string
 	CacheDir string
