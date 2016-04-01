@@ -27,6 +27,8 @@ Usage of sts:
 
 ### Example Configuration
 
+Below is an example configuration file.  The "outgoing" and "incoming" blocks do not have to be included in the same configuration file.  In fact, by default if `-conf` not used, STS will look in `$STS_HOME` or `$PWD` for `sts.{mode}.yaml` (or `sts.yaml` if running `--mode=both`).
+
 ```yaml
 #-------------------------------------------------------------------------------
 # OUTGOING CONFIGURATION
@@ -50,8 +52,8 @@ OUT:
         name          : ...      # Name of the target
         http-host     : ...:1992 # Target host, including port
         http-tls      : true     # Whether or not the target host uses HTTPS
-        http-tls-cert : conf/client.pem  # Client certificate
-        http-tls-key  : conf/client.key  # Client key
+        http-tls-cert : conf/client.pem  # Client certificate; relative to $STS_HOME or $PWD if not absolute
+        http-tls-key  : conf/client.key  # Client key; relative to $STS_HOME or $PWD if not absolute
       tags: # Tags are for configuration based on file patterns (omitted attributes are inherited)
         - pattern   : DEFAULT # The file "tag" pattern
           priority  : 0       # Relative importance (higher the number, greater the importance)
