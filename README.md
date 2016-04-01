@@ -30,7 +30,6 @@ Usage of sts:
 Below is an example configuration file.  The "outgoing" and "incoming" blocks do not have to be included in the same configuration file.  In fact, by default if `-conf` not used, STS will look in `$STS_HOME` or `$PWD` for `sts.{mode}.yaml` (or `sts.yaml` if running `--mode=both`).
 
 ```yaml
-#-------------------------------------------------------------------------------
 # OUTGOING CONFIGURATION
 OUT:
   dirs: # Outgoing directory configuration; relative to $STS_HOME or $PWD if not absolute
@@ -60,7 +59,7 @@ OUT:
           order     : fifo    # File order (fifo (first in, first out) or none)
           delete    : true    # Whether or not to delete files after reception confirmation
           method    : http    # Transfer method ("http", "disk", or "none")
-#-------------------------------------------------------------------------------
+
 # INCOMING CONFIGURATION
 IN:
   dirs: # Incoming directory configuration; relative to $STS_HOME or $PWD if not absolute
