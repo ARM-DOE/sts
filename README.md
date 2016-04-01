@@ -122,4 +122,4 @@ If STS is configured to run as a receiver, three additional components are start
 1. _Target_ **Finalizer**: Makes sure each input file matches the MD5 hash as stored in the "companion" file.  Also makes sure that a file is only finalized following its predecessor (if one specified in the companion file).
 
 
-![Flowchart2](assets/sts-flow.png?raw=true)
+![Flowchart2](assets/flow.png?raw=true)
