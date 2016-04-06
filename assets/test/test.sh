@@ -6,7 +6,7 @@ export STS_HOME=$PWD/$basedir/run
 exe="sts"
 bin="$GOPATH/bin/$exe"
 debug="--debug"
-mode="--mode=both"
+mode="--mode=auto"
 cmd="$bin $debug $mode"
 
 echo "Cleaning last run..."

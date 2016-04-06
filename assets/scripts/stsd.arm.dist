@@ -1,30 +1,30 @@
 #!/bin/bash
 #
-# /etc/init.d/stsreceive
+# /etc/init.d/stsd
 #
-# stsreceive    Site Transfer Software Receive Mode Daemon
+# stsd    Site Transfer Software Daemon
 #
 # Brent Kolasinski
 # Argonne National Laboratory
 # brent@anl.gov
 #
 # chkconfig: 345 70 30
-# description: stsreceive is the Site Transfer Software receive mode daemon
-# processname: stsreceive
+# description: stsd is the Site Transfer Software daemon
+# processname: stsd
 
 # Source function library
 . /etc/init.d/functions
 
 # Variables needed for startup
 RETVAL=0
-BINARY='sts'
-STS_PATH="/apps/transfer/bin"
-LOCKFILE="/var/lock/subsys/$BINARY"
-CONFIG="/apps/transfer/conf/sts.in.yaml"
-STS_FLAGS="-mode receive"
+BIN='sts'
+BINDIR="/apps/transfer/bin"
+LOCKFILE="/var/lock/subsys/$BIN"
+CONFIG="/apps/transfer/conf/sts.yaml"
+FLAGS=""
 
 start() {
-    echo -n "Starting stsreceive: "
+    echo -n "Starting STS: "
 
     if [ -e $LOCKFILE ]
       then
@@ -32,15 +32,15 @@ start() {
         return 1
     fi
 
-    $STS_PATH/$BINARY $STS_FLAGS -conf $CONFIG 2>&1 /dev/null
+    $BINDIR/$BIN $FLAGS -conf $CONFIG 2>&1 /dev/null
     $RETVAL=$?
     touch $LOCKFILE
     return $RETVAL
 }
 
 stop() {
-    echo -n "Shutting down stsreceive: "
-    pkill $BINARY
+    echo -n "Shutting down STS: "
+    pkill $BIN
     $RETVAL=$?
     rm -f $LOCKFILE
     return $RETVAL
@@ -62,7 +62,7 @@ case "$1" in
 #    reload)
 #        ;;
     *)
-        echo "Usage: stsreceive {start|stop|restart}"
+        echo "Usage: stsd {start|stop|restart}"
         exit 1
         ;;
 esac

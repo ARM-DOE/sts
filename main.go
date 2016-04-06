@@ -14,7 +14,7 @@ import (
 
 const modeSend = "out"
 const modeRecv = "in"
-const modeBoth = "both"
+const modeAuto = "auto"
 
 func main() {
 	app := newApp()
@@ -74,7 +74,7 @@ func newApp() *app {
 	// Initialize command line arguments
 	help := flag.Bool("help", false, "Print the help message")
 	debug := flag.Bool("debug", false, "Log program flow")
-	mode := flag.String("mode", "send", "Mode: \"send\" or \"receive\" or \"both\"")
+	mode := flag.String("mode", "auto", "Mode: \"send\", \"receive\", \"auto\"")
 	loop := flag.Bool("loop", false, "Run in a loop, i.e. don't exit until interrupted")
 	confPath := flag.String("conf", "", "Configuration file path")
 
@@ -97,7 +97,7 @@ func newApp() *app {
 
 	// Parse configuration
 	if a.confPath == "" {
-		if a.mode == modeBoth {
+		if a.mode == modeAuto {
 			a.confPath = filepath.Join(getRoot(), "conf", "sts.yaml")
 		} else {
 			a.confPath = filepath.Join(getRoot(), "conf", "sts."+a.mode+".yaml")
@@ -115,8 +115,11 @@ func newApp() *app {
 }
 
 func (a *app) run() {
-	a.startIn()
-	a.startOut(a.once)
+	i := a.startIn()
+	o := a.startOut(a.once)
+	if !i && !o {
+		panic("Not configured to do anything?")
+	}
 
 	if !a.once { // Run until we get a signal to shutdown.
 		sc := make(chan os.Signal, 1)
@@ -134,11 +137,14 @@ func (a *app) run() {
 	a.doneIn()
 }
 
-func (a *app) startIn() {
-	if a.mode != modeRecv && a.mode != modeBoth {
-		return
+func (a *app) startIn() bool {
+	if a.mode != modeRecv && a.mode != modeAuto {
+		return false
 	}
 	if a.conf.In == nil || a.conf.In.Dirs == nil || a.conf.In.Server == nil {
+		if a.mode == modeAuto {
+			return false
+		}
 		panic("Missing required RECEIVER configuration")
 	}
 	logging.Init([]string{logging.In, logging.Msg}, InitPath(a.root, a.conf.In.Dirs.Logs, true), a.debug)
@@ -150,6 +156,7 @@ func (a *app) startIn() {
 	a.inStop = stop
 	a.inDone = a.in.Start(stop)
 	time.Sleep(1 * time.Second) // Give it time to start the server.
+	return true
 }
 
 func (a *app) stopIn() {
@@ -164,11 +171,14 @@ func (a *app) doneIn() {
 	}
 }
 
-func (a *app) startOut(once bool) {
-	if a.mode != modeSend && a.mode != modeBoth {
-		return
+func (a *app) startOut(once bool) bool {
+	if a.mode != modeSend && a.mode != modeAuto {
+		return false
 	}
 	if a.conf.Out == nil || a.conf.Out.Sources == nil || len(a.conf.Out.Sources) < 1 {
+		if a.mode == modeAuto {
+			return false
+		}
 		panic("Missing required SENDER configuration")
 	}
 	logging.Init([]string{logging.Out, logging.Msg}, InitPath(a.root, a.conf.Out.Dirs.Logs, true), a.debug)
@@ -187,6 +197,7 @@ func (a *app) startOut(once bool) {
 		}
 		a.out = append(a.out, out)
 	}
+	return true
 }
 
 func (a *app) stopOut() {
