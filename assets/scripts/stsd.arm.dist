@@ -21,7 +21,7 @@ BIN='sts'
 BINDIR="/apps/transfer/bin"
 LOCKFILE="/var/lock/subsys/$BIN"
 CONFIG="/apps/transfer/conf/sts.yaml"
-FLAGS=""
+FLAGS="-loop"
 
 start() {
     echo -n "Starting STS: "
