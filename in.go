@@ -24,6 +24,8 @@ type AppIn struct {
 
 func (a *AppIn) initConf() {
 	a.conf = &ReceiverConf{}
+	a.conf.Keys = a.rawConf.Keys
+	a.conf.Sources = a.rawConf.Sources
 	a.conf.StageDir = InitPath(a.root, a.rawConf.Dirs.Stage, true)
 	a.conf.FinalDir = InitPath(a.root, a.rawConf.Dirs.Final, true)
 	a.conf.Port = a.rawConf.Server.Port

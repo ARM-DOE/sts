@@ -257,6 +257,9 @@ func (poller *Poller) Poll(files []PollFile) (none []PollFile, fail []PollFile, 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payloadJSON))
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add(HeaderSourceName, poller.conf.SourceName)
+	if poller.conf.TargetKey != "" {
+		req.Header.Add(HeaderKey, poller.conf.TargetKey)
+	}
 	if err != nil {
 		return
 	}

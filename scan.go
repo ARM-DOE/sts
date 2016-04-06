@@ -301,8 +301,10 @@ func (scanner *Scanner) GetScanFiles() ScanFileList {
 		}
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			if scanner.conf.OutOnce {
-				// Would be strange in a scenario where files are only queued once
-				// for a file to disappear between its first scan and now.
+				// This can happen (legitimately) if a crash occurs after a file
+				// is cleaned following a successful transfer but before the scanner
+				// is notified to remove the file from the list.  In this case,
+				// we'll get here on the restart and the error is benign.
 				logging.Error("File disappeared:", path)
 			}
 			scanner.queue.remove(path)

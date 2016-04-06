@@ -227,6 +227,7 @@ type SenderConf struct {
 	SourceName   string
 	TargetName   string
 	TargetHost   string
+	TargetKey    string
 	TLSCert      string
 	TLSKey       string
 	BinSize      units.Base2Bytes
@@ -552,6 +553,9 @@ func (sender *Sender) httpBin(bin *Bin) (n int, err error) {
 	}
 	req.Header.Add(HeaderSourceName, sender.conf.SourceName)
 	req.Header.Add(HeaderBinData, meta)
+	if sender.conf.TargetKey != "" {
+		req.Header.Add(HeaderKey, sender.conf.TargetKey)
+	}
 	req.Header.Add("Transfer-Encoding", "chunked")
 	req.Header.Set("Connection", "close") // Prevents persistent connections opening too many file handles
 	req.ContentLength = -1

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,6 +29,32 @@ type ReceiverConf struct {
 	Port     int
 	TLSCert  string
 	TLSKey   string
+	Sources  []string
+	Keys     []string
+}
+
+func (c *ReceiverConf) isValid(src, key string) bool {
+	if src != "" {
+		if matched, err := regexp.MatchString(`^[a-z0-9\.\-]+$`, src); err != nil || !matched {
+			return false
+		}
+		if len(c.Sources) > 0 && strToIndex(src, c.Sources) < 0 {
+			return false
+		}
+	}
+	if key != "" && len(c.Keys) > 0 && strToIndex(key, c.Keys) < 0 {
+		return false
+	}
+	return true
+}
+
+func strToIndex(needle string, haystack []string) int {
+	for i, v := range haystack {
+		if v == needle {
+			return i
+		}
+	}
+	return -1
 }
 
 // Receiver struct contains the configuration and finalizer references.
@@ -51,9 +78,9 @@ func NewReceiver(conf *ReceiverConf, f *Finalizer) *Receiver {
 
 // Serve starts HTTP server.
 func (rcv *Receiver) Serve(stop <-chan bool) {
-	http.HandleFunc("/data", rcv.routeData)
-	http.HandleFunc("/validate", rcv.routeValidate)
-	http.HandleFunc("/partials", rcv.routePartials)
+	http.Handle("/data", rcv.handleValidate(http.HandlerFunc(rcv.routeData)))
+	http.Handle("/validate", rcv.handleValidate(http.HandlerFunc(rcv.routeValidate)))
+	http.Handle("/partials", rcv.handleValidate(http.HandlerFunc(rcv.routePartials)))
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -78,14 +105,18 @@ func (rcv *Receiver) Serve(stop <-chan bool) {
 	wg.Wait()
 }
 
-func (rcv *Receiver) getLock(path string) *sync.Mutex {
-	rcv.lock.Lock()
-	defer rcv.lock.Unlock()
-	_, exists := rcv.fileLocks[path]
-	if !exists {
-		rcv.fileLocks[path] = &sync.Mutex{}
+func (rcv *Receiver) handleValidate(next http.Handler) http.Handler {
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		source := r.Header.Get(HeaderSourceName)
+		key := r.Header.Get(HeaderKey)
+		if !rcv.Conf.isValid(source, key) {
+			logging.Error(fmt.Errorf("Unknown Source:Key => %s:%s", source, key))
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
 	}
-	return rcv.fileLocks[path]
+	return http.HandlerFunc(fn)
 }
 
 func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
@@ -150,8 +181,8 @@ func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
 
 func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
-	compressed := r.Header.Get("Content-Encoding") == "gzip"
 	source := r.Header.Get(HeaderSourceName)
+	compressed := r.Header.Get("Content-Encoding") == "gzip"
 	meta := r.Header.Get(HeaderBinData)
 	reader, err := NewBinReader(meta, r.Body, compressed)
 	if source == "" || err != nil {
@@ -177,6 +208,16 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 		n++
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func (rcv *Receiver) getLock(path string) *sync.Mutex {
+	rcv.lock.Lock()
+	defer rcv.lock.Unlock()
+	_, exists := rcv.fileLocks[path]
+	if !exists {
+		rcv.fileLocks[path] = &sync.Mutex{}
+	}
+	return rcv.fileLocks[path]
 }
 
 func (rcv *Receiver) initStageFile(filePath string, size int64) {

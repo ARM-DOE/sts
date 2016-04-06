@@ -58,6 +58,7 @@ func (a *AppOut) initConf() {
 		SourceName:   a.rawConf.Name,
 		TargetName:   a.rawConf.Target.Name,
 		TargetHost:   a.rawConf.Target.Host,
+		TargetKey:    a.rawConf.Target.Key,
 		TLSCert:      a.rawConf.Target.TLSCert,
 		TLSKey:       a.rawConf.Target.TLSKey,
 		BinSize:      a.rawConf.BinSize,
@@ -140,6 +141,9 @@ func (a *AppOut) getPartials() ([]*Companion, error) {
 		return nil, err
 	}
 	req.Header.Add(HeaderSourceName, a.conf.SourceName)
+	if a.conf.TargetKey != "" {
+		req.Header.Add(HeaderKey, a.conf.TargetKey)
+	}
 	if resp, err = client.Do(req); err != nil {
 		return nil, err
 	}

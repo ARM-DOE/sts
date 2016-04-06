@@ -16,6 +16,7 @@ OUT: # Outgoing configuration
       poll-attempts : 10       # How many times to "poll" for the successful reception of a file before re-sending
       target: # Target-specific configuration
         name          : stsin-1           # Name of the target
+        key           : uB7Te#H>"a%5^6p[  # The key provided by the target
         http-host     : localhost:1992    # Target host, including port
         http-tls      : true              # Whether or not the target host uses HTTPS
         http-tls-cert : ../../client.pem  # Client certificate
@@ -32,8 +33,16 @@ OUT: # Outgoing configuration
           priority  : 2
         - pattern   : ^collection/C1/
           priority  : 1
+    - name: stsout-2
+      target:
+        name: stsin-2
 
 IN: # Incoming configuration.
+    sources:
+      - stsout-1
+      - stsout-2
+    keys:
+      - uB7Te#H>"a%5^6p[
     dirs: # Incoming directory configuration.
         cache : .sts/in    # Used to store cached information (not currently used)
         stage : data/stage # Directory to stage data as it comes in; appends "source" name

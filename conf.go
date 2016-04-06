@@ -12,14 +12,20 @@ import (
 )
 
 const (
-	// HeaderSourceName is the custom HTTP header for communicating the name of the sending host.
-	HeaderSourceName = "X-STS-SourceName"
+	// HeaderSourceName is the custom HTTP header for communicating the name of
+	// the sending host.
+	HeaderSourceName = "X-STS-SrcName"
 
-	// HeaderBinData is the custom HTTP header that houses the JSON-encoded metadata for a bin.
+	// HeaderKey is the custom HTTP header for communicating the key (if applicable)
+	// provided by the target.
+	HeaderKey = "X-STS-Key"
+
+	// HeaderBinData is the custom HTTP header that houses the JSON-encoded metadata
+	// for a bin.
 	HeaderBinData = "X-STS-BinData"
 
-	// HeaderPartCount is the custom HTTP resopnse header that indicates the number of parts
-	// successfully received.
+	// HeaderPartCount is the custom HTTP resopnse header that indicates the number
+	// of parts successfully received.
 	HeaderPartCount = "X-STS-PartCount"
 
 	// DefaultTag is the name of the "default" tag.
@@ -104,8 +110,10 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 	ss.Threads = aux.Threads
 	ss.MinAge = aux.MinAge
 	ss.Timeout = aux.Timeout
-	if ss.BinSize, err = units.ParseBase2Bytes(aux.BinSize); err != nil {
-		return
+	if aux.BinSize != "" {
+		if ss.BinSize, err = units.ParseBase2Bytes(aux.BinSize); err != nil {
+			return
+		}
 	}
 	ss.Compress = aux.Compress
 	ss.PollDelay = aux.PollDelay
@@ -131,6 +139,7 @@ type Tag struct {
 // OutTarget houses the configuration for the target host for a given source.
 type OutTarget struct {
 	Name    string `yaml:"name"`
+	Key     string `yaml:"key"`
 	Host    string `yaml:"http-host"`
 	TLS     bool   `yaml:"http-tls"`
 	TLSCert string `yaml:"http-tls-cert"`
@@ -139,8 +148,10 @@ type OutTarget struct {
 
 // InConf is the struct for housing all incoming configuration.
 type InConf struct {
-	Dirs   *InDirs   `yaml:"dirs"`
-	Server *InServer `yaml:"server"`
+	Sources []string  `yaml:"sources"`
+	Keys    []string  `yaml:"keys"`
+	Dirs    *InDirs   `yaml:"dirs"`
+	Server  *InServer `yaml:"server"`
 }
 
 // InDirs is the struct for managing the incoming directory configuration items.
@@ -184,6 +195,9 @@ func NewConf(path string) (*Conf, error) {
 				if src != nil {
 					tgt = conf.Out.Sources[i]
 					copyStruct(tgt, src)
+					if src.Target != nil && tgt.Target != nil {
+						copyStruct(tgt.Target, src.Target)
+					}
 				}
 				src = conf.Out.Sources[i]
 				if len(src.Tags) > 1 {
