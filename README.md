@@ -24,9 +24,11 @@ $ sts -help
     	Mode: "send", "receive", "auto" (default "auto")
 ```
 
+**NOTE**: Specifying `-mode auto` (or if `-mode` omitted since `auto` is the default) will use the configuration file to determine which mode(s) to run.  If only an `OUT` block is present then it will run in `send` mode.  If only an `IN` block is present then it will run in `receive` mode.  If both exist then both are run.
+
 ### Example Configuration
 
-Below is an example configuration file.  The "outgoing" and "incoming" blocks do not have to be included in the same configuration file.  In fact, by default if `-conf` not used, STS will look in `$STS_HOME` or `$PWD` for `sts.{mode}.yaml` (or `sts.yaml` if running `--mode=both`).
+Below is an example configuration file.  The "outgoing" and "incoming" blocks do not have to be included in the same configuration file.  In fact, by default if `-conf` not used, STS will look in `$STS_HOME` or `$PWD` for `sts.{mode}.yaml` (or `sts.yaml` if running `-mode auto`).
 
 ```yaml
 # OUTGOING CONFIGURATION
