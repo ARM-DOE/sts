@@ -11,8 +11,7 @@ STS is software used for transmitting data over wide-area networks with the foll
 ### Usage
 
 ```
-$ sts -h
-Usage of sts:
+$ sts -help
   -conf string
     	Configuration file path
   -debug
@@ -22,7 +21,7 @@ Usage of sts:
   -loop
     	Run in a loop, i.e. don't exit until interrupted
   -mode string
-    	Mode: "send" or "receive" or "both" (default "send")
+    	Mode: "send", "receive", "auto" (default "auto")
 ```
 
 ### Example Configuration
