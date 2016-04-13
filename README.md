@@ -1,12 +1,12 @@
 Site Transfer Software (STS)
 ----------------------------
 
-STS is software used for transmitting data over wide-area networks with the following priorities:
+STS is a utility used for transmitting data over wide-area networks with the following priorities:
 
-1. In-order delivery
-2. Confirmed transfer via hash validation
-3. Efficient use of bandwidth using HTTP and gzip compression
-4. Bandwidth sharing among configured groups of files to avoid starvation
+- In-order delivery
+- Confirmed transfer via hash validation
+- Efficient use of bandwidth using HTTP and gzip compression
+- Bandwidth sharing among configured groups of files to avoid starvation
 
 ### Usage
 
@@ -21,14 +21,14 @@ $ sts -help
   -loop
     	Run in a loop, i.e. don't exit until interrupted
   -mode string
-    	Mode: "send", "receive", "auto" (default "auto")
+    	Mode: "out", "in", "auto" (default "auto")
 ```
 
-**NOTE**: Specifying `-mode auto` (or if `-mode` omitted since `auto` is the default) will use the configuration file to determine which mode(s) to run.  If only an `OUT` block is present then it will run in `send` mode.  If only an `IN` block is present then it will run in `receive` mode.  If both exist then both are run.
+**NOTE**: Specifying `-mode auto` (or if `-mode` omitted since `auto` is the default) will use the configuration file to determine which mode(s) to run.  If only an `OUT` block is present then it will run in `out` mode.  If only an `IN` block is present then it will run in `in` mode.  If both exist then both are run.
 
 ### Example Configuration
 
-Below is an example configuration file.  The "outgoing" and "incoming" blocks do not have to be included in the same configuration file.  In fact, by default if `-conf` not used, STS will look in `$STS_HOME` or `$PWD` for `sts.{mode}.yaml` (or `sts.yaml` if running `-mode auto`).
+Below is an example configuration file.  The "outgoing" and "incoming" blocks do not have to be included in the same configuration file.  In fact, by default if `-conf` is not used, STS will look in `$STS_HOME` (or `$PWD` if not defined) for `sts.{mode}.yaml` (or `sts.yaml` if running `-mode auto`).
 
 ```yaml
 # OUTGOING CONFIGURATION
@@ -103,7 +103,7 @@ If STS is configured to run as a receiver, three additional components are start
 
 1. _Source_ **Watcher**: Files found in configured watch directory are cached in memory (and on disk) and passed to the **Sorter**.
 
-  > If the queue cache becomes corrupted or if the program crashes unexpectedly, STS is will perform a recovery procedure on next run that will pick up where it left off without sending duplicate data.
+  > If the program crashes unexpectedly, STS will use the queue cache to perform a recovery procedure on next run that will pick up where it left off without sending duplicate data.
 
 1. _Source_ **Sorter**: Files received from **Watcher** are sorted in order of configured priority and/or in-order delivery.  **Sorter** passes files to the **Sender** such that groups of similar files (based on configurable pattern match) of the same priority are rotated in order to avoid starvation.
 

@@ -74,7 +74,7 @@ func newApp() *app {
 	// Initialize command line arguments
 	help := flag.Bool("help", false, "Print the help message")
 	debug := flag.Bool("debug", false, "Log program flow")
-	mode := flag.String("mode", "auto", "Mode: \"send\", \"receive\", \"auto\"")
+	mode := flag.String("mode", modeAuto, fmt.Sprintf("Mode: \"%s\", \"%s\", \"%s\"", modeSend, modeRecv, modeAuto))
 	loop := flag.Bool("loop", false, "Run in a loop, i.e. don't exit until interrupted")
 	confPath := flag.String("conf", "", "Configuration file path")
 
