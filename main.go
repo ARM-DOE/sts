@@ -7,7 +7,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/ARM-DOE/sts/logging"
 )
@@ -120,8 +119,7 @@ func (a *app) run() {
 	if !i && !o {
 		panic("Not configured to do anything?")
 	}
-
-	if !a.once { // Run until we get a signal to shutdown.
+	if !a.once || i { // Run until we get a signal to shutdown.
 		sc := make(chan os.Signal, 1)
 		signal.Notify(sc, os.Interrupt)
 
@@ -155,7 +153,6 @@ func (a *app) startIn() bool {
 	stop := make(chan bool)
 	a.inStop = stop
 	a.inDone = a.in.Start(stop)
-	time.Sleep(1 * time.Second) // Give it time to start the server.
 	return true
 }
 
