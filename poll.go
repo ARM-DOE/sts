@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -249,16 +248,15 @@ func (poller *Poller) Poll(files []PollFile) (none []PollFile, fail []PollFile, 
 		fmap[f.GetRelPath()] = f
 		logging.Debug("POLLing:", f.GetRelPath())
 	}
-	payloadJSON, err := json.Marshal(cf)
-	if err != nil {
-		return
-	}
 	url := fmt.Sprintf("%s://%s/validate", poller.conf.Protocol(), poller.conf.TargetHost)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payloadJSON))
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add(HeaderSourceName, poller.conf.SourceName)
+	req, err := http.NewRequest("POST", url, httputils.GetJSONReader(cf, poller.conf.Compress))
+	if poller.conf.Compress {
+		req.Header.Add(httputils.HeaderContentEncoding, httputils.HeaderGzip)
+	}
+	req.Header.Add(httputils.HeaderContentType, httputils.HeaderJSON)
+	req.Header.Add(httputils.HeaderSourceName, poller.conf.SourceName)
 	if poller.conf.TargetKey != "" {
-		req.Header.Add(HeaderKey, poller.conf.TargetKey)
+		req.Header.Add(httputils.HeaderKey, poller.conf.TargetKey)
 	}
 	if err != nil {
 		return
@@ -271,8 +269,13 @@ func (poller *Poller) Poll(files []PollFile) (none []PollFile, fail []PollFile, 
 		err = fmt.Errorf("Poll request failed: %d", resp.StatusCode)
 		return
 	}
+	reader, err := httputils.GetRespReader(resp)
+	if err != nil {
+		return
+	}
+	defer reader.Close()
 	fileMap := make(map[string]int)
-	jsonDecoder := json.NewDecoder(resp.Body)
+	jsonDecoder := json.NewDecoder(reader)
 	err = jsonDecoder.Decode(&fileMap)
 	if err != nil {
 		return

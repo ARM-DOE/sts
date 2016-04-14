@@ -1,8 +1,10 @@
 package main
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path"
@@ -31,6 +33,7 @@ type ReceiverConf struct {
 	TLSKey   string
 	Sources  []string
 	Keys     []string
+	Compress bool
 }
 
 func (c *ReceiverConf) isValid(src, key string) bool {
@@ -107,8 +110,8 @@ func (rcv *Receiver) Serve(stop <-chan bool) {
 
 func (rcv *Receiver) handleValidate(next http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
-		source := r.Header.Get(HeaderSourceName)
-		key := r.Header.Get(HeaderKey)
+		source := r.Header.Get(httputils.HeaderSourceName)
+		key := r.Header.Get(httputils.HeaderKey)
 		if !rcv.Conf.isValid(source, key) {
 			logging.Error(fmt.Errorf("Unknown Source:Key => %s:%s", source, key))
 			w.WriteHeader(http.StatusForbidden)
@@ -120,7 +123,7 @@ func (rcv *Receiver) handleValidate(next http.Handler) http.Handler {
 }
 
 func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
-	source := r.Header.Get(HeaderSourceName)
+	source := r.Header.Get(httputils.HeaderSourceName)
 	if source == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -150,16 +153,26 @@ func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-	w.Write(respJSON)
+	w.Header().Set(httputils.HeaderContentType, httputils.HeaderJSON)
+	rcv.respond(w, http.StatusOK, respJSON)
 }
 
 func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
-	source := r.Header.Get(HeaderSourceName)
+	source := r.Header.Get(httputils.HeaderSourceName)
 	files := []*ConfirmFile{}
-	decoder := json.NewDecoder(r.Body)
-	err := decoder.Decode(&files)
+	var br io.Reader
+	var err error
+	if br, err = httputils.GetReqReader(r); err != nil {
+		logging.Error(err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	decoder := json.NewDecoder(br)
+	err = decoder.Decode(&files)
 	if source == "" || err != nil {
+		if err != nil {
+			logging.Error(err.Error())
+		}
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -175,15 +188,15 @@ func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
 		respMap[f.RelPath] = code
 	}
 	respJSON, _ := json.Marshal(respMap)
-	w.WriteHeader(http.StatusOK)
-	w.Write(respJSON)
+	w.Header().Set(httputils.HeaderContentType, httputils.HeaderJSON)
+	rcv.respond(w, http.StatusOK, respJSON)
 }
 
 func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
-	source := r.Header.Get(HeaderSourceName)
-	compressed := r.Header.Get("Content-Encoding") == "gzip"
-	meta := r.Header.Get(HeaderBinData)
+	source := r.Header.Get(httputils.HeaderSourceName)
+	compressed := r.Header.Get(httputils.HeaderContentEncoding) == httputils.HeaderGzip
+	meta := r.Header.Get(httputils.HeaderBinData)
 	reader, err := NewBinReader(meta, r.Body, compressed)
 	if source == "" || err != nil {
 		if err != nil {
@@ -201,13 +214,25 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 		err = rcv.parsePart(next, source)
 		if err != nil {
 			logging.Error(err.Error())
-			w.Header().Add(HeaderPartCount, strconv.Itoa(n))
+			w.Header().Add(httputils.HeaderPartCount, strconv.Itoa(n))
 			w.WriteHeader(http.StatusPartialContent) // respond with a 206
 			return
 		}
 		n++
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func (rcv *Receiver) respond(w http.ResponseWriter, status int, data []byte) {
+	if rcv.Conf.Compress {
+		w.Header().Add("Content-Encoding", "gzip")
+		w.WriteHeader(status)
+		gz := gzip.NewWriter(w)
+		defer gz.Close()
+		gz.Write(data)
+		return
+	}
+	w.Write(data)
 }
 
 func (rcv *Receiver) getLock(path string) *sync.Mutex {

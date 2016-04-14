@@ -551,10 +551,10 @@ func (sender *Sender) httpBin(bin *Bin) (n int, err error) {
 	if err != nil {
 		return
 	}
-	req.Header.Add(HeaderSourceName, sender.conf.SourceName)
-	req.Header.Add(HeaderBinData, meta)
+	req.Header.Add(httputils.HeaderSourceName, sender.conf.SourceName)
+	req.Header.Add(httputils.HeaderBinData, meta)
 	if sender.conf.TargetKey != "" {
-		req.Header.Add(HeaderKey, sender.conf.TargetKey)
+		req.Header.Add(httputils.HeaderKey, sender.conf.TargetKey)
 	}
 	req.Header.Add("Transfer-Encoding", "chunked")
 	req.Header.Set("Connection", "close") // Prevents persistent connections opening too many file handles
@@ -568,8 +568,8 @@ func (sender *Sender) httpBin(bin *Bin) (n int, err error) {
 		return
 	}
 	if resp.StatusCode == 206 {
-		n, _ = strconv.Atoi(resp.Header.Get(HeaderPartCount))
-		err = fmt.Errorf("Bin failed validation. Successful part(s): %s", resp.Header.Get(HeaderPartCount))
+		n, _ = strconv.Atoi(resp.Header.Get(httputils.HeaderPartCount))
+		err = fmt.Errorf("Bin failed validation. Successful part(s): %s", resp.Header.Get(httputils.HeaderPartCount))
 		return
 	} else if resp.StatusCode != 200 {
 		err = fmt.Errorf("Bin failed with response code: %d", resp.StatusCode)
