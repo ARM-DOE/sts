@@ -7,7 +7,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/ARM-DOE/sts/logging"
 )
@@ -74,7 +73,7 @@ func newApp() *app {
 	// Initialize command line arguments
 	help := flag.Bool("help", false, "Print the help message")
 	debug := flag.Bool("debug", false, "Log program flow")
-	mode := flag.String("mode", "auto", "Mode: \"send\", \"receive\", \"auto\"")
+	mode := flag.String("mode", modeAuto, fmt.Sprintf("Mode: \"%s\", \"%s\", \"%s\"", modeSend, modeRecv, modeAuto))
 	loop := flag.Bool("loop", false, "Run in a loop, i.e. don't exit until interrupted")
 	confPath := flag.String("conf", "", "Configuration file path")
 
@@ -120,8 +119,9 @@ func (a *app) run() {
 	if !i && !o {
 		panic("Not configured to do anything?")
 	}
-
-	if !a.once { // Run until we get a signal to shutdown.
+	// Run until we get a signal to shutdown if running ONLY as a "receiver" or
+	// if configured to run as a sender in a loop.
+	if !a.once || (i && !o) {
 		sc := make(chan os.Signal, 1)
 		signal.Notify(sc, os.Interrupt)
 
@@ -155,7 +155,6 @@ func (a *app) startIn() bool {
 	stop := make(chan bool)
 	a.inStop = stop
 	a.inDone = a.in.Start(stop)
-	time.Sleep(1 * time.Second) // Give it time to start the server.
 	return true
 }
 
