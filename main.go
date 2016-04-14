@@ -119,7 +119,9 @@ func (a *app) run() {
 	if !i && !o {
 		panic("Not configured to do anything?")
 	}
-	if !a.once || i { // Run until we get a signal to shutdown.
+	// Run until we get a signal to shutdown if running ONLY as a "receiver" or
+	// if configured to run as a sender in a loop.
+	if !a.once || (i && !o) {
 		sc := make(chan os.Signal, 1)
 		signal.Notify(sc, os.Interrupt)
 
