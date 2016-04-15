@@ -14,12 +14,7 @@ type ScanFile interface {
 // SortFile is the interface for a file as needed for sorting.
 // Implements ScanFile.
 type SortFile interface {
-	GetPath(bool) string
-	GetRelPath() string
-	GetSize() int64
-	GetTime() int64
-	Reset() (bool, error)
-
+	ScanFile
 	GetOrigFile() ScanFile
 	GetGroup() string
 	GetNext() SortFile
@@ -34,12 +29,7 @@ type SortFile interface {
 // SendFile is the interface for a file as needed for sending.
 // Implements ScanFile.
 type SendFile interface {
-	GetPath(bool) string
-	GetRelPath() string
-	GetSize() int64
-	GetTime() int64
-	Reset() (bool, error)
-
+	ScanFile
 	GetHash() string
 	GetPrevName() string
 	SetStarted(time.Time)
@@ -50,7 +40,6 @@ type SendFile interface {
 	GetBytesAlloc() int64
 	GetBytesSent() int64
 	AddAlloc(int64)
-	AddSendTime(time.Duration)
 	AddSent(int64) bool // Returns IsSent() to keep the transaction atomic
 	TimeMs() int64
 	IsSent() bool
@@ -64,12 +53,7 @@ type SendFile interface {
 // with only those parts of the file that haven't already been received.
 // Also implements ScanFile in order to be inserted into the pipeline at the sorter.
 type RecoverFile interface {
-	GetPath(bool) string
-	GetRelPath() string
-	GetSize() int64
-	GetTime() int64
-	Reset() (bool, error)
-
+	ScanFile
 	GetHash() string
 	GetNextAlloc() (int64, int64)
 	GetBytesAlloc() int64

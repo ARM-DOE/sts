@@ -1,8 +1,10 @@
 package main
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path"
@@ -31,6 +33,7 @@ type ReceiverConf struct {
 	TLSKey   string
 	Sources  []string
 	Keys     []string
+	Compress bool
 }
 
 func (c *ReceiverConf) isValid(src, key string) bool {
@@ -107,8 +110,8 @@ func (rcv *Receiver) Serve(stop <-chan bool) {
 
 func (rcv *Receiver) handleValidate(next http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
-		source := r.Header.Get(HeaderSourceName)
-		key := r.Header.Get(HeaderKey)
+		source := r.Header.Get(httputils.HeaderSourceName)
+		key := r.Header.Get(httputils.HeaderKey)
 		if !rcv.Conf.isValid(source, key) {
 			logging.Error(fmt.Errorf("Unknown Source:Key => %s:%s", source, key))
 			w.WriteHeader(http.StatusForbidden)
@@ -120,7 +123,7 @@ func (rcv *Receiver) handleValidate(next http.Handler) http.Handler {
 }
 
 func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
-	source := r.Header.Get(HeaderSourceName)
+	source := r.Header.Get(httputils.HeaderSourceName)
 	if source == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -132,7 +135,6 @@ func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
 			base := strings.TrimSuffix(path, CompExt)
 			lock := rcv.getLock(base)
 			lock.Lock()
-			defer lock.Unlock()
 			if _, err := os.Stat(base + CompExt); !os.IsNotExist(err) { // Make sure it still exists.
 				cmp, err := ReadCompanion(base)
 				if err == nil {
@@ -142,6 +144,8 @@ func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
 					partials = append(partials, cmp)
 				}
 			}
+			lock.Unlock()
+			rcv.delLock(base)
 		}
 		return nil
 	})
@@ -150,16 +154,26 @@ func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-	w.Write(respJSON)
+	w.Header().Set(httputils.HeaderContentType, httputils.HeaderJSON)
+	rcv.respond(w, http.StatusOK, respJSON)
 }
 
 func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
-	source := r.Header.Get(HeaderSourceName)
+	source := r.Header.Get(httputils.HeaderSourceName)
 	files := []*ConfirmFile{}
-	decoder := json.NewDecoder(r.Body)
-	err := decoder.Decode(&files)
+	var br io.Reader
+	var err error
+	if br, err = httputils.GetReqReader(r); err != nil {
+		logging.Error(err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	decoder := json.NewDecoder(br)
+	err = decoder.Decode(&files)
 	if source == "" || err != nil {
+		if err != nil {
+			logging.Error(err.Error())
+		}
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -175,15 +189,15 @@ func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
 		respMap[f.RelPath] = code
 	}
 	respJSON, _ := json.Marshal(respMap)
-	w.WriteHeader(http.StatusOK)
-	w.Write(respJSON)
+	w.Header().Set(httputils.HeaderContentType, httputils.HeaderJSON)
+	rcv.respond(w, http.StatusOK, respJSON)
 }
 
 func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
-	source := r.Header.Get(HeaderSourceName)
-	compressed := r.Header.Get("Content-Encoding") == "gzip"
-	meta := r.Header.Get(HeaderBinData)
+	source := r.Header.Get(httputils.HeaderSourceName)
+	compressed := r.Header.Get(httputils.HeaderContentEncoding) == httputils.HeaderGzip
+	meta := r.Header.Get(httputils.HeaderBinData)
 	reader, err := NewBinReader(meta, r.Body, compressed)
 	if source == "" || err != nil {
 		if err != nil {
@@ -201,7 +215,7 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 		err = rcv.parsePart(next, source)
 		if err != nil {
 			logging.Error(err.Error())
-			w.Header().Add(HeaderPartCount, strconv.Itoa(n))
+			w.Header().Add(httputils.HeaderPartCount, strconv.Itoa(n))
 			w.WriteHeader(http.StatusPartialContent) // respond with a 206
 			return
 		}
@@ -210,14 +224,34 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func (rcv *Receiver) respond(w http.ResponseWriter, status int, data []byte) {
+	if rcv.Conf.Compress {
+		w.Header().Add("Content-Encoding", "gzip")
+		w.WriteHeader(status)
+		gz := gzip.NewWriter(w)
+		defer gz.Close()
+		gz.Write(data)
+		return
+	}
+	w.Write(data)
+}
+
 func (rcv *Receiver) getLock(path string) *sync.Mutex {
 	rcv.lock.Lock()
 	defer rcv.lock.Unlock()
-	_, exists := rcv.fileLocks[path]
-	if !exists {
-		rcv.fileLocks[path] = &sync.Mutex{}
+	var m *sync.Mutex
+	var exists bool
+	if m, exists = rcv.fileLocks[path]; !exists {
+		m = &sync.Mutex{}
+		rcv.fileLocks[path] = m
 	}
-	return rcv.fileLocks[path]
+	return m
+}
+
+func (rcv *Receiver) delLock(path string) {
+	rcv.lock.Lock()
+	defer rcv.lock.Unlock()
+	delete(rcv.fileLocks, path)
 }
 
 func (rcv *Receiver) initStageFile(filePath string, size int64) {
@@ -247,7 +281,6 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 	logging.Debug("RECEIVE Process Part:", pr.Meta.Path, pr.Meta.FileSize)
 
 	path := filepath.Join(rcv.Conf.StageDir, source, pr.Meta.Path)
-	hash := fileutils.NewMD5()
 
 	rcv.initStageFile(path, pr.Meta.FileSize)
 
@@ -256,27 +289,16 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 	if err != nil {
 		return fmt.Errorf("Failed to open file while trying to write part: %s", err.Error())
 	}
-	fh.Seek(pr.Meta.Beg, 0)
 	logging.Debug("RECEIVE Seek:", pr.Meta.Path, pr.Meta.Beg)
-	bytes := make([]byte, hash.BlockSize)
-	var n int
-	wrote := 0
-	for {
-		// The number of bytes read can often be less than the size of the passed buffer.
-		n, err = pr.Read(bytes)
-		// logging.Debug("RECEIVE Bytes Read", n, path, (pr.Meta.End-pr.Meta.Beg)-int64(wrote))
-		wrote += n
-		hash.Update(bytes[:n])
-		fh.Write(bytes[:n])
-		if err != nil {
-			logging.Debug("RECEIVE:", err.Error())
-			break
-		}
-	}
-	logging.Debug("RECEIVE Wrote:", pr.Meta.Path, wrote)
+	fh.Seek(pr.Meta.Beg, 0)
+	n, err := io.Copy(fh, pr)
+	logging.Debug("RECEIVE Wrote:", pr.Meta.Path, n)
 	fh.Close()
-	if pr.Meta.Hash != hash.Sum() {
-		return fmt.Errorf("Bad part of %s from bytes %d:%d (%s:%s)", pr.Meta.Path, pr.Meta.Beg, pr.Meta.End, pr.Meta.Hash, hash.Sum())
+	if err != nil {
+		return err
+	}
+	if pr.Meta.Hash != fileutils.HashHex(pr.Hash) {
+		return fmt.Errorf("Bad part of %s from bytes %d:%d (%s:%s)", pr.Meta.Path, pr.Meta.Beg, pr.Meta.End, pr.Meta.Hash, fileutils.HashHex(pr.Hash))
 	}
 
 	// Make sure we're the only one updating the companion
@@ -302,6 +324,7 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 			return err
 		}
 		logging.Debug("RECEIVE File Done:", path)
+		rcv.delLock(path)
 	}
 	logging.Debug("RECEIVE Part OK:", path)
 	return nil

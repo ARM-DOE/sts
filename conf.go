@@ -12,21 +12,6 @@ import (
 )
 
 const (
-	// HeaderSourceName is the custom HTTP header for communicating the name of
-	// the sending host.
-	HeaderSourceName = "X-STS-SrcName"
-
-	// HeaderKey is the custom HTTP header for communicating the key (if applicable)
-	// provided by the target.
-	HeaderKey = "X-STS-Key"
-
-	// HeaderBinData is the custom HTTP header that houses the JSON-encoded metadata
-	// for a bin.
-	HeaderBinData = "X-STS-BinData"
-
-	// HeaderPartCount is the custom HTTP resopnse header that indicates the number
-	// of parts successfully received.
-	HeaderPartCount = "X-STS-PartCount"
 
 	// DefaultTag is the name of the "default" tag.
 	DefaultTag = "DEFAULT"
@@ -163,10 +148,11 @@ type InDirs struct {
 
 // InServer is the struct for managing the incoming HTTP host.
 type InServer struct {
-	Port    int    `yaml:"http-port"`
-	TLS     bool   `yaml:"http-tls"`
-	TLSCert string `yaml:"http-tls-cert"`
-	TLSKey  string `yaml:"http-tls-key"`
+	Port     int    `yaml:"http-port"`
+	TLS      bool   `yaml:"http-tls"`
+	TLSCert  string `yaml:"http-tls-cert"`
+	TLSKey   string `yaml:"http-tls-key"`
+	Compress bool   `yaml:"compress"`
 }
 
 // NewConf returns a parsed Conf reference based on the provided conf file path.

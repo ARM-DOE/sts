@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -70,6 +72,8 @@ type app struct {
 }
 
 func newApp() *app {
+	var err error
+
 	// Initialize command line arguments
 	help := flag.Bool("help", false, "Print the help message")
 	debug := flag.Bool("debug", false, "Log program flow")
@@ -102,11 +106,13 @@ func newApp() *app {
 			a.confPath = filepath.Join(getRoot(), "conf", "sts."+a.mode+".yaml")
 		}
 	} else if !filepath.IsAbs(a.confPath) {
-		a.confPath = filepath.Join(getRoot(), a.confPath)
+		if a.confPath, err = filepath.Abs(a.confPath); err != nil {
+			panic(err.Error())
+		}
 	}
 	conf, err := NewConf(a.confPath)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to parse configuration: %s\n%s", *confPath, err.Error()))
+		panic(fmt.Sprintf("Failed to parse configuration:\n%s", err.Error()))
 	}
 	a.conf = conf
 
@@ -122,6 +128,14 @@ func (a *app) run() {
 	// Run until we get a signal to shutdown if running ONLY as a "receiver" or
 	// if configured to run as a sender in a loop.
 	if !a.once || (i && !o) {
+		if !i {
+			// Start a profiler server only if running solely "out" mode in a
+			// loop.  We can use the "in" server otherwise.
+			// https://golang.org/pkg/net/http/pprof/
+			go func() {
+				http.ListenAndServe("localhost:6060", nil)
+			}()
+		}
 		sc := make(chan os.Signal, 1)
 		signal.Notify(sc, os.Interrupt)
 

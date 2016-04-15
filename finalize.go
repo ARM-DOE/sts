@@ -14,20 +14,23 @@ import (
 // CacheAge is how long a finalized file is kept in memory.
 const CacheAge = time.Minute * 60
 
+// CacheCnt is the number of files after which to age the cache.
+const CacheCnt = 1000
+
 // LogSearch is how far back (max) to look in the logs for a finalized file.
 const LogSearch = time.Duration(30 * 24 * time.Hour)
 
 // Finalizer manages files that need to be validated against companions.
 type Finalizer struct {
 	Conf      *ReceiverConf
-	last      int64
+	last      time.Time
 	cache     map[string]*finalFile
 	cacheLock sync.RWMutex
 }
 
 type finalFile struct {
 	file    ScanFile
-	time    int64
+	time    time.Time
 	success bool
 }
 
@@ -157,15 +160,15 @@ func (f *Finalizer) fromCache(source string, relPath string) (bool, bool) {
 func (f *Finalizer) toCache(source string, file ScanFile, success bool) {
 	f.cacheLock.Lock()
 	defer f.cacheLock.Unlock()
-	ff := &finalFile{file, time.Now().Unix(), success}
+	now := time.Now()
+	ff := &finalFile{file: file, time: now, success: success}
 	f.cache[fmt.Sprintf("%s/%s", source, file.GetRelPath())] = ff
 	if success {
 		f.last = ff.time
 	}
-	if len(f.cache)%50 == 0 {
-		limit := time.Now().Unix() - int64(CacheAge.Seconds())
+	if len(f.cache)%CacheCnt == 0 {
 		for key, cfile := range f.cache {
-			if cfile.time < limit {
+			if now.Sub(cfile.time) > CacheAge {
 				logging.Debug("FINAL Clean Cache:", key)
 				delete(f.cache, key)
 			}

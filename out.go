@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -133,6 +134,7 @@ func (a *AppOut) getPartials() ([]*Companion, error) {
 	var client *http.Client
 	var req *http.Request
 	var resp *http.Response
+	var reader io.ReadCloser
 	if client, err = httputils.GetClient(a.conf.TLSCert, a.conf.TLSKey); err != nil {
 		return nil, err
 	}
@@ -140,16 +142,19 @@ func (a *AppOut) getPartials() ([]*Companion, error) {
 	if req, err = http.NewRequest("GET", url, bytes.NewReader([]byte(""))); err != nil {
 		return nil, err
 	}
-	req.Header.Add(HeaderSourceName, a.conf.SourceName)
+	req.Header.Add(httputils.HeaderSourceName, a.conf.SourceName)
 	if a.conf.TargetKey != "" {
-		req.Header.Add(HeaderKey, a.conf.TargetKey)
+		req.Header.Add(httputils.HeaderKey, a.conf.TargetKey)
 	}
 	if resp, err = client.Do(req); err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	if reader, err = httputils.GetRespReader(resp); err != nil {
+		return nil, err
+	}
+	defer reader.Close()
 	partials := []*Companion{}
-	jsonDecoder := json.NewDecoder(resp.Body)
+	jsonDecoder := json.NewDecoder(reader)
 	err = jsonDecoder.Decode(&partials)
 	if err != nil {
 		return nil, err

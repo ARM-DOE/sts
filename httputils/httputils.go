@@ -1,12 +1,47 @@
 package httputils
 
 import (
+	"compress/gzip"
 	"crypto/tls"
+	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
+)
+
+const (
+	// HeaderSourceName is the custom HTTP header for communicating the name of
+	// the sending host.
+	HeaderSourceName = "X-STS-SrcName"
+
+	// HeaderKey is the custom HTTP header for communicating the key (if applicable)
+	// provided by the target.
+	HeaderKey = "X-STS-Key"
+
+	// HeaderBinData is the custom HTTP header that houses the JSON-encoded metadata
+	// for a bin.
+	HeaderBinData = "X-STS-BinData"
+
+	// HeaderPartCount is the custom HTTP resopnse header that indicates the number
+	// of parts successfully received.
+	HeaderPartCount = "X-STS-PartCount"
+
+	// HeaderContentType is the standard HTTP header for specifying the payload
+	// type.
+	HeaderContentType = "Content-Type"
+
+	// HeaderContentEncoding is the standard HTTP header for specifying the payload
+	// encoding.
+	HeaderContentEncoding = "Content-Encoding"
+
+	// HeaderGzip is the content encoding value for gzip compression.
+	HeaderGzip = "gzip"
+
+	// HeaderJSON is the content type value for JSON-encoded payload.
+	HeaderJSON = "application/json"
 )
 
 var gCerts map[string]tls.Certificate
@@ -93,6 +128,49 @@ func GetHostname(r *http.Request) string {
 	host := strings.TrimSuffix(hosts[0], ".")
 	gHosts[ip] = host
 	return host
+}
+
+// GetRespReader will return the appropriate reader for this response body based
+// on the content type.
+func GetRespReader(r *http.Response) (io.ReadCloser, error) {
+	if r.Header.Get(HeaderContentEncoding) == HeaderGzip {
+		return gzip.NewReader(r.Body)
+	}
+	return r.Body, nil
+}
+
+// GetReqReader will return the appropriate reader for this request body based
+// on the content type.
+func GetReqReader(r *http.Request) (io.ReadCloser, error) {
+	if r.Header.Get(HeaderContentEncoding) == HeaderGzip {
+		return gzip.NewReader(r.Body)
+	}
+	return r.Body, nil
+}
+
+// GetJSONReader takes an arbitrary struct and generates a JSON reader with no
+// intermediate buffer.  It will also add gzip compression if specified.
+func GetJSONReader(data interface{}, compress bool) (r io.Reader, err error) {
+	rp, wp := io.Pipe()
+	var wz *gzip.Writer
+	var wj *json.Encoder
+	if compress {
+		wz, err = gzip.NewWriterLevel(wp, gzip.BestCompression)
+		if err != nil {
+			return
+		}
+		wj = json.NewEncoder(wz)
+	} else {
+		wj = json.NewEncoder(wp)
+	}
+	go func(d interface{}) {
+		wj.Encode(d)
+		if wz != nil {
+			wz.Close()
+		}
+		wp.Close()
+	}(data)
+	return rp, nil
 }
 
 // Server is net/http compatible graceful server.
