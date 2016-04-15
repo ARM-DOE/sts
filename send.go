@@ -19,7 +19,6 @@ type sendFile struct {
 	prevName   string
 	started    time.Time
 	completed  time.Time
-	sendTime   time.Duration
 	bytesAlloc int64
 	bytesSent  int64
 	cancel     bool
@@ -153,17 +152,13 @@ func (f *sendFile) AddSent(bytes int64) bool {
 	return f.isSent()
 }
 
-func (f *sendFile) AddSendTime(t time.Duration) {
-	f.lock.Lock()
-	defer f.lock.Unlock()
-	f.sendTime += t
-}
-
 func (f *sendFile) TimeMs() int64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
-	// return int64(f.completed.Sub(f.started).Nanoseconds() / 1e6)
-	return int64(f.sendTime.Nanoseconds() / 1e6)
+	if !f.completed.IsZero() && !f.started.IsZero() {
+		return int64(f.completed.Sub(f.started).Nanoseconds() / 1e6)
+	}
+	return -1
 }
 
 func (f *sendFile) IsSent() bool {
@@ -474,17 +469,28 @@ func (sender *Sender) startDone(wg *sync.WaitGroup) {
 		for _, p := range b.Parts {
 			f := p.File
 			f.SetStarted(b.GetStarted())
-			n := b.GetCompleted().Sub(b.GetStarted()).Nanoseconds()
-			r := float64(p.End-p.Beg) / float64(b.Bytes-b.BytesLeft)
-			d := time.Duration(float64(n) * r)
-			f.AddSendTime(time.Duration(d * time.Nanosecond))
 			if f.AddSent(p.End - p.Beg) {
 				f.SetCompleted(b.GetCompleted())
+				ms := f.TimeMs()
+				if p.Beg == 0 && p.End == f.GetSize() {
+					// If the file fit entirely in a bin, we can compute a more
+					// precise send time.
+					n := b.GetCompleted().Sub(b.GetStarted()).Nanoseconds()
+					r := float64(0)
+					if b.Bytes > b.BytesLeft {
+						r = float64(p.End-p.Beg) / float64(b.Bytes-b.BytesLeft)
+					}
+					d := time.Duration(float64(n) * r)
+					ms = int64((r * float64(d.Nanoseconds())) / 1e6)
+				}
 				logging.Debug("SEND Sent:", f.GetRelPath(), f.GetSize(), f.GetStarted(), f.GetCompleted())
-				logging.Sent(f.GetRelPath(), f.GetHash(), f.GetSize(), f.TimeMs(), sender.conf.TargetName)
+				logging.Sent(f.GetRelPath(), f.GetHash(), f.GetSize(), ms, sender.conf.TargetName)
 				done = append(done, f)
 			}
 		}
+		s := b.GetCompleted().Sub(b.GetStarted()).Seconds()
+		mb := float64(b.Bytes-b.BytesLeft) / float64(1024) / float64(1024)
+		logging.Debug(fmt.Sprintf("SEND Throughput: %.2fMB, %.2fs, %.2f MB/s", mb, s, mb/s))
 		sender.done(done)
 	}
 }

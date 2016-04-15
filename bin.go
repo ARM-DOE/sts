@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"hash"
 	"io"
 	"math"
 	"os"
@@ -383,6 +385,7 @@ func (bw *BinWriter) EncodeMeta() (string, error) {
 // PartReader is responsible for parsing individual "parts" of "bin" requests.
 type PartReader struct {
 	Meta *PartMeta
+	Hash hash.Hash
 	gzip *gzip.Reader
 	raw  io.Reader
 	pos  int
@@ -400,6 +403,7 @@ func (pr *PartReader) Read(out []byte) (n int, err error) {
 	} else {
 		n, err = pr.raw.Read(out[:left])
 	}
+	pr.Hash.Write(out[:n])
 	pr.pos += n
 	if pr.pos == int(total) {
 		logging.Debug("BIN Part Done", pr.pos)
@@ -450,6 +454,7 @@ func (br *BinReader) Next() (pr *PartReader, eof bool) {
 	}
 	pr = &PartReader{
 		Meta: br.meta[br.pi],
+		Hash: md5.New(),
 		gzip: br.gzip,
 		raw:  br.raw,
 	}

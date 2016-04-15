@@ -70,77 +70,45 @@ func LoadJSON(path string, data interface{}) error {
 
 // StringMD5 computes the MD5 hash from an array of bytes.
 func StringMD5(data []byte) string {
-	hash := md5.New()
-	hash.Write(data)
-	return fmt.Sprintf("%x", hash.Sum(nil))
+	// return "aaaa"
+	h := md5.New()
+	h.Write(data)
+	return HashHex(h)
 }
 
 // FileMD5 computes the MD5 of a file given a path.
-func FileMD5(path string) (string, error) {
-	fh, err := os.Open(path)
-	if err != nil {
-		return "", fmt.Errorf(fmt.Sprintf("MD5 failed because file not found: %s", path))
+func FileMD5(path string) (hash string, err error) {
+	// return "aaaa", nil
+	var fh *os.File
+	if fh, err = os.Open(path); err != nil {
+		return
 	}
-	stream := NewMD5()
-	stream.Read(fh)
-	return stream.Sum(), nil
+	h := md5.New()
+	if _, err = io.Copy(h, fh); err != nil {
+		return
+	}
+	hash = HashHex(h)
+	return
 }
 
 // PartialMD5 computes the MD5 of part of a file, specified from start byte to end byte.
-func PartialMD5(path string, start int64, end int64) (string, error) {
-	fh, err := os.Open(path)
+func PartialMD5(path string, start int64, end int64) (hash string, err error) {
+	// return "aaaa", nil
+	var fh *os.File
+	if fh, err = os.Open(path); err != nil {
+		return
+	}
 	defer fh.Close()
-	if err != nil {
-		return "", err
-	}
 	fh.Seek(start, 0)
-	hash := NewMD5()
-	buff := make([]byte, hash.BlockSize)
-	nreads := int((end-start)/BlockSize) + 1
-	for i := 0; i < nreads; i++ {
-		if i == nreads-1 {
-			buff = make([]byte, (end-start)%int64(hash.BlockSize))
-		}
-		fh.Read(buff)
-		hash.Update(buff)
+	h := md5.New()
+	if _, err = io.CopyN(h, fh, end-start); err != nil {
+		return
 	}
-	return hash.Sum(), nil
+	hash = HashHex(h)
+	return
 }
 
-// MD5 is the struct for streaming an MD5 checksum.
-type MD5 struct {
-	Hash      hash.Hash
-	BlockSize int
-	Bytes     int64
-}
-
-// NewMD5 returns a default MD5 reference.
-func NewMD5() *MD5 {
-	hash := &MD5{}
-	hash.Hash = md5.New()
-	hash.BlockSize = BlockSize
-	return hash
-}
-
-// Update updates the checksum based on the input bytes.
-func (hash *MD5) Update(addedBytes []byte) {
-	hash.Hash.Write(addedBytes)
-	hash.Bytes += int64(len(addedBytes))
-}
-
-// Sum formats the checksum as a string.
-func (hash *MD5) Sum() string {
-	return fmt.Sprintf("%x", hash.Hash.Sum(nil))
-}
-
-// Read iterates over an io.Reader until EOF, computing the checksum along the way.
-func (hash *MD5) Read(inStream io.Reader) string {
-	byteBlock := make([]byte, hash.BlockSize)
-	for {
-		bytesRead, eof := inStream.Read(byteBlock)
-		hash.Update(byteBlock[0:bytesRead])
-		if eof != nil {
-			return hash.Sum()
-		}
-	}
+// HashHex calls Sum(nil) on the input hash and formats the result in hexadecimal.
+func HashHex(h hash.Hash) string {
+	return fmt.Sprintf("%x", h.Sum(nil))
 }

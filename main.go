@@ -18,10 +18,6 @@ const modeRecv = "in"
 const modeAuto = "auto"
 
 func main() {
-	// https://golang.org/pkg/net/http/pprof/
-	go func() {
-		http.ListenAndServe("localhost:6060", nil)
-	}()
 	app := newApp()
 	app.run()
 }
@@ -132,6 +128,14 @@ func (a *app) run() {
 	// Run until we get a signal to shutdown if running ONLY as a "receiver" or
 	// if configured to run as a sender in a loop.
 	if !a.once || (i && !o) {
+		if !i {
+			// Start a profiler server only if running solely "out" mode in a
+			// loop.  We can use the "in" server otherwise.
+			// https://golang.org/pkg/net/http/pprof/
+			go func() {
+				http.ListenAndServe("localhost:6060", nil)
+			}()
+		}
 		sc := make(chan os.Signal, 1)
 		signal.Notify(sc, os.Interrupt)
 

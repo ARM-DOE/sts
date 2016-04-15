@@ -249,7 +249,11 @@ func (poller *Poller) Poll(files []PollFile) (none []PollFile, fail []PollFile, 
 		logging.Debug("POLLing:", f.GetRelPath())
 	}
 	url := fmt.Sprintf("%s://%s/validate", poller.conf.Protocol(), poller.conf.TargetHost)
-	req, err := http.NewRequest("POST", url, httputils.GetJSONReader(cf, poller.conf.Compress))
+	r, err := httputils.GetJSONReader(cf, poller.conf.Compress)
+	if err != nil {
+		return
+	}
+	req, err := http.NewRequest("POST", url, r)
 	if poller.conf.Compress {
 		req.Header.Add(httputils.HeaderContentEncoding, httputils.HeaderGzip)
 	}

@@ -150,12 +150,15 @@ func GetReqReader(r *http.Request) (io.ReadCloser, error) {
 
 // GetJSONReader takes an arbitrary struct and generates a JSON reader with no
 // intermediate buffer.  It will also add gzip compression if specified.
-func GetJSONReader(data interface{}, compress bool) io.Reader {
+func GetJSONReader(data interface{}, compress bool) (r io.Reader, err error) {
 	rp, wp := io.Pipe()
 	var wz *gzip.Writer
 	var wj *json.Encoder
 	if compress {
-		wz = gzip.NewWriter(wp)
+		wz, err = gzip.NewWriterLevel(wp, gzip.BestCompression)
+		if err != nil {
+			return
+		}
 		wj = json.NewEncoder(wz)
 	} else {
 		wj = json.NewEncoder(wp)
@@ -167,7 +170,7 @@ func GetJSONReader(data interface{}, compress bool) io.Reader {
 		}
 		wp.Close()
 	}(data)
-	return rp
+	return rp, nil
 }
 
 // Server is net/http compatible graceful server.

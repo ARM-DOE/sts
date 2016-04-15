@@ -135,7 +135,6 @@ func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
 			base := strings.TrimSuffix(path, CompExt)
 			lock := rcv.getLock(base)
 			lock.Lock()
-			defer lock.Unlock()
 			if _, err := os.Stat(base + CompExt); !os.IsNotExist(err) { // Make sure it still exists.
 				cmp, err := ReadCompanion(base)
 				if err == nil {
@@ -145,6 +144,8 @@ func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
 					partials = append(partials, cmp)
 				}
 			}
+			lock.Unlock()
+			rcv.delLock(base)
 		}
 		return nil
 	})
@@ -238,11 +239,19 @@ func (rcv *Receiver) respond(w http.ResponseWriter, status int, data []byte) {
 func (rcv *Receiver) getLock(path string) *sync.Mutex {
 	rcv.lock.Lock()
 	defer rcv.lock.Unlock()
-	_, exists := rcv.fileLocks[path]
-	if !exists {
-		rcv.fileLocks[path] = &sync.Mutex{}
+	var m *sync.Mutex
+	var exists bool
+	if m, exists = rcv.fileLocks[path]; !exists {
+		m = &sync.Mutex{}
+		rcv.fileLocks[path] = m
 	}
-	return rcv.fileLocks[path]
+	return m
+}
+
+func (rcv *Receiver) delLock(path string) {
+	rcv.lock.Lock()
+	defer rcv.lock.Unlock()
+	delete(rcv.fileLocks, path)
 }
 
 func (rcv *Receiver) initStageFile(filePath string, size int64) {
@@ -272,7 +281,6 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 	logging.Debug("RECEIVE Process Part:", pr.Meta.Path, pr.Meta.FileSize)
 
 	path := filepath.Join(rcv.Conf.StageDir, source, pr.Meta.Path)
-	hash := fileutils.NewMD5()
 
 	rcv.initStageFile(path, pr.Meta.FileSize)
 
@@ -281,27 +289,16 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 	if err != nil {
 		return fmt.Errorf("Failed to open file while trying to write part: %s", err.Error())
 	}
-	fh.Seek(pr.Meta.Beg, 0)
 	logging.Debug("RECEIVE Seek:", pr.Meta.Path, pr.Meta.Beg)
-	bytes := make([]byte, hash.BlockSize)
-	var n int
-	wrote := 0
-	for {
-		// The number of bytes read can often be less than the size of the passed buffer.
-		n, err = pr.Read(bytes)
-		// logging.Debug("RECEIVE Bytes Read", n, path, (pr.Meta.End-pr.Meta.Beg)-int64(wrote))
-		wrote += n
-		hash.Update(bytes[:n])
-		fh.Write(bytes[:n])
-		if err != nil {
-			logging.Debug("RECEIVE:", err.Error())
-			break
-		}
-	}
-	logging.Debug("RECEIVE Wrote:", pr.Meta.Path, wrote)
+	fh.Seek(pr.Meta.Beg, 0)
+	n, err := io.Copy(fh, pr)
+	logging.Debug("RECEIVE Wrote:", pr.Meta.Path, n)
 	fh.Close()
-	if pr.Meta.Hash != hash.Sum() {
-		return fmt.Errorf("Bad part of %s from bytes %d:%d (%s:%s)", pr.Meta.Path, pr.Meta.Beg, pr.Meta.End, pr.Meta.Hash, hash.Sum())
+	if err != nil {
+		return err
+	}
+	if pr.Meta.Hash != fileutils.HashHex(pr.Hash) {
+		return fmt.Errorf("Bad part of %s from bytes %d:%d (%s:%s)", pr.Meta.Path, pr.Meta.Beg, pr.Meta.End, pr.Meta.Hash, fileutils.HashHex(pr.Hash))
 	}
 
 	// Make sure we're the only one updating the companion
@@ -327,6 +324,7 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 			return err
 		}
 		logging.Debug("RECEIVE File Done:", path)
+		rcv.delLock(path)
 	}
 	logging.Debug("RECEIVE Part OK:", path)
 	return nil
