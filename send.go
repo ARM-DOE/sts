@@ -276,7 +276,7 @@ func NewSender(conf *SenderConf) *Sender {
 func (sender *Sender) Start(ch *SenderChan) {
 	sender.ch = ch
 	sender.ch.sendFile = make(chan SendFile, sender.conf.Threads)
-	sender.ch.sendBin = make(chan *Bin, sender.conf.Threads*2)
+	sender.ch.sendBin = make(chan *Bin, sender.conf.Threads*4)
 	sender.ch.doneBin = make(chan *Bin, sender.conf.Threads)
 	var wgWrap, wgBin, wgRebin, wgSend, wgDone sync.WaitGroup
 	nWrap, nBin, nRebin, nSend, nDone := 1, 1, 1, sender.conf.Threads, 1
@@ -490,7 +490,7 @@ func (sender *Sender) startDone(wg *sync.WaitGroup) {
 		}
 		s := b.GetCompleted().Sub(b.GetStarted()).Seconds()
 		mb := float64(b.Bytes-b.BytesLeft) / float64(1024) / float64(1024)
-		logging.Debug(fmt.Sprintf("SEND Throughput: %.2fMB, %.2fs, %.2f MB/s", mb, s, mb/s))
+		logging.Info(fmt.Sprintf("SEND Throughput: %.2fMB, %.2fs, %.2f MB/s", mb, s, mb/s))
 		sender.done(done)
 	}
 }
@@ -562,26 +562,22 @@ func (sender *Sender) httpBin(bin *Bin) (n int, err error) {
 	if sender.conf.TargetKey != "" {
 		req.Header.Add(httputils.HeaderKey, sender.conf.TargetKey)
 	}
-	req.Header.Add("Transfer-Encoding", "chunked")
-	req.Header.Set("Connection", "close") // Prevents persistent connections opening too many file handles
-	req.ContentLength = -1
-	_, ok := bw.(*ZBinWriter)
-	if ok {
+	if _, ok := bw.(*ZBinWriter); ok {
 		req.Header.Add("Content-Encoding", "gzip")
 	}
 	resp, err := sender.client.Do(req)
 	if err != nil {
 		return
 	}
-	if resp.StatusCode == 206 {
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusPartialContent {
 		n, _ = strconv.Atoi(resp.Header.Get(httputils.HeaderPartCount))
 		err = fmt.Errorf("Bin failed validation. Successful part(s): %s", resp.Header.Get(httputils.HeaderPartCount))
 		return
-	} else if resp.StatusCode != 200 {
+	} else if resp.StatusCode != http.StatusOK {
 		err = fmt.Errorf("Bin failed with response code: %d", resp.StatusCode)
 		return
 	}
-	resp.Body.Close()
 	req.Close = true
 	n = len(bin.Parts)
 	return

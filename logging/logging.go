@@ -27,6 +27,7 @@ const Disk = "to_disk"
 const Msg = "messages"
 
 var gLoggers map[string]*Logger
+var msgLogger *Logger
 
 // Init will create a logger for each input "mode".
 func Init(modes []string, root string, debug bool) {
@@ -39,6 +40,7 @@ func Init(modes []string, root string, debug bool) {
 			gLoggers[mode] = newLogger(filepath.Join(root, mode), mode, debug)
 		}
 	}
+	msgLogger = gLoggers[Msg] // For faster access.
 }
 
 // Done terminates logging for all created loggers.
@@ -70,28 +72,39 @@ func getLogger(mode string, prefix ...string) (*Logger, bool) {
 // Debug joins each item in params{} by a space, prepends a timestamp and the location of the message,
 // and writes the result to stdout and to the "messages" log file.
 func Debug(params ...interface{}) {
-	logger, exists := getLogger(Msg)
-	if !exists || !logger.debug {
+	if msgLogger == nil || !msgLogger.debug {
 		return
 	}
 	_, file, line, _ := runtime.Caller(1) // Get file name and line number of the caller of this function
-	params = append([]interface{}{fmt.Sprintf("%s:%d", filepath.Base(file), line)}, params...)
-	logger.out(os.Stdout, params...)
-	logger.log(params...)
+	params = append([]interface{}{fmt.Sprintf("DEBUG %s:%d", filepath.Base(file), line)}, params...)
+	msgLogger.out(os.Stdout, params...)
+	msgLogger.log(params...)
+}
+
+// Info joins each item in params{} by a space, prepends a timestamp and the location of the message,
+// and writes the result to stdout and to the "messages" log file.
+func Info(params ...interface{}) {
+	if msgLogger == nil {
+		fmt.Fprintln(os.Stdout, params...)
+		return
+	}
+	_, file, line, _ := runtime.Caller(1) // Get file name and line number of the caller of this function
+	params = append([]interface{}{fmt.Sprintf("INFO %s:%d", filepath.Base(file), line)}, params...)
+	msgLogger.out(os.Stdout, params...)
+	msgLogger.log(params...)
 }
 
 // Error joins each item in params{} by a space, prepends a timestamp and the location of the error,
 // and writes the result to stderr and to the "messages" log file.
 func Error(params ...interface{}) {
-	logger, exists := getLogger(Msg)
-	if !exists {
+	if msgLogger == nil {
 		fmt.Fprintln(os.Stderr, params...) // Prevent error message from being lost.
 		return
 	}
 	_, file, line, _ := runtime.Caller(1) // Get file name and line number of the caller of this function
 	params = append([]interface{}{fmt.Sprintf("ERROR %s:%d", filepath.Base(file), line)}, params...)
-	logger.out(os.Stderr, params...)
-	logger.log(params...)
+	msgLogger.out(os.Stderr, params...)
+	msgLogger.log(params...)
 }
 
 // Disked writes a formatted string to the "to_disk" log file.

@@ -278,8 +278,6 @@ func (rcv *Receiver) initStageFile(filePath string, size int64) {
 }
 
 func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
-	logging.Debug("RECEIVE Process Part:", pr.Meta.Path, pr.Meta.FileSize)
-
 	path := filepath.Join(rcv.Conf.StageDir, source, pr.Meta.Path)
 
 	rcv.initStageFile(path, pr.Meta.FileSize)
@@ -289,11 +287,10 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 	if err != nil {
 		return fmt.Errorf("Failed to open file while trying to write part: %s", err.Error())
 	}
-	logging.Debug("RECEIVE Seek:", pr.Meta.Path, pr.Meta.Beg)
 	fh.Seek(pr.Meta.Beg, 0)
 	n, err := io.Copy(fh, pr)
-	logging.Debug("RECEIVE Wrote:", pr.Meta.Path, n)
 	fh.Close()
+	logging.Debug("RECEIVE Wrote:", pr.Meta.Path, pr.Meta.Beg, n)
 	if err != nil {
 		return err
 	}
@@ -316,6 +313,7 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 	if err != nil {
 		return fmt.Errorf("Failed to write updated companion: %s", err.Error())
 	}
+	logging.Debug("RECEIVE Part OK:", path, n)
 	if cmp.IsComplete() {
 
 		// Finish file by removing the "partial" extension so the scanner will pick it up.
@@ -326,6 +324,5 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 		logging.Debug("RECEIVE File Done:", path)
 		rcv.delLock(path)
 	}
-	logging.Debug("RECEIVE Part OK:", path)
 	return nil
 }
