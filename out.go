@@ -81,8 +81,12 @@ func (a *AppOut) initConf() {
 	if a.rawConf.Target.TLS && (a.conf.TLSCert == "" || a.conf.TLSKey == "") {
 		panic("TLS enabled but missing TLS Cert and/or TLS Key")
 	}
-	if a.rawConf.StatInterval.Nanoseconds() == 0 {
-		a.rawConf.StatInterval = time.Minute * 5
+	if !a.rawConf.Target.TLS {
+		a.conf.TLSCert = ""
+		a.conf.TLSKey = ""
+	}
+	if a.conf.StatInterval.Nanoseconds() == 0 {
+		a.conf.StatInterval = time.Minute * 5
 	}
 	if a.rawConf.GroupBy.String() == "" {
 		a.rawConf.GroupBy, _ = regexp.Compile(`^([^\.]*)`) // Default is up to the first dot of the relative path.
