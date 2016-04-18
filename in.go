@@ -53,7 +53,7 @@ func (a *AppIn) Start(stop <-chan bool) <-chan bool {
 	scanConf := ScannerConf{
 		ScanDir: a.conf.StageDir,
 		MaxAge:  time.Hour * 1,
-		Delay:   time.Second * 1,
+		Delay:   time.Second * 10,
 		Nested:  1,
 	}
 

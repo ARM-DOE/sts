@@ -194,11 +194,23 @@ func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
+	var err error
 	defer r.Body.Close()
 	source := r.Header.Get(httputils.HeaderSourceName)
 	compressed := r.Header.Get(httputils.HeaderContentEncoding) == httputils.HeaderGzip
-	meta := r.Header.Get(httputils.HeaderBinData)
-	reader, err := NewBinReader(meta, r.Body, compressed)
+	var mlen int
+	if mlen, err = strconv.Atoi(r.Header.Get(httputils.HeaderMetaLen)); err != nil {
+		logging.Error(err.Error())
+		return
+	}
+	rr := r.Body
+	if compressed {
+		if rr, err = gzip.NewReader(rr); err != nil {
+			logging.Error(err.Error())
+			return
+		}
+	}
+	br, err := NewBinDecoder(rr, mlen)
 	if source == "" || err != nil {
 		if err != nil {
 			logging.Error(err.Error())
@@ -208,7 +220,7 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 	}
 	n := 0
 	for {
-		next, eof := reader.Next()
+		next, eof := br.Next()
 		if eof { // Reached end of multipart request
 			break
 		}
@@ -277,9 +289,7 @@ func (rcv *Receiver) initStageFile(filePath string, size int64) {
 	fh.Close()
 }
 
-func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
-	logging.Debug("RECEIVE Process Part:", pr.Meta.Path, pr.Meta.FileSize)
-
+func (rcv *Receiver) parsePart(pr *PartDecoder, source string) (err error) {
 	path := filepath.Join(rcv.Conf.StageDir, source, pr.Meta.Path)
 
 	rcv.initStageFile(path, pr.Meta.FileSize)
@@ -289,15 +299,14 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 	if err != nil {
 		return fmt.Errorf("Failed to open file while trying to write part: %s", err.Error())
 	}
-	logging.Debug("RECEIVE Seek:", pr.Meta.Path, pr.Meta.Beg)
 	fh.Seek(pr.Meta.Beg, 0)
 	n, err := io.Copy(fh, pr)
-	logging.Debug("RECEIVE Wrote:", pr.Meta.Path, n)
 	fh.Close()
+	logging.Debug("RECEIVE Wrote:", pr.Meta.Path, pr.Meta.Beg, n)
 	if err != nil {
 		return err
 	}
-	if pr.Meta.Hash != fileutils.HashHex(pr.Hash) {
+	if pr.Meta.Hash != "" && pr.Meta.Hash != fileutils.HashHex(pr.Hash) {
 		return fmt.Errorf("Bad part of %s from bytes %d:%d (%s:%s)", pr.Meta.Path, pr.Meta.Beg, pr.Meta.End, pr.Meta.Hash, fileutils.HashHex(pr.Hash))
 	}
 
@@ -316,6 +325,7 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 	if err != nil {
 		return fmt.Errorf("Failed to write updated companion: %s", err.Error())
 	}
+	logging.Debug("RECEIVE Part OK:", path, n)
 	if cmp.IsComplete() {
 
 		// Finish file by removing the "partial" extension so the scanner will pick it up.
@@ -326,6 +336,5 @@ func (rcv *Receiver) parsePart(pr *PartReader, source string) (err error) {
 		logging.Debug("RECEIVE File Done:", path)
 		rcv.delLock(path)
 	}
-	logging.Debug("RECEIVE Part OK:", path)
 	return nil
 }

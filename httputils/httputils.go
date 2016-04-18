@@ -22,8 +22,8 @@ const (
 	HeaderKey = "X-STS-Key"
 
 	// HeaderBinData is the custom HTTP header that houses the JSON-encoded metadata
-	// for a bin.
-	HeaderBinData = "X-STS-BinData"
+	// length for a bin.
+	HeaderMetaLen = "X-STS-MetaLen"
 
 	// HeaderPartCount is the custom HTTP resopnse header that indicates the number
 	// of parts successfully received.
@@ -155,7 +155,7 @@ func GetJSONReader(data interface{}, compress bool) (r io.Reader, err error) {
 	var wz *gzip.Writer
 	var wj *json.Encoder
 	if compress {
-		wz, err = gzip.NewWriterLevel(wp, gzip.BestCompression)
+		wz, err = gzip.NewWriterLevel(wp, gzip.DefaultCompression)
 		if err != nil {
 			return
 		}

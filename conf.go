@@ -63,6 +63,7 @@ type OutSource struct {
 	Timeout      time.Duration
 	BinSize      units.Base2Bytes
 	Compress     bool
+	StatInterval time.Duration
 	PollDelay    time.Duration
 	PollInterval time.Duration
 	PollAttempts int
@@ -81,6 +82,7 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 		Timeout      time.Duration `yaml:"timeout"`
 		BinSize      string        `yaml:"bin-size"`
 		Compress     bool          `yaml:"compress"`
+		StatInterval time.Duration `yaml:"stat-interval"`
 		PollDelay    time.Duration `yaml:"poll-delay"`
 		PollInterval time.Duration `yaml:"poll-interval"`
 		PollAttempts int           `yaml:"poll-attempts"`
