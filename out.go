@@ -64,6 +64,7 @@ func (a *AppOut) initConf() {
 		TLSKey:       a.rawConf.Target.TLSKey,
 		BinSize:      a.rawConf.BinSize,
 		Timeout:      a.rawConf.Timeout,
+		StatInterval: a.rawConf.StatInterval,
 		PollInterval: a.rawConf.PollInterval,
 		PollDelay:    a.rawConf.PollDelay,
 		PollAttempts: a.rawConf.PollAttempts,
@@ -79,6 +80,9 @@ func (a *AppOut) initConf() {
 	}
 	if a.rawConf.Target.TLS && (a.conf.TLSCert == "" || a.conf.TLSKey == "") {
 		panic("TLS enabled but missing TLS Cert and/or TLS Key")
+	}
+	if a.rawConf.StatInterval.Nanoseconds() == 0 {
+		a.rawConf.StatInterval = time.Minute * 5
 	}
 	if a.rawConf.GroupBy.String() == "" {
 		a.rawConf.GroupBy, _ = regexp.Compile(`^([^\.]*)`) // Default is up to the first dot of the relative path.

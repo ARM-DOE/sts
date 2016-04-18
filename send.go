@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"sync"
@@ -227,6 +231,7 @@ type SenderConf struct {
 	TLSKey       string
 	BinSize      units.Base2Bytes
 	Timeout      time.Duration
+	StatInterval time.Duration
 	PollInterval time.Duration
 	PollDelay    time.Duration
 	PollAttempts int
@@ -254,9 +259,12 @@ type SenderChan struct {
 
 // Sender is the struct for managing STS send operations.
 type Sender struct {
-	conf   *SenderConf
-	ch     *SenderChan
-	client *http.Client
+	conf      *SenderConf
+	ch        *SenderChan
+	client    *http.Client
+	statSince time.Time
+	statLock  sync.RWMutex
+	bytesOut  int64
 }
 
 // NewSender creates a new sender instance based on provided configuration.
@@ -269,6 +277,7 @@ func NewSender(conf *SenderConf) *Sender {
 		logging.Error(err.Error())
 	}
 	sender.client.Timeout = time.Second * time.Duration(conf.Timeout)
+	sender.statSince = time.Now()
 	return sender
 }
 
@@ -276,7 +285,7 @@ func NewSender(conf *SenderConf) *Sender {
 func (sender *Sender) Start(ch *SenderChan) {
 	sender.ch = ch
 	sender.ch.sendFile = make(chan SendFile, sender.conf.Threads)
-	sender.ch.sendBin = make(chan *Bin, sender.conf.Threads*4)
+	sender.ch.sendBin = make(chan *Bin, sender.conf.Threads*2)
 	sender.ch.doneBin = make(chan *Bin, sender.conf.Threads)
 	var wgWrap, wgBin, wgRebin, wgSend, wgDone sync.WaitGroup
 	nWrap, nBin, nRebin, nSend, nDone := 1, 1, 1, sender.conf.Threads, 1
@@ -490,7 +499,8 @@ func (sender *Sender) startDone(wg *sync.WaitGroup) {
 		}
 		s := b.GetCompleted().Sub(b.GetStarted()).Seconds()
 		mb := float64(b.Bytes-b.BytesLeft) / float64(1024) / float64(1024)
-		logging.Info(fmt.Sprintf("SEND Throughput: %.2fMB, %.2fs, %.2f MB/s", mb, s, mb/s))
+		logging.Info(fmt.Sprintf("SEND Bin Throughput: %.2fMB, %.2fs, %.2f MB/s", mb, s, mb/s))
+		sender.addStats(b.Bytes - b.BytesLeft)
 		sender.done(done)
 	}
 }
@@ -541,28 +551,49 @@ func (sender *Sender) done(f []SendFile) {
 // httpBin sends the input bin via http using the sender configuration struct info.
 // Returns the number of successfully received parts and any error encountered.
 func (sender *Sender) httpBin(bin *Bin) (n int, err error) {
-	var bw BinEncoder
-	if sender.conf.Compress {
-		bw = NewZBinWriter(NewBinWriter(bin))
-	}
-	if !sender.conf.Compress || err != nil {
-		bw = NewBinWriter(bin)
-	}
-	meta, err := bw.EncodeMeta()
+	br := NewBinEncoder(bin)
+	jr, err := httputils.GetJSONReader(br.Meta, false)
 	if err != nil {
 		return
 	}
+	// We have to read it all into memory in order to calculate the length so the
+	// receiving end knows how much of the beginning of the payload belongs to
+	// metadata.
+	var meta []byte
+	if meta, err = ioutil.ReadAll(jr); err != nil {
+		return
+	}
+	mr := bytes.NewReader(meta)
+	pr, pw := io.Pipe()
+	var zw *gzip.Writer
+	if sender.conf.Compress {
+		zw, err = gzip.NewWriterLevel(pw, gzip.DefaultCompression)
+		if err != nil {
+			return
+		}
+	}
+	go func() {
+		if zw != nil {
+			io.Copy(zw, mr)
+			io.Copy(zw, br)
+			zw.Close()
+		} else {
+			io.Copy(pw, mr)
+			io.Copy(pw, br)
+		}
+		pw.Close()
+	}()
 	url := fmt.Sprintf("%s://%s/data", sender.conf.Protocol(), sender.conf.TargetHost)
-	req, err := http.NewRequest("PUT", url, bw)
+	req, err := http.NewRequest("PUT", url, pr)
 	if err != nil {
 		return
 	}
 	req.Header.Add(httputils.HeaderSourceName, sender.conf.SourceName)
-	req.Header.Add(httputils.HeaderBinData, meta)
+	req.Header.Add(httputils.HeaderMetaLen, strconv.Itoa(len(meta)))
 	if sender.conf.TargetKey != "" {
 		req.Header.Add(httputils.HeaderKey, sender.conf.TargetKey)
 	}
-	if _, ok := bw.(*ZBinWriter); ok {
+	if sender.conf.Compress {
 		req.Header.Add("Content-Encoding", "gzip")
 	}
 	resp, err := sender.client.Do(req)
@@ -578,7 +609,20 @@ func (sender *Sender) httpBin(bin *Bin) (n int, err error) {
 		err = fmt.Errorf("Bin failed with response code: %d", resp.StatusCode)
 		return
 	}
-	req.Close = true
 	n = len(bin.Parts)
 	return
+}
+
+func (sender *Sender) addStats(bytes int64) {
+	sender.statLock.Lock()
+	defer sender.statLock.Unlock()
+	sender.bytesOut += bytes
+	d := time.Now().Sub(sender.statSince)
+	if d > sender.conf.StatInterval {
+		s := d.Seconds()
+		mb := float64(sender.bytesOut) / float64(1024) / float64(1024)
+		logging.Info(fmt.Sprintf("SEND Throughput: %.2fMB, %.2fs, %.2f MB/s", mb, s, mb/s))
+		sender.bytesOut = 0
+		sender.statSince = time.Now()
+	}
 }
