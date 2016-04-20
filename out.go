@@ -55,7 +55,7 @@ func (a *AppOut) setDefaults() {
 func (a *AppOut) initConf() {
 	a.conf = &SenderConf{
 		Threads:      a.rawConf.Threads,
-		Compress:     a.rawConf.Compress,
+		Compression:  a.rawConf.Compression,
 		SourceName:   a.rawConf.Name,
 		TargetName:   a.rawConf.Target.Name,
 		TargetHost:   a.rawConf.Target.Host,
@@ -99,7 +99,7 @@ func (a *AppOut) initConf() {
 	a.setDefaults()
 }
 
-func (a *AppOut) initComponents() {
+func (a *AppOut) initComponents() (err error) {
 	a.scanChan = make(chan []ScanFile, 1) // One batch at a time.
 	a.sortChan = make(chan SortFile, a.rawConf.Threads*2)
 	a.loopChan = make(chan []SendFile, a.rawConf.Threads*2)
@@ -124,7 +124,9 @@ func (a *AppOut) initComponents() {
 
 	a.scanner = NewScanner(&scanConf)
 	a.sorter = NewSorter(a.rawConf.Tags, a.rawConf.GroupBy)
-	a.sender = NewSender(a.conf)
+	if a.sender, err = NewSender(a.conf); err != nil {
+		return
+	}
 	a.poller = NewPoller(a.conf)
 
 	for _, tag := range a.rawConf.Tags {
@@ -135,6 +137,7 @@ func (a *AppOut) initComponents() {
 			scanConf.AddIgnore(tag.Pattern)
 		}
 	}
+	return
 }
 
 func (a *AppOut) getPartials() ([]*Companion, error) {
@@ -284,7 +287,9 @@ func (a *AppOut) Start(stop <-chan bool) <-chan bool {
 	a.initConf()
 
 	// Initialize channels and app components.
-	a.initComponents()
+	if err := a.initComponents(); err != nil {
+		panic(err.Error())
+	}
 
 	// Recover any unfinished business from last run.
 	a.recover()

@@ -38,10 +38,10 @@ OUT:
     out   : data/out # Directory to watch for files to send; appends "/{target name}"
     logs  : data/log # For log files; appends "outgoing_to/{target name}" and "messages"
   sources: # Supports multiple sources where omitted entries will inherit from previous sources hierarchically
-    - name          : ...   # Name of the source
+    - name          : ...   # Name of the source (used by receiver)
       threads       : 8     # Maximum number of concurrent HTTP connections
       bin-size      : 10MB  # The generally-desired size for a given HTTP request (BEFORE any compression)
-      compress      : true  # Use GZIP compression (NOTE: bin-size is based on file size BEFORE compression)
+      compress      : 4     # Use GZIP compression of level 0-9 (0 = no compression, 9 = best but slowest)
       min-age       : 15s   # How old a file must be before being added to the "outgoing" queue
       max-age       : 12h   # How old a file can be before getting logged as "stale" (remains in the queue)
       timeout       : 1h    # The HTTP timeout for a single request
@@ -63,15 +63,20 @@ OUT:
 
 # INCOMING CONFIGURATION
 IN:
+  sources: # Only accept requests from sources identified in the list below
+    - ...
+  keys: # Only accept requests with one of the keys from the list below
+    - ...
   dirs: # Incoming directory configuration; relative to $STS_HOME or $PWD if not absolute
     stage : data/stage # Directory to stage data as it comes in; appends "/{source name}"
     final : data/in    # Final location for incoming files; appends "/{source name}"
     logs  : data/log   # For log files; appends "incoming_from/{source name}" and "messages"
   server: # Server configuration.
-    http-port     : 1992  # What port to listen on
-    http-tls      : true  # Whether or not to use HTTPS
+    http-port     : 1992 # What port to listen on
+    http-tls      : true # Whether or not to use HTTPS
     http-tls-cert : conf/server.pem # Server certificate path; relative to $STS_HOME or $PWD if not absolute
     http-tls-key  : conf/server.key # Server key; relative to $STS_HOME or $PWD if not absolute
+    compress      : 4 # Use GZIP compression of level 0-9 (0 = no compression, 9 = best but slowest) on response payloads
 ```
 
 ### Definitions

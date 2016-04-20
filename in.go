@@ -29,7 +29,7 @@ func (a *AppIn) initConf() {
 	a.conf.StageDir = InitPath(a.root, a.rawConf.Dirs.Stage, true)
 	a.conf.FinalDir = InitPath(a.root, a.rawConf.Dirs.Final, true)
 	a.conf.Port = a.rawConf.Server.Port
-	a.conf.Compress = a.rawConf.Server.Compress
+	a.conf.Compression = a.rawConf.Server.Compression
 	if a.rawConf.Server.TLS {
 		a.conf.TLSCert = a.rawConf.Server.TLSCert
 		a.conf.TLSKey = a.rawConf.Server.TLSKey

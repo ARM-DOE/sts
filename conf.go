@@ -62,7 +62,7 @@ type OutSource struct {
 	MaxAge       time.Duration
 	Timeout      time.Duration
 	BinSize      units.Base2Bytes
-	Compress     bool
+	Compression  int
 	StatInterval time.Duration
 	PollDelay    time.Duration
 	PollInterval time.Duration
@@ -81,7 +81,7 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 		MinAge       time.Duration `yaml:"min-age"`
 		Timeout      time.Duration `yaml:"timeout"`
 		BinSize      string        `yaml:"bin-size"`
-		Compress     bool          `yaml:"compress"`
+		Compression  int           `yaml:"compress"`
 		StatInterval time.Duration `yaml:"stat-interval"`
 		PollDelay    time.Duration `yaml:"poll-delay"`
 		PollInterval time.Duration `yaml:"poll-interval"`
@@ -102,7 +102,7 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 			return
 		}
 	}
-	ss.Compress = aux.Compress
+	ss.Compression = aux.Compression
 	ss.PollDelay = aux.PollDelay
 	ss.PollInterval = aux.PollInterval
 	ss.PollAttempts = aux.PollAttempts
@@ -150,11 +150,11 @@ type InDirs struct {
 
 // InServer is the struct for managing the incoming HTTP host.
 type InServer struct {
-	Port     int    `yaml:"http-port"`
-	TLS      bool   `yaml:"http-tls"`
-	TLSCert  string `yaml:"http-tls-cert"`
-	TLSKey   string `yaml:"http-tls-key"`
-	Compress bool   `yaml:"compress"`
+	Port        int    `yaml:"http-port"`
+	TLS         bool   `yaml:"http-tls"`
+	TLSCert     string `yaml:"http-tls-cert"`
+	TLSKey      string `yaml:"http-tls-key"`
+	Compression int    `yaml:"compress"`
 }
 
 // NewConf returns a parsed Conf reference based on the provided conf file path.
