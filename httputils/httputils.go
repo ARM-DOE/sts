@@ -21,7 +21,7 @@ const (
 	// provided by the target.
 	HeaderKey = "X-STS-Key"
 
-	// HeaderBinData is the custom HTTP header that houses the JSON-encoded metadata
+	// HeaderMetaLen is the custom HTTP header that houses the JSON-encoded metadata
 	// length for a bin.
 	HeaderMetaLen = "X-STS-MetaLen"
 
@@ -149,13 +149,13 @@ func GetReqReader(r *http.Request) (io.ReadCloser, error) {
 }
 
 // GetJSONReader takes an arbitrary struct and generates a JSON reader with no
-// intermediate buffer.  It will also add gzip compression if specified.
-func GetJSONReader(data interface{}, compress bool) (r io.Reader, err error) {
+// intermediate buffer.  It will also add gzip compression at specified level.
+func GetJSONReader(data interface{}, compression int) (r io.Reader, err error) {
 	rp, wp := io.Pipe()
 	var wz *gzip.Writer
 	var wj *json.Encoder
-	if compress {
-		wz, err = gzip.NewWriterLevel(wp, gzip.DefaultCompression)
+	if compression != gzip.NoCompression {
+		wz, err = gzip.NewWriterLevel(wp, compression)
 		if err != nil {
 			return
 		}

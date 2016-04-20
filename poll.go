@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -249,12 +250,12 @@ func (poller *Poller) Poll(files []PollFile) (none []PollFile, fail []PollFile, 
 		logging.Debug("POLLing:", f.GetRelPath())
 	}
 	url := fmt.Sprintf("%s://%s/validate", poller.conf.Protocol(), poller.conf.TargetHost)
-	r, err := httputils.GetJSONReader(cf, poller.conf.Compress)
+	r, err := httputils.GetJSONReader(cf, poller.conf.Compression)
 	if err != nil {
 		return
 	}
 	req, err := http.NewRequest("POST", url, r)
-	if poller.conf.Compress {
+	if poller.conf.Compression != gzip.NoCompression {
 		req.Header.Add(httputils.HeaderContentEncoding, httputils.HeaderGzip)
 	}
 	req.Header.Add(httputils.HeaderContentType, httputils.HeaderJSON)

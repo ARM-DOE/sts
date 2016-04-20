@@ -222,7 +222,7 @@ func (f *sendFile) SetCancel(c bool) {
 // SenderConf contains all parameters necessary for the sending daemon.
 type SenderConf struct {
 	Threads      int
-	Compress     bool
+	Compression  int
 	SourceName   string
 	TargetName   string
 	TargetHost   string
@@ -268,17 +268,16 @@ type Sender struct {
 }
 
 // NewSender creates a new sender instance based on provided configuration.
-func NewSender(conf *SenderConf) *Sender {
-	sender := &Sender{}
-	sender.conf = conf
-	var err error
-	sender.client, err = httputils.GetClient(conf.TLSCert, conf.TLSKey)
+func NewSender(conf *SenderConf) (s *Sender, err error) {
+	s = &Sender{}
+	s.conf = conf
+	s.client, err = httputils.GetClient(conf.TLSCert, conf.TLSKey)
 	if err != nil {
-		logging.Error(err.Error())
+		return
 	}
-	sender.client.Timeout = time.Second * time.Duration(conf.Timeout)
-	sender.statSince = time.Now()
-	return sender
+	s.client.Timeout = time.Second * time.Duration(conf.Timeout)
+	s.statSince = time.Now()
+	return
 }
 
 // Start controls the sending of files on the in channel and writing results to the out channels.
@@ -455,6 +454,15 @@ func (sender *Sender) startRebin(wg *sync.WaitGroup) {
 
 func (sender *Sender) startSend(wg *sync.WaitGroup) {
 	defer wg.Done()
+	var gz *gzip.Writer
+	if sender.conf.Compression != gzip.NoCompression {
+		var err error
+		gz, err = gzip.NewWriterLevel(nil, sender.conf.Compression)
+		if err != nil {
+			logging.Error(err.Error())
+			return
+		}
+	}
 	for {
 		b, ok := <-sender.ch.sendBin
 		if !ok || b == nil {
@@ -463,7 +471,7 @@ func (sender *Sender) startSend(wg *sync.WaitGroup) {
 		for _, p := range b.Parts {
 			logging.Debug("SEND Bin Part:", &b, p.File.GetRelPath(), p.Beg, p.End)
 		}
-		sender.sendBin(b)
+		sender.sendBin(b, gz)
 	}
 }
 
@@ -506,11 +514,11 @@ func (sender *Sender) startDone(wg *sync.WaitGroup) {
 }
 
 // sendBin sends a bin in a loop to handle errors and keep trying.
-func (sender *Sender) sendBin(bin *Bin) {
+func (sender *Sender) sendBin(bin *Bin, gz *gzip.Writer) {
 	nerr := 0
 	for {
 		bin.SetStarted()
-		n, err := sender.httpBin(bin)
+		n, err := sender.httpBin(bin, gz)
 		if err == nil {
 			break
 		}
@@ -550,9 +558,9 @@ func (sender *Sender) done(f []SendFile) {
 
 // httpBin sends the input bin via http using the sender configuration struct info.
 // Returns the number of successfully received parts and any error encountered.
-func (sender *Sender) httpBin(bin *Bin) (n int, err error) {
+func (sender *Sender) httpBin(bin *Bin, gz *gzip.Writer) (n int, err error) {
 	br := NewBinEncoder(bin)
-	jr, err := httputils.GetJSONReader(br.Meta, false)
+	jr, err := httputils.GetJSONReader(br.Meta, gzip.NoCompression)
 	if err != nil {
 		return
 	}
@@ -565,18 +573,12 @@ func (sender *Sender) httpBin(bin *Bin) (n int, err error) {
 	}
 	mr := bytes.NewReader(meta)
 	pr, pw := io.Pipe()
-	var zw *gzip.Writer
-	if sender.conf.Compress {
-		zw, err = gzip.NewWriterLevel(pw, gzip.DefaultCompression)
-		if err != nil {
-			return
-		}
-	}
 	go func() {
-		if zw != nil {
-			io.Copy(zw, mr)
-			io.Copy(zw, br)
-			zw.Close()
+		if gz != nil {
+			gz.Reset(pw)
+			io.Copy(gz, mr)
+			io.Copy(gz, br)
+			gz.Close()
 		} else {
 			io.Copy(pw, mr)
 			io.Copy(pw, br)
@@ -593,7 +595,7 @@ func (sender *Sender) httpBin(bin *Bin) (n int, err error) {
 	if sender.conf.TargetKey != "" {
 		req.Header.Add(httputils.HeaderKey, sender.conf.TargetKey)
 	}
-	if sender.conf.Compress {
+	if gz != nil {
 		req.Header.Add("Content-Encoding", "gzip")
 	}
 	resp, err := sender.client.Do(req)

@@ -26,14 +26,14 @@ const PartExt = ".part"
 
 // ReceiverConf struct contains configuration parameters needed to run.
 type ReceiverConf struct {
-	StageDir string
-	FinalDir string
-	Port     int
-	TLSCert  string
-	TLSKey   string
-	Sources  []string
-	Keys     []string
-	Compress bool
+	StageDir    string
+	FinalDir    string
+	Port        int
+	TLSCert     string
+	TLSKey      string
+	Sources     []string
+	Keys        []string
+	Compression int
 }
 
 func (c *ReceiverConf) isValid(src, key string) bool {
@@ -72,11 +72,11 @@ type Receiver struct {
 // A reference to a finalizer instance is necessary in order for the validation route
 // to be able to confirm files received.
 func NewReceiver(conf *ReceiverConf, f *Finalizer) *Receiver {
-	rcv := &Receiver{}
-	rcv.Conf = conf
-	rcv.fileLocks = make(map[string]*sync.Mutex)
-	rcv.finalizer = f
-	return rcv
+	r := &Receiver{}
+	r.Conf = conf
+	r.fileLocks = make(map[string]*sync.Mutex)
+	r.finalizer = f
+	return r
 }
 
 // Serve starts HTTP server.
@@ -155,7 +155,9 @@ func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set(httputils.HeaderContentType, httputils.HeaderJSON)
-	rcv.respond(w, http.StatusOK, respJSON)
+	if err := rcv.respond(w, http.StatusOK, respJSON); err != nil {
+		logging.Error(err.Error())
+	}
 }
 
 func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +192,9 @@ func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
 	}
 	respJSON, _ := json.Marshal(respMap)
 	w.Header().Set(httputils.HeaderContentType, httputils.HeaderJSON)
-	rcv.respond(w, http.StatusOK, respJSON)
+	if err := rcv.respond(w, http.StatusOK, respJSON); err != nil {
+		logging.Error(err.Error())
+	}
 }
 
 func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
@@ -236,16 +240,21 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (rcv *Receiver) respond(w http.ResponseWriter, status int, data []byte) {
-	if rcv.Conf.Compress {
+func (rcv *Receiver) respond(w http.ResponseWriter, status int, data []byte) error {
+	if rcv.Conf.Compression != gzip.NoCompression {
+		gz, err := gzip.NewWriterLevel(w, rcv.Conf.Compression)
+		if err != nil {
+			w.Write(data)
+			return err
+		}
 		w.Header().Add("Content-Encoding", "gzip")
 		w.WriteHeader(status)
-		gz := gzip.NewWriter(w)
 		defer gz.Close()
 		gz.Write(data)
-		return
+		return nil
 	}
 	w.Write(data)
+	return nil
 }
 
 func (rcv *Receiver) getLock(path string) *sync.Mutex {
