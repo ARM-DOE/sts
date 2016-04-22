@@ -60,6 +60,7 @@ func LoadJSON(path string, data interface{}) error {
 	if err != nil {
 		return err
 	}
+	defer fh.Close()
 	fromJSON := json.NewDecoder(fh)
 	err = fromJSON.Decode(data)
 	if err != nil && err != io.EOF {
@@ -83,6 +84,7 @@ func FileMD5(path string) (hash string, err error) {
 	if fh, err = os.Open(path); err != nil {
 		return
 	}
+	defer fh.Close()
 	h := md5.New()
 	if _, err = io.Copy(h, fh); err != nil {
 		return

@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -275,27 +274,32 @@ func (rcv *Receiver) delLock(path string) {
 	delete(rcv.fileLocks, path)
 }
 
-func (rcv *Receiver) initStageFile(filePath string, size int64) {
-	lock := rcv.getLock(filePath)
+func (rcv *Receiver) initStageFile(path string, size int64) {
+	lock := rcv.getLock(path)
 	lock.Lock()
 	defer lock.Unlock()
 	var err error
-	info, err := os.Stat(filePath + PartExt)
+	info, err := os.Stat(path + PartExt)
 	if !os.IsNotExist(err) && info.Size() == size {
 		return
 	}
-	if _, err = os.Stat(filePath + CompExt); !os.IsNotExist(err) {
-		logging.Debug("RECEIVE Removing Stale Companion:", filePath+CompExt)
-		os.Remove(filePath + CompExt)
+	if _, err = os.Stat(path + CompExt); !os.IsNotExist(err) {
+		logging.Debug("RECEIVE Removing Stale Companion:", path+CompExt)
+		os.Remove(path + CompExt)
 	}
-	os.MkdirAll(path.Dir(filePath), os.ModePerm)
-	fh, err := os.Create(filePath + PartExt)
-	logging.Debug(fmt.Sprintf("RECEIVE Creating Empty File: %s (%d B)", filePath, size))
+	logging.Debug("RECEIVE Making Directory:", path, filepath.Dir(path))
+	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	if err != nil {
-		logging.Error(fmt.Sprintf("Failed to create empty file at %s.%s with size %d: %s", filePath, PartExt, size, err.Error()))
+		logging.Error(err.Error())
+		return
 	}
+	fh, err := os.Create(path + PartExt)
+	logging.Debug(fmt.Sprintf("RECEIVE Creating Empty File: %s (%d B)", path, size))
+	if err != nil {
+		logging.Error(fmt.Sprintf("Failed to create empty file at %s%s with size %d: %s", path, PartExt, size, err.Error()))
+	}
+	defer fh.Close()
 	fh.Truncate(size)
-	fh.Close()
 }
 
 func (rcv *Receiver) parsePart(pr *PartDecoder, source string) (err error) {
