@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -262,6 +263,7 @@ func (poller *Poller) Poll(files []PollFile) (none []PollFile, fail []PollFile, 
 	}
 	req.Header.Add(httputils.HeaderContentType, httputils.HeaderJSON)
 	req.Header.Add(httputils.HeaderSourceName, poller.conf.SourceName)
+	req.Header.Add(httputils.HeaderSep, string(os.PathSeparator))
 	if poller.conf.TargetKey != "" {
 		req.Header.Add(httputils.HeaderKey, poller.conf.TargetKey)
 	}
