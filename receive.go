@@ -185,6 +185,7 @@ func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
 		if sep != "" {
 			f.RelPath = filepath.Join(strings.Split(f.RelPath, sep)...)
 		}
+		logging.Debug("SEARCH", source, f.RelPath)
 		success, found := rcv.finalizer.IsFinal(source, f.RelPath, time.Unix(f.Started, 0))
 		code := ConfirmNone
 		if found && success {
