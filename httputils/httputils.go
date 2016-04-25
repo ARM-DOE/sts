@@ -29,6 +29,10 @@ const (
 	// of parts successfully received.
 	HeaderPartCount = "X-STS-PartCount"
 
+	// HeaderSep is the custom HTTP header used to indicate the path separator string
+	// to be used for parsing paths in request/response data.
+	HeaderSep = "X-STS-Sep"
+
 	// HeaderContentType is the standard HTTP header for specifying the payload
 	// type.
 	HeaderContentType = "Content-Type"

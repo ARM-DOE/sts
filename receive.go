@@ -153,6 +153,7 @@ func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		return
 	}
+	w.Header().Set(httputils.HeaderSep, string(os.PathSeparator))
 	w.Header().Set(httputils.HeaderContentType, httputils.HeaderJSON)
 	if err := rcv.respond(w, http.StatusOK, respJSON); err != nil {
 		logging.Error(err.Error())
@@ -161,6 +162,7 @@ func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
 
 func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
 	source := r.Header.Get(httputils.HeaderSourceName)
+	sep := r.Header.Get(httputils.HeaderSep)
 	files := []*ConfirmFile{}
 	var br io.Reader
 	var err error
@@ -180,6 +182,9 @@ func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
 	}
 	respMap := make(map[string]int, len(files))
 	for _, f := range files {
+		if sep != "" {
+			f.RelPath = filepath.Join(strings.Split(f.RelPath, sep)...)
+		}
 		success, found := rcv.finalizer.IsFinal(source, f.RelPath, time.Unix(f.Started, 0))
 		code := ConfirmNone
 		if found && success {
@@ -190,6 +195,7 @@ func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
 		respMap[f.RelPath] = code
 	}
 	respJSON, _ := json.Marshal(respMap)
+	w.Header().Set(httputils.HeaderSep, string(os.PathSeparator))
 	w.Header().Set(httputils.HeaderContentType, httputils.HeaderJSON)
 	if err := rcv.respond(w, http.StatusOK, respJSON); err != nil {
 		logging.Error(err.Error())
@@ -201,6 +207,7 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	source := r.Header.Get(httputils.HeaderSourceName)
 	compressed := r.Header.Get(httputils.HeaderContentEncoding) == httputils.HeaderGzip
+	sep := r.Header.Get(httputils.HeaderSep)
 	var mlen int
 	if mlen, err = strconv.Atoi(r.Header.Get(httputils.HeaderMetaLen)); err != nil {
 		logging.Error(err.Error())
@@ -213,7 +220,7 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	br, err := NewBinDecoder(rr, mlen)
+	br, err := NewBinDecoder(rr, mlen, sep)
 	if source == "" || err != nil {
 		if err != nil {
 			logging.Error(err.Error())

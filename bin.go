@@ -8,6 +8,8 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ARM-DOE/sts/logging"
@@ -301,7 +303,9 @@ type BinDecoder struct {
 }
 
 // NewBinDecoder returns a new instance of BinWriter.
-func NewBinDecoder(r io.Reader, n int) (br *BinDecoder, err error) {
+// It expects the number of bytes devoted to the metadata array and the path delimeter
+// string as inputs.
+func NewBinDecoder(r io.Reader, n int, s string) (br *BinDecoder, err error) {
 	br = &BinDecoder{}
 	br.r = r
 	br.pi = 0
@@ -311,6 +315,12 @@ func NewBinDecoder(r io.Reader, n int) (br *BinDecoder, err error) {
 	}()
 	jr := json.NewDecoder(pr)
 	err = jr.Decode(&br.meta)
+	if s != "" {
+		for _, m := range br.meta {
+			m.Path = filepath.Join(strings.Split(m.Path, s)...)
+			m.PrevPath = filepath.Join(strings.Split(m.PrevPath, s)...)
+		}
+	}
 	return
 }
 

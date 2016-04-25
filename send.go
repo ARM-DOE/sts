@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -592,6 +593,7 @@ func (sender *Sender) httpBin(bin *Bin, gz *gzip.Writer) (n int, err error) {
 	}
 	req.Header.Add(httputils.HeaderSourceName, sender.conf.SourceName)
 	req.Header.Add(httputils.HeaderMetaLen, strconv.Itoa(len(meta)))
+	req.Header.Add(httputils.HeaderSep, string(os.PathSeparator))
 	if sender.conf.TargetKey != "" {
 		req.Header.Add(httputils.HeaderKey, sender.conf.TargetKey)
 	}
