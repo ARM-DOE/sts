@@ -70,16 +70,14 @@ func LoadJSON(path string, data interface{}) error {
 }
 
 // StringMD5 computes the MD5 hash from an array of bytes.
-func StringMD5(data []byte) string {
-	// return "aaaa"
+func StringMD5(data string) string {
 	h := md5.New()
-	h.Write(data)
+	h.Write([]byte(data))
 	return HashHex(h)
 }
 
 // FileMD5 computes the MD5 of a file given a path.
 func FileMD5(path string) (hash string, err error) {
-	// return "aaaa", nil
 	var fh *os.File
 	if fh, err = os.Open(path); err != nil {
 		return
@@ -95,7 +93,6 @@ func FileMD5(path string) (hash string, err error) {
 
 // PartialMD5 computes the MD5 of part of a file, specified from start byte to end byte.
 func PartialMD5(path string, start int64, end int64) (hash string, err error) {
-	// return "aaaa", nil
 	var fh *os.File
 	if fh, err = os.Open(path); err != nil {
 		return
