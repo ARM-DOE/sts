@@ -387,5 +387,5 @@ func (scanner *Scanner) shouldIgnore(path string) bool {
 }
 
 func toCacheName(dir string) string {
-	return fmt.Sprintf("%s.json", strings.Replace(strings.TrimRight(dir, string(os.PathSeparator)), string(os.PathSeparator), "--", -1))
+	return fmt.Sprintf("%s.json", fileutils.StringMD5(dir))
 }

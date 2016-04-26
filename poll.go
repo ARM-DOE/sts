@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ARM-DOE/sts/httputils"
@@ -260,6 +263,7 @@ func (poller *Poller) Poll(files []PollFile) (none []PollFile, fail []PollFile, 
 	}
 	req.Header.Add(httputils.HeaderContentType, httputils.HeaderJSON)
 	req.Header.Add(httputils.HeaderSourceName, poller.conf.SourceName)
+	req.Header.Add(httputils.HeaderSep, string(os.PathSeparator))
 	if poller.conf.TargetKey != "" {
 		req.Header.Add(httputils.HeaderKey, poller.conf.TargetKey)
 	}
@@ -274,6 +278,7 @@ func (poller *Poller) Poll(files []PollFile) (none []PollFile, fail []PollFile, 
 		err = fmt.Errorf("Poll request failed: %d", resp.StatusCode)
 		return
 	}
+	sep := resp.Header.Get(httputils.HeaderSep)
 	reader, err := httputils.GetRespReader(resp)
 	if err != nil {
 		return
@@ -286,6 +291,9 @@ func (poller *Poller) Poll(files []PollFile) (none []PollFile, fail []PollFile, 
 		return
 	}
 	for path, code := range fileMap {
+		if sep != "" {
+			path = filepath.Join(strings.Split(path, sep)...)
+		}
 		logging.Debug("POLL Result:", path, code)
 		pf := fmap[path]
 		switch code {

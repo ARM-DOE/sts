@@ -122,7 +122,7 @@ func (f *Finalizer) finalize(file ScanFile) (bool, error) {
 		return false, fmt.Errorf("Failed validation: %s", file.GetPath(false))
 	}
 
-	logging.Debug("FINAL Finalizing", file.GetRelPath())
+	logging.Debug("FINAL Finalizing", cmp.SourceName, file.GetRelPath())
 
 	// Move it.
 	finalPath := filepath.Join(f.Conf.FinalDir, cmp.SourceName, file.GetRelPath())
