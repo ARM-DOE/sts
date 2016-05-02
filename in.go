@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sync"
@@ -39,6 +40,9 @@ func (a *AppIn) initConf() {
 			}
 			if *p != "" && !filepath.IsAbs(*p) {
 				*p = filepath.Join(a.root, *p)
+			}
+			if _, err := os.Stat(*p); os.IsNotExist(err) {
+				panic("TLS enabled but cannot find TLS Cert and/or TLS Key")
 			}
 		}
 	}
