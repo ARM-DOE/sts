@@ -532,7 +532,7 @@ func (sender *Sender) sendBin(bin *Bin, gz *gzip.Writer) {
 			bin = b
 		}
 		nerr++
-		logging.Error(err.Error())
+		logging.Error("Bin send failed:", err.Error())
 		canceled := bin.Validate()
 		if len(canceled) > 0 {
 			sender.done(canceled)

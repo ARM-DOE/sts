@@ -229,22 +229,32 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusPartialContent) // respond with a 206
 		return
 	}
-	n := 0
+	var parts []*PartDecoder
 	for {
 		next, eof := br.Next()
 		if eof { // Reached end of multipart request
+			w.WriteHeader(http.StatusOK)
 			break
 		}
-		err = rcv.parsePart(next, source)
+		err := rcv.parsePart(next, source)
 		if err != nil {
 			logging.Error(err.Error())
-			w.Header().Add(httputils.HeaderPartCount, strconv.Itoa(n))
+			w.Header().Add(httputils.HeaderPartCount, strconv.Itoa(len(parts)))
 			w.WriteHeader(http.StatusPartialContent) // respond with a 206
-			return
+			break
 		}
-		n++
+		parts = append(parts, next)
 	}
-	w.WriteHeader(http.StatusOK)
+	if len(parts) == 0 {
+		return
+	}
+	// Better to handle companion updates after sending response in case we crash
+	// before being able to let the sender know.
+	go func() {
+		for _, pr := range parts {
+			rcv.completePart(pr, source)
+		}
+	}()
 }
 
 func (rcv *Receiver) respond(w http.ResponseWriter, status int, data []byte) error {
@@ -282,7 +292,7 @@ func (rcv *Receiver) delLock(path string) {
 	delete(rcv.fileLocks, path)
 }
 
-func (rcv *Receiver) initStageFile(path string, size int64) {
+func (rcv *Receiver) initStage(path string, size int64) {
 	lock := rcv.getLock(path)
 	lock.Lock()
 	defer lock.Unlock()
@@ -313,23 +323,31 @@ func (rcv *Receiver) initStageFile(path string, size int64) {
 func (rcv *Receiver) parsePart(pr *PartDecoder, source string) (err error) {
 	path := filepath.Join(rcv.Conf.StageDir, source, pr.Meta.Path)
 
-	rcv.initStageFile(path, pr.Meta.FileSize)
+	rcv.initStage(path, pr.Meta.FileSize)
 
 	// Read the part and write it to the right place in the staged "partial"
 	fh, err := os.OpenFile(path+PartExt, os.O_WRONLY, 0600)
 	if err != nil {
-		return fmt.Errorf("Failed to open file while trying to write part: %s", err.Error())
+		err = fmt.Errorf("Failed to open file while trying to write part: %s", err.Error())
+		return
 	}
 	fh.Seek(pr.Meta.Beg, 0)
 	n, err := io.Copy(fh, pr)
 	fh.Close()
 	logging.Debug("RECEIVE Wrote:", pr.Meta.Path, pr.Meta.Beg, n)
 	if err != nil {
-		return err
+		return
 	}
 	if pr.Meta.Hash != "" && pr.Meta.Hash != fileutils.HashHex(pr.Hash) {
-		return fmt.Errorf("Bad part of %s from bytes %d:%d (%s:%s)", pr.Meta.Path, pr.Meta.Beg, pr.Meta.End, pr.Meta.Hash, fileutils.HashHex(pr.Hash))
+		err = fmt.Errorf("Bad part of %s from bytes %d:%d (%s:%s)", pr.Meta.Path, pr.Meta.Beg, pr.Meta.End, pr.Meta.Hash, fileutils.HashHex(pr.Hash))
+		return
 	}
+	logging.Debug("RECEIVE Part OK:", path, n)
+	return
+}
+
+func (rcv *Receiver) completePart(pr *PartDecoder, source string) {
+	path := filepath.Join(rcv.Conf.StageDir, source, pr.Meta.Path)
 
 	// Make sure we're the only one updating the companion
 	lock := rcv.getLock(path)
@@ -339,23 +357,22 @@ func (rcv *Receiver) parsePart(pr *PartDecoder, source string) (err error) {
 	// Update the companion file
 	cmp, err := NewCompanion(source, path, pr.Meta.PrevPath, pr.Meta.FileSize, pr.Meta.FileHash)
 	if err != nil {
-		return err
+		return
 	}
 	cmp.AddPart(pr.Meta.Hash, pr.Meta.Beg, pr.Meta.End)
 	err = cmp.Write()
 	if err != nil {
-		return fmt.Errorf("Failed to write updated companion: %s", err.Error())
+		err = fmt.Errorf("Failed to write updated companion: %s", err.Error())
+		return
 	}
-	logging.Debug("RECEIVE Part OK:", path, n)
 	if cmp.IsComplete() {
-
 		// Finish file by removing the "partial" extension so the scanner will pick it up.
 		err := os.Rename(path+PartExt, path)
 		if err != nil {
-			return err
+			logging.Error(err.Error())
+			return
 		}
 		logging.Debug("RECEIVE File Done:", path)
 		rcv.delLock(path)
 	}
-	return nil
 }

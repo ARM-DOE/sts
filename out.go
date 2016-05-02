@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sync"
@@ -92,8 +93,14 @@ func (a *AppOut) initConf() {
 		a.rawConf.GroupBy, _ = regexp.Compile(`^([^\.]*)`) // Default is up to the first dot of the relative path.
 	}
 	for _, p := range []*string{&a.conf.TLSCert, &a.conf.TLSKey} {
-		if *p != "" && !filepath.IsAbs(*p) {
+		if *p == "" {
+			continue
+		}
+		if !filepath.IsAbs(*p) {
 			*p = filepath.Join(a.root, *p)
+		}
+		if _, err := os.Stat(*p); os.IsNotExist(err) {
+			panic("TLS enabled but cannot find TLS Cert and/or TLS Key")
 		}
 	}
 	a.setDefaults()

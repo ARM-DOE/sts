@@ -186,14 +186,18 @@ func (poller *Poller) Start(ch *PollerChan) {
 		if len(poll) < 1 {
 			continue
 		}
-		_, f, d, err = poller.Poll(poll)
-		if err != nil {
-			logging.Error(err.Error())
-		} else {
-			// Only increase the number of poll attempts if the poll request did not result in error.
-			for _, pf := range poll {
-				poller.Files[pf.GetRelPath()].nPoll++
+		nerr := 0
+		for {
+			_, f, d, err = poller.Poll(poll)
+			if err == nil {
+				break
 			}
+			nerr++
+			logging.Error("Poll failed:", err.Error())
+			time.Sleep(time.Duration(nerr) * time.Second) // Wait longer the more it fails.
+		}
+		for _, pf := range poll {
+			poller.Files[pf.GetRelPath()].nPoll++
 		}
 		if loop > 0 {
 			loop -= len(d) // Offset the loop counter so we know when the "retry" loop is empty.

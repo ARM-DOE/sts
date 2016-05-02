@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ARM-DOE/sts/fileutils"
 	"github.com/ARM-DOE/sts/logging"
@@ -48,8 +49,12 @@ func NewCompanion(source string, path string, prevFile string, size int64, hash 
 
 // ReadCompanion deserializes a companion file based on the input path.
 func ReadCompanion(path string) (cmp *Companion, err error) {
-	if filepath.Ext(path) != CompExt {
+	ext := filepath.Ext(path)
+	p := path
+	if ext != CompExt {
 		path += CompExt
+	} else {
+		p = strings.TrimSuffix(path, ext)
 	}
 	_, err = os.Stat(path)
 	if os.IsNotExist(err) {
@@ -57,6 +62,12 @@ func ReadCompanion(path string) (cmp *Companion, err error) {
 	}
 	cmp = &Companion{}
 	err = fileutils.LoadJSON(path, cmp)
+	if err != nil {
+		return
+	}
+	if cmp.Path != p {
+		cmp.Path = p // Just to make sure.
+	}
 	return
 }
 
