@@ -36,6 +36,18 @@ type AppOut struct {
 }
 
 func (a *AppOut) setDefaults() {
+	if a.dirConf.Cache == "" {
+		a.dirConf.Cache = ".sts"
+	}
+	if a.dirConf.Disk == "" {
+		a.dirConf.Disk = "disk"
+	}
+	if a.dirConf.Logs == "" {
+		a.dirConf.Logs = "logs"
+	}
+	if a.dirConf.Out == "" {
+		a.dirConf.Out = "out"
+	}
 	if a.conf.BinSize == 0 {
 		a.conf.BinSize = 10 * 1024 * 1024 * 1024
 	}

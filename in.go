@@ -27,9 +27,20 @@ func (a *AppIn) initConf() {
 	a.conf = &ReceiverConf{}
 	a.conf.Keys = a.rawConf.Keys
 	a.conf.Sources = a.rawConf.Sources
-	a.conf.StageDir = InitPath(a.root, a.rawConf.Dirs.Stage, true)
-	a.conf.FinalDir = InitPath(a.root, a.rawConf.Dirs.Final, true)
+	stage := a.rawConf.Dirs.Stage
+	if stage == "" {
+		stage = "stage"
+	}
+	final := a.rawConf.Dirs.Final
+	if final == "" {
+		final = "final"
+	}
+	a.conf.StageDir = InitPath(a.root, stage, true)
+	a.conf.FinalDir = InitPath(a.root, final, true)
 	a.conf.Port = a.rawConf.Server.Port
+	if a.conf.Port == 0 {
+		panic("Server port not specified")
+	}
 	a.conf.Compression = a.rawConf.Server.Compression
 	if a.rawConf.Server.TLS {
 		a.conf.TLSCert = a.rawConf.Server.TLSCert
