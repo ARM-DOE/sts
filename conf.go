@@ -79,6 +79,7 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 		Name         string        `yaml:"name"`
 		Threads      int           `yaml:"threads"`
 		MinAge       time.Duration `yaml:"min-age"`
+		MaxAge       time.Duration `yaml:"max-age"`
 		Timeout      time.Duration `yaml:"timeout"`
 		BinSize      string        `yaml:"bin-size"`
 		Compression  int           `yaml:"compress"`
@@ -96,6 +97,7 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 	ss.Name = aux.Name
 	ss.Threads = aux.Threads
 	ss.MinAge = aux.MinAge
+	ss.MaxAge = aux.MaxAge
 	ss.Timeout = aux.Timeout
 	if aux.BinSize != "" {
 		if ss.BinSize, err = units.ParseBase2Bytes(aux.BinSize); err != nil {
@@ -125,12 +127,10 @@ type Tag struct {
 
 // OutTarget houses the configuration for the target host for a given source.
 type OutTarget struct {
-	Name    string `yaml:"name"`
-	Key     string `yaml:"key"`
-	Host    string `yaml:"http-host"`
-	TLS     bool   `yaml:"http-tls"`
-	TLSCert string `yaml:"http-tls-cert"`
-	TLSKey  string `yaml:"http-tls-key"`
+	Name        string `yaml:"name"`
+	Key         string `yaml:"key"`
+	Host        string `yaml:"http-host"`
+	TLSCertPath string `yaml:"http-tls-cert"`
 }
 
 // InConf is the struct for housing all incoming configuration.
@@ -151,9 +151,8 @@ type InDirs struct {
 // InServer is the struct for managing the incoming HTTP host.
 type InServer struct {
 	Port        int    `yaml:"http-port"`
-	TLS         bool   `yaml:"http-tls"`
-	TLSCert     string `yaml:"http-tls-cert"`
-	TLSKey      string `yaml:"http-tls-key"`
+	TLSCertPath string `yaml:"http-tls-cert"`
+	TLSKeyPath  string `yaml:"http-tls-key"`
 	Compression int    `yaml:"compress"`
 }
 
@@ -237,6 +236,9 @@ func isZero(v reflect.Value) bool {
 		}
 		return z
 	case reflect.Ptr:
+		if v.IsNil() {
+			return true
+		}
 		return isZero(reflect.Indirect(v))
 	}
 	// Compare other types directly:

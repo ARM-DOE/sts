@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sync"
@@ -73,8 +72,6 @@ func (a *AppOut) initConf() {
 		TargetName:   a.rawConf.Target.Name,
 		TargetHost:   a.rawConf.Target.Host,
 		TargetKey:    a.rawConf.Target.Key,
-		TLSCert:      a.rawConf.Target.TLSCert,
-		TLSKey:       a.rawConf.Target.TLSKey,
 		BinSize:      a.rawConf.BinSize,
 		Timeout:      a.rawConf.Timeout,
 		StatInterval: a.rawConf.StatInterval,
@@ -91,28 +88,17 @@ func (a *AppOut) initConf() {
 	if a.conf.TargetHost == "" {
 		panic("Target host missing from configuration")
 	}
-	if a.rawConf.Target.TLS && (a.conf.TLSCert == "" || a.conf.TLSKey == "") {
-		panic("TLS enabled but missing TLS Cert and/or TLS Key")
-	}
-	if !a.rawConf.Target.TLS {
-		a.conf.TLSCert = ""
-		a.conf.TLSKey = ""
-	}
 	if a.conf.StatInterval.Nanoseconds() == 0 {
 		a.conf.StatInterval = time.Minute * 5
 	}
 	if a.rawConf.GroupBy.String() == "" {
 		a.rawConf.GroupBy, _ = regexp.Compile(`^([^\.]*)`) // Default is up to the first dot of the relative path.
 	}
-	for _, p := range []*string{&a.conf.TLSCert, &a.conf.TLSKey} {
-		if *p == "" {
-			continue
-		}
-		if !filepath.IsAbs(*p) {
-			*p = filepath.Join(a.root, *p)
-		}
-		if _, err := os.Stat(*p); os.IsNotExist(err) {
-			panic("TLS enabled but cannot find TLS Cert and/or TLS Key")
+	if a.rawConf.Target.TLSCertPath != "" {
+		var err error
+		certPath := InitPath(a.root, a.rawConf.Target.TLSCertPath, false)
+		if a.conf.TLS, err = httputils.GetTLSConf("", "", certPath); err != nil {
+			panic(err)
 		}
 	}
 	a.setDefaults()
@@ -165,7 +151,7 @@ func (a *AppOut) getPartials() ([]*Companion, error) {
 	var req *http.Request
 	var resp *http.Response
 	var reader io.ReadCloser
-	if client, err = httputils.GetClient(a.conf.TLSCert, a.conf.TLSKey); err != nil {
+	if client, err = httputils.GetClient(a.conf.TLS); err != nil {
 		return nil, err
 	}
 	url := fmt.Sprintf("%s://%s/partials", a.conf.Protocol(), a.conf.TargetHost)
