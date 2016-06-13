@@ -51,9 +51,8 @@ OUT:
       target: # Target-specific configuration
         name          : ...      # Name of the target
         http-host     : ...:1992 # Target host, including port
-        http-tls      : true     # Whether or not the target host uses HTTPS
-        http-tls-cert : conf/client.pem  # Client certificate; relative to $STS_HOME or $PWD if not absolute
-        http-tls-key  : conf/client.key  # Client key; relative to $STS_HOME or $PWD if not absolute
+        # If target not setup for HTTPS, remove or comment out the line below:
+        http-tls-cert : conf/server.pem  # Public server certificate path; relative to $STS_HOME or $PWD if not absolute
       tags: # Tags are for configuration based on file patterns (omitted attributes are inherited)
         - pattern   : DEFAULT # The file "tag" pattern
           priority  : 0       # Relative importance (higher the number, greater the importance)
@@ -73,9 +72,9 @@ IN:
     logs  : data/log   # For log files; appends "incoming_from/{source name}" and "messages"
   server: # Server configuration.
     http-port     : 1992 # What port to listen on
-    http-tls      : true # Whether or not to use HTTPS
-    http-tls-cert : conf/server.pem # Server certificate path; relative to $STS_HOME or $PWD if not absolute
-    http-tls-key  : conf/server.key # Server key; relative to $STS_HOME or $PWD if not absolute
+    # HTTPS can be disabled by removing or commenting out the following two lines:
+    http-tls-cert : conf/server.pem # Public server certificate path; relative to $STS_HOME or $PWD if not absolute
+    http-tls-key  : conf/server.key # Private server key; relative to $STS_HOME or $PWD if not absolute
     compress      : 4 # Use GZIP compression of level 0-9 (0 = no compression, 9 = best but slowest) on response payloads
 ```
 

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -228,8 +229,7 @@ type SenderConf struct {
 	TargetName   string
 	TargetHost   string
 	TargetKey    string
-	TLSCert      string
-	TLSKey       string
+	TLS          *tls.Config
 	BinSize      units.Base2Bytes
 	Timeout      time.Duration
 	StatInterval time.Duration
@@ -240,7 +240,7 @@ type SenderConf struct {
 
 // Protocol returns the protocl (http vs https) based on the configuration.
 func (sc *SenderConf) Protocol() string {
-	if sc.TLSCert != "" && sc.TLSKey != "" {
+	if sc.TLS != nil {
 		return "https"
 	}
 	return "http"
@@ -272,8 +272,7 @@ type Sender struct {
 func NewSender(conf *SenderConf) (s *Sender, err error) {
 	s = &Sender{}
 	s.conf = conf
-	s.client, err = httputils.GetClient(conf.TLSCert, conf.TLSKey)
-	if err != nil {
+	if s.client, err = httputils.GetClient(conf.TLS); err != nil {
 		return
 	}
 	s.client.Timeout = time.Second * time.Duration(conf.Timeout)

@@ -77,7 +77,7 @@ func NewPoller(conf *SenderConf) *Poller {
 	p.conf = conf
 	p.Files = make(map[string]*pollFile)
 	var err error
-	p.client, err = httputils.GetClient(conf.TLSCert, conf.TLSKey)
+	p.client, err = httputils.GetClient(conf.TLS)
 	if err != nil {
 		logging.Error(err.Error())
 	}

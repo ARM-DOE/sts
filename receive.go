@@ -2,6 +2,7 @@ package main
 
 import (
 	"compress/gzip"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,8 +29,7 @@ type ReceiverConf struct {
 	StageDir    string
 	FinalDir    string
 	Port        int
-	TLSCert     string
-	TLSKey      string
+	TLS         *tls.Config
 	Sources     []string
 	Keys        []string
 	Compression int
@@ -86,22 +86,17 @@ func (rcv *Receiver) Serve(stop <-chan bool) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go func(wg *sync.WaitGroup, port int, cert, key string) {
+	go func(wg *sync.WaitGroup, port int, tlsConf *tls.Config) {
 		defer wg.Done()
 		addr := fmt.Sprintf(":%d", port)
-		var err error
-		if cert != "" && key != "" {
-			err = httputils.ListenAndServeTLS(addr, cert, key, nil)
-		} else {
-			err = httputils.ListenAndServe(addr, nil)
-		}
+		err := httputils.ListenAndServe(addr, tlsConf, nil)
 		// According to:
 		// https://golang.org/pkg/net/http/#Server.Serve
 		// ...Serve() always returns a non-nil error.  I guess we'll ignore.
 		if err != nil {
 			// panic(err)
 		}
-	}(&wg, rcv.Conf.Port, rcv.Conf.TLSCert, rcv.Conf.TLSKey)
+	}(&wg, rcv.Conf.Port, rcv.Conf.TLS)
 	<-stop
 	httputils.Close()
 	wg.Wait()

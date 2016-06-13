@@ -2,13 +2,12 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"sync"
 	"time"
 
 	"github.com/ARM-DOE/sts/fileutils"
+	"github.com/ARM-DOE/sts/httputils"
 	"github.com/ARM-DOE/sts/logging"
 )
 
@@ -27,23 +26,27 @@ func (a *AppIn) initConf() {
 	a.conf = &ReceiverConf{}
 	a.conf.Keys = a.rawConf.Keys
 	a.conf.Sources = a.rawConf.Sources
-	a.conf.StageDir = InitPath(a.root, a.rawConf.Dirs.Stage, true)
-	a.conf.FinalDir = InitPath(a.root, a.rawConf.Dirs.Final, true)
+	stage := a.rawConf.Dirs.Stage
+	if stage == "" {
+		stage = "stage"
+	}
+	final := a.rawConf.Dirs.Final
+	if final == "" {
+		final = "final"
+	}
+	a.conf.StageDir = InitPath(a.root, stage, true)
+	a.conf.FinalDir = InitPath(a.root, final, true)
 	a.conf.Port = a.rawConf.Server.Port
+	if a.conf.Port == 0 {
+		panic("Server port not specified")
+	}
 	a.conf.Compression = a.rawConf.Server.Compression
-	if a.rawConf.Server.TLS {
-		a.conf.TLSCert = a.rawConf.Server.TLSCert
-		a.conf.TLSKey = a.rawConf.Server.TLSKey
-		for _, p := range []*string{&a.conf.TLSCert, &a.conf.TLSKey} {
-			if *p == "" {
-				panic("TLS enabled but missing TLS Cert and/or TLS Key")
-			}
-			if *p != "" && !filepath.IsAbs(*p) {
-				*p = filepath.Join(a.root, *p)
-			}
-			if _, err := os.Stat(*p); os.IsNotExist(err) {
-				panic("TLS enabled but cannot find TLS Cert and/or TLS Key")
-			}
+	if a.rawConf.Server.TLSCertPath != "" && a.rawConf.Server.TLSKeyPath != "" {
+		certPath := InitPath(a.root, a.rawConf.Server.TLSCertPath, false)
+		keyPath := InitPath(a.root, a.rawConf.Server.TLSKeyPath, false)
+		var err error
+		if a.conf.TLS, err = httputils.GetTLSConf(certPath, keyPath, ""); err != nil {
+			panic(err)
 		}
 	}
 }

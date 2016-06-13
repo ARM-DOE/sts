@@ -3,11 +3,12 @@ package httputils
 import (
 	"compress/gzip"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 )
@@ -48,7 +49,8 @@ const (
 	HeaderJSON = "application/json"
 )
 
-var gCerts map[string]tls.Certificate
+var gCerts map[string]*tls.Certificate
+var gCertPools map[string]*x509.CertPool
 var gCertLock sync.RWMutex
 var gHosts map[string]string
 var gHostLock sync.RWMutex
@@ -59,28 +61,15 @@ var DefaultServer *Server
 
 // ListenAndServe listens on the TCP network address addr using the
 // DefaultServer. If the handler is nil, http.DefaultServeMux is used.
-func ListenAndServe(addr string, handler http.Handler) error {
+func ListenAndServe(addr string, tlsConf *tls.Config, handler http.Handler) error {
 	h := handler
 	if h == nil {
 		h = http.DefaultServeMux
 	}
 	if DefaultServer == nil {
-		DefaultServer = NewServer(&http.Server{Addr: addr, Handler: h})
+		DefaultServer = NewServer(&http.Server{Addr: addr, Handler: h}, tlsConf)
 	}
 	return DefaultServer.ListenAndServe()
-}
-
-// ListenAndServeTLS acts identically to ListenAndServe except that is
-// expects HTTPS connections using the given certificate and key.
-func ListenAndServeTLS(addr, certFile, keyFile string, handler http.Handler) error {
-	h := handler
-	if h == nil {
-		h = http.DefaultServeMux
-	}
-	if DefaultServer == nil {
-		DefaultServer = NewServer(&http.Server{Addr: addr, Handler: h})
-	}
-	return DefaultServer.ListenAndServeTLS(certFile, keyFile)
 }
 
 // Close gracefully shuts down the DefaultServer.
@@ -89,27 +78,16 @@ func Close() error {
 }
 
 // GetClient returns a secure http.Client instance pointer based on cert paths.
-func GetClient(clientCertPath, clientKeyPath string) (*http.Client, error) {
-	var tlsConfig tls.Config
-	if clientCertPath != "" && clientKeyPath != "" {
-		cert, err := loadCert(clientCertPath, clientKeyPath)
-		if err != nil {
-			return &http.Client{}, err
-		}
-		tlsConfig = tls.Config{
-			Certificates:       []tls.Certificate{cert},
-			InsecureSkipVerify: true, // TODO: Get real certs.
-		}
-	} else {
-		tlsConfig = tls.Config{}
-	}
+func GetClient(tlsConf *tls.Config) (client *http.Client, err error) {
 	// Create new client using tls config
 	trans := http.Transport{}
-	trans.TLSClientConfig = &tlsConfig
+	if tlsConf != nil {
+		trans.TLSClientConfig = tlsConf
+	}
 	trans.DisableKeepAlives = true
-	client := &http.Client{}
+	client = &http.Client{}
 	client.Transport = &trans
-	return client, nil
+	return
 }
 
 // GetHostname uses an http.Request object to determine the name of the sending host.
@@ -180,15 +158,17 @@ func GetJSONReader(data interface{}, compression int) (r io.Reader, err error) {
 // Server is net/http compatible graceful server.
 // https://github.com/icub3d/graceful/blob/master/graceful.go
 type Server struct {
-	s  *http.Server
-	wg sync.WaitGroup
-	l  net.Listener
+	s       *http.Server
+	tlsConf *tls.Config
+	wg      sync.WaitGroup
+	l       net.Listener
 }
 
 // NewServer turns the given net/http server into a graceful server.
-func NewServer(srv *http.Server) *Server {
+func NewServer(srv *http.Server, tlsConf *tls.Config) *Server {
 	return &Server{
-		s: srv,
+		s:       srv,
+		tlsConf: tlsConf,
 	}
 }
 
@@ -196,41 +176,27 @@ func NewServer(srv *http.Server) *Server {
 // that it gracefully shuts down when Close() is called. When that
 // occurs, no new connections will be allowed and existing connections
 // will be allowed to finish. This will not return until all existing
-// connections have closed.
+// connections have closed. Will use provided tls.Config for https
+// if applicable.
 func (s *Server) ListenAndServe() error {
 	addr := s.s.Addr
 	if addr == "" {
-		addr = ":http"
+		if s.tlsConf != nil {
+			addr = ":https"
+		} else {
+			addr = ":http"
+		}
+	}
+	if s.tlsConf != nil && s.tlsConf.NextProtos == nil {
+		s.tlsConf.NextProtos = []string{"http/1.1"}
 	}
 	var err error
-	l, err := net.Listen("tcp", addr)
-	if err != nil {
-		return err
+	var l net.Listener
+	if s.tlsConf != nil {
+		l, err = tls.Listen("tcp", addr, s.tlsConf)
+	} else {
+		l, err = net.Listen("tcp", addr)
 	}
-	return s.Serve(l)
-}
-
-// ListenAndServeTLS works like ListenAndServe but with TLS using the
-// given cert and key files.
-func (s *Server) ListenAndServeTLS(certFile, keyFile string) error {
-	addr := s.s.Addr
-	if addr == "" {
-		addr = ":https"
-	}
-	config := &tls.Config{}
-	if s.s.TLSConfig != nil {
-		*config = *s.s.TLSConfig
-	}
-	if config.NextProtos == nil {
-		config.NextProtos = []string{"http/1.1"}
-	}
-	cert, err := loadCert(certFile, keyFile)
-	if err != nil {
-		return err
-	}
-	config.Certificates = []tls.Certificate{cert}
-	config.InsecureSkipVerify = true // TODO: Get real certs.
-	l, err := tls.Listen("tcp", addr, config)
 	if err != nil {
 		return err
 	}
@@ -285,34 +251,71 @@ func (g *gracefulConn) Close() error {
 	return err
 }
 
-func loadCert(certPath string, keyPath string) (tls.Certificate, error) {
-	gCertLock.Lock()
-	defer gCertLock.Unlock()
-	certKey := getCertKey(certPath, keyPath)
-	if gCerts == nil {
-		gCerts = make(map[string]tls.Certificate)
+// GetTLSConf returns a tls.Config reference based on provided paths.
+func GetTLSConf(certPath, keyPath, caPath string) (conf *tls.Config, err error) {
+	if certPath == "" && keyPath == "" && caPath == "" {
+		return
 	}
-	cert, exists := gCerts[certKey]
-	if !exists {
-		// Load cert from disk
-		_, certErr := os.Stat(certPath)
-		_, keyErr := os.Stat(keyPath)
-		if os.IsNotExist(certErr) {
-			return tls.Certificate{}, certErr
-		}
-		if os.IsNotExist(keyErr) {
-			return tls.Certificate{}, keyErr
-		}
-		var err error
-		cert, err = tls.LoadX509KeyPair(certPath, keyPath)
-		if err != nil {
-			return tls.Certificate{}, err
-		}
-		gCerts[certKey] = cert
+	conf = &tls.Config{}
+	var cert *tls.Certificate
+	var pool *x509.CertPool
+	if cert, pool, err = loadCert(certPath, keyPath, caPath); err != nil {
+		return
 	}
-	return cert, nil
+	if cert != nil {
+		conf.Certificates = []tls.Certificate{*cert}
+	}
+	if pool != nil {
+		conf.RootCAs = pool
+		conf.ClientCAs = pool
+	}
+	// conf.ClientAuth = tls.RequireAndVerifyClientCert
+	conf.CipherSuites = []uint16{tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256}
+
+	conf.MinVersion = tls.VersionTLS12
+	conf.SessionTicketsDisabled = true
+	return
 }
 
-func getCertKey(cert string, key string) string {
-	return cert + ":" + key
+func loadCert(certPath, keyPath, caPath string) (pem *tls.Certificate, pool *x509.CertPool, err error) {
+	gCertLock.Lock()
+	defer gCertLock.Unlock()
+	key := strings.Join([]string{certPath, keyPath, caPath}, ":")
+	if gCerts == nil {
+		gCerts = make(map[string]*tls.Certificate)
+	}
+	if gCertPools == nil {
+		gCertPools = make(map[string]*x509.CertPool)
+	}
+	var ok bool
+	if certPath != "" && keyPath != "" {
+		if pem, ok = gCerts[key]; !ok {
+			var p tls.Certificate
+			p, err = tls.LoadX509KeyPair(certPath, keyPath)
+			if err != nil {
+				return
+			}
+			pem = &p
+			gCerts[key] = pem
+		}
+	}
+	if caPath != "" {
+		if pool, ok = gCertPools[key]; !ok {
+			var ca []byte
+			ca, err = ioutil.ReadFile(caPath)
+			if err != nil {
+				return
+			}
+			pool = x509.NewCertPool()
+			pool.AppendCertsFromPEM(ca)
+		}
+	}
+	return
 }
