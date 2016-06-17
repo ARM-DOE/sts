@@ -26,11 +26,14 @@ const Disk = "to_disk"
 // Msg is the log directory for debug and error messages to match legacy STS.
 const Msg = "messages"
 
+var gLogLock sync.RWMutex
 var gLoggers map[string]*Logger
 var msgLogger *Logger
 
 // Init will create a logger for each input "mode".
 func Init(modes []string, root string, debug bool) {
+	gLogLock.Lock()
+	defer gLogLock.Unlock()
 	if gLoggers == nil {
 		gLoggers = make(map[string]*Logger)
 	}
@@ -45,6 +48,8 @@ func Init(modes []string, root string, debug bool) {
 
 // Done terminates logging for all created loggers.
 func Done() {
+	gLogLock.Lock()
+	defer gLogLock.Unlock()
 	if gLoggers == nil {
 		return
 	}
@@ -55,6 +60,8 @@ func Done() {
 
 func getLogger(mode string, prefix ...string) (*Logger, bool) {
 	if len(prefix) > 0 {
+		gLogLock.Lock()
+		defer gLogLock.Unlock()
 		key := mode + ":" + strings.Join(prefix, "-")
 		if l, ok := gLoggers[key]; ok {
 			return l, true
@@ -65,6 +72,8 @@ func getLogger(mode string, prefix ...string) (*Logger, bool) {
 		}
 		return nil, false
 	}
+	gLogLock.RLock()
+	defer gLogLock.RUnlock()
 	l, ok := gLoggers[mode]
 	return l, ok
 }
