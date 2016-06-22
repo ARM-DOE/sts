@@ -236,17 +236,30 @@ func (a *AppOut) getRecoverable() (send []ScanFile, poll []PollFile, err error) 
 	return
 }
 
-func (a *AppOut) recover() {
-	// Attempt to recover any partially or fully sent files that weren't confirmed before last shutdown.
+// Init creates internal components and initializes configuration.
+func (a *AppOut) Init() {
+
+	// Validate configuration and set defaults.
+	a.initConf()
+
+	// Initialize channels and app components.
+	if err := a.initComponents(); err != nil {
+		panic(err.Error())
+	}
+}
+
+// Recover attempts to recover any partially or fully sent files that weren't
+// confirmed before last shutdown.
+func (a *AppOut) Recover() error {
 	send, poll, err := a.getRecoverable()
 	if err != nil {
-		panic(err.Error())
+		return err
 	}
 	// Poll files need to be polled just once before moving on.
 	if len(poll) > 0 {
 		none, fail, done, err := a.poller.Poll(poll)
 		if err != nil {
-			panic(err.Error())
+			return err
 		}
 		// It's important that we get these files in the same batch as the recoverable
 		// so that the file order stays intact.  Otherwise we might get a circular
@@ -279,6 +292,7 @@ func (a *AppOut) recover() {
 		}
 		a.scanChan <- send // Sneakily insert these files into the send queue ahead of everything else.
 	}
+	return nil
 }
 
 // Start initializes and starts the outbound components.
@@ -287,17 +301,6 @@ func (a *AppOut) Start(stop <-chan bool) <-chan bool {
 	if stop == nil {
 		a.once = true // Not really using this yet but seemed like a good idea.
 	}
-
-	// Validate configuration and set defaults.
-	a.initConf()
-
-	// Initialize channels and app components.
-	if err := a.initComponents(); err != nil {
-		panic(err.Error())
-	}
-
-	// Recover any unfinished business from last run.
-	a.recover()
 
 	var wg sync.WaitGroup
 	wg.Add(4) // One for each component.

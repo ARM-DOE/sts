@@ -8,7 +8,7 @@ bin="$GOPATH/bin/$exe"
 debug="--debug"
 conf="--conf=run/conf/sts.yaml"
 cmd1="$bin $debug $conf --mode=in"
-cmd2="$bin $debug $conf --mode=out"
+cmd2="$bin $debug $conf --mode=out --loop"
 cmd3="$bin $debug --mode=in"
 
 echo "Cleaning last run..."
@@ -20,13 +20,15 @@ echo "Staging test data..."
 mkdir -p $STS_HOME/data/out/stsin-1
 tar -C $STS_HOME/data/out/stsin-1 -xzf $PWD/$basedir/sts.tar.gz
 
-echo "Running receiver in background..."
-$cmd1 > /dev/null &
-
 echo "Running sender in background..."
 $cmd2 > /dev/null &
 
-sleep 1
+sleep 2
+
+echo "Running receiver in background..."
+$cmd1 > /dev/null &
+
+sleep 3
 
 echo "Reconfig receiver..."
 pkill -f "$cmd1"

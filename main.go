@@ -3,8 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"net/http"
-	_ "net/http/pprof"
+	"time"
+	// For profiling...
+	// "net/http"
+	// _ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -128,14 +130,14 @@ func (a *app) run() {
 	// Run until we get a signal to shutdown if running ONLY as a "receiver" or
 	// if configured to run as a sender in a loop.
 	if !a.once || (i && !o) {
-		if !i {
-			// Start a profiler server only if running solely "out" mode in a
-			// loop.  We can use the "in" server otherwise.
-			// https://golang.org/pkg/net/http/pprof/
-			go func() {
-				http.ListenAndServe("localhost:6060", nil)
-			}()
-		}
+		// if !i {
+		// 	// Start a profiler server only if running solely "out" mode in a
+		// 	// loop.  We can use the "in" server otherwise.
+		// 	// https://golang.org/pkg/net/http/pprof/
+		// 	go func() {
+		// 		http.ListenAndServe("localhost:6060", nil)
+		// 	}()
+		// }
 		sc := make(chan os.Signal, 1)
 		signal.Notify(sc, os.Interrupt)
 
@@ -202,13 +204,36 @@ func (a *app) startOut(once bool) bool {
 			dirConf: a.conf.Out.Dirs,
 			rawConf: source,
 		}
-		c := make(chan bool)
-		if once {
-			a.outStop[c] = out.Start(nil)
-		} else {
-			a.outStop[c] = out.Start(c)
-		}
+		out.Init()
 		a.out = append(a.out, out)
+	}
+	started := make([]bool, len(a.conf.Out.Sources))
+	nloops := 0
+	for {
+		nerr := 0
+		for i := range a.conf.Out.Sources {
+			if started[i] {
+				continue
+			}
+			if err := a.out[i].Recover(); err != nil {
+				logging.Error(err.Error())
+				nerr++
+				continue
+			}
+			c := make(chan bool)
+			if once {
+				a.outStop[c] = a.out[i].Start(nil)
+			} else {
+				a.outStop[c] = a.out[i].Start(c)
+			}
+			started[i] = true
+		}
+		if !once && nerr > 0 {
+			nloops++
+			time.Sleep(time.Duration(nloops) * time.Second) // Wait longer the more it fails.
+			continue
+		}
+		break
 	}
 	return true
 }
