@@ -362,6 +362,13 @@ func (rcv *Receiver) completePart(pr *PartDecoder, source string) {
 	}
 	if cmp.IsComplete() {
 		// Finish file by removing the "partial" extension so the scanner will pick it up.
+		// Check it.
+		_, err = os.Stat(path + CompExt)
+		if err != nil {
+			logging.Debug("RECEIVE Companion Not Written! %s", err.Error())
+		} else {
+			logging.Debug("RECEIVE Companion Ready: %s", path)
+		}
 		err := os.Rename(path+PartExt, path)
 		if err != nil {
 			logging.Error(err.Error())
