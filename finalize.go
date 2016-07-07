@@ -81,7 +81,7 @@ func (f *Finalizer) finalize(file ScanFile) (bool, error) {
 	cmp, err := ReadCompanion(file.GetPath(true))
 	if err != nil {
 		os.Remove(file.GetPath(false))
-		return false, fmt.Errorf("Missing companion: %s", file.GetRelPath())
+		return false, fmt.Errorf("Missing/invalid companion (%s): %s", err.Error(), file.GetRelPath())
 	}
 
 	// Sort it.
