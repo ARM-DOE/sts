@@ -43,7 +43,7 @@ func NewCompanion(source string, path string, prevFile string, size int64, hash 
 	cmp.Hash = hash
 	cmp.Parts = make(map[string]*PartData)
 	cmp.SourceName = source
-	err = fileutils.WriteJSON(path+CompExt, cmp)
+	err = cmp.Write()
 	return
 }
 

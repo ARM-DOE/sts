@@ -55,6 +55,10 @@ func (a *AppIn) initConf() {
 func (a *AppIn) Start(stop <-chan bool) <-chan bool {
 	a.initConf()
 
+	// TODO: Use the scanner to just scan once at startup and then put those files on the "finalize" channel.
+	// Setup the HTTP server to send on what is now the "scan" channel instead of relying on the scanner
+	// and file extensions.
+
 	a.scanChan = make(chan []ScanFile)
 
 	scanConf := ScannerConf{

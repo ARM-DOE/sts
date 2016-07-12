@@ -361,20 +361,19 @@ func (rcv *Receiver) completePart(pr *PartDecoder, source string) {
 		return
 	}
 	if cmp.IsComplete() {
-		// Finish file by removing the "partial" extension so the scanner will pick it up.
-		// Check it.
-		_, err = os.Stat(path + CompExt)
+		defer rcv.delLock(path)
+
+		// Touch the file with current time to make sure it can't get picked up immediately.
+		err = os.Chtimes(path+PartExt, time.Now(), time.Now())
 		if err != nil {
-			logging.Debug("RECEIVE Companion Not Written! %s", err.Error())
-		} else {
-			logging.Debug("RECEIVE Companion Ready: %s", path)
+			logging.Error(err.Error())
 		}
-		err := os.Rename(path+PartExt, path)
+		// Finish file by removing the "partial" extension so the scanner will pick it up.
+		err = os.Rename(path+PartExt, path)
 		if err != nil {
 			logging.Error(err.Error())
 			return
 		}
 		logging.Debug("RECEIVE File Done:", path)
-		rcv.delLock(path)
 	}
 }
