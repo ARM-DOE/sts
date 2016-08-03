@@ -114,7 +114,12 @@ func (a *AppOut) initComponents() (err error) {
 		make(chan []DoneFile, a.rawConf.Threads*2),
 	}
 
-	outDir := InitPath(a.root, filepath.Join(a.dirConf.Out, a.rawConf.Target.Name), true)
+	var outDir string
+	if a.rawConf.OutDir != "" {
+		outDir = InitPath(a.root, a.rawConf.OutDir, true)
+	} else {
+		outDir = InitPath(a.root, filepath.Join(a.dirConf.Out, a.rawConf.Target.Name), true)
+	}
 	cacheDir := InitPath(a.root, a.dirConf.Cache, true)
 
 	scanConf := ScannerConf{

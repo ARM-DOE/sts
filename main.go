@@ -163,7 +163,10 @@ func (a *app) startIn() bool {
 		}
 		panic("Missing required RECEIVER configuration")
 	}
-	logging.Init([]string{logging.In, logging.Msg}, InitPath(a.root, a.conf.In.Dirs.Logs, true), a.debug)
+	logging.Init(map[string]string{
+		logging.In:  a.conf.In.Dirs.LogsIn,
+		logging.Msg: a.conf.In.Dirs.LogsMsg,
+	}, InitPath(a.root, a.conf.In.Dirs.Logs, true), a.debug)
 	a.in = &AppIn{
 		root:    a.root,
 		rawConf: a.conf.In,
@@ -196,7 +199,10 @@ func (a *app) startOut(once bool) bool {
 		}
 		panic("Missing required SENDER configuration")
 	}
-	logging.Init([]string{logging.Out, logging.Msg}, InitPath(a.root, a.conf.Out.Dirs.Logs, true), a.debug)
+	logging.Init(map[string]string{
+		logging.Out: a.conf.Out.Dirs.LogsOut,
+		logging.Msg: a.conf.Out.Dirs.LogsMsg,
+	}, InitPath(a.root, a.conf.Out.Dirs.Logs, true), a.debug)
 	a.outStop = make(map[chan<- bool]<-chan bool)
 	for _, source := range a.conf.Out.Sources {
 		out := &AppOut{
@@ -208,6 +214,7 @@ func (a *app) startOut(once bool) bool {
 		a.out = append(a.out, out)
 	}
 	started := make([]bool, len(a.conf.Out.Sources))
+	watching := make(map[string]bool)
 	nloops := 0
 	for {
 		nerr := 0
@@ -227,6 +234,11 @@ func (a *app) startOut(once bool) bool {
 				a.outStop[c] = a.out[i].Start(c)
 			}
 			started[i] = true
+			watch := a.out[i].scanner.conf.ScanDir
+			if _, ok := watching[watch]; ok {
+				panic("Multiple sources configured to watch the same outgoing directory")
+			}
+			watching[watch] = true
 		}
 		if !once && nerr > 0 {
 			nloops++

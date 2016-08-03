@@ -31,16 +31,19 @@ var gLoggers map[string]*Logger
 var msgLogger *Logger
 
 // Init will create a logger for each input "mode".
-func Init(modes []string, root string, debug bool) {
+func Init(modes map[string]string, root string, debug bool) {
 	gLogLock.Lock()
 	defer gLogLock.Unlock()
 	if gLoggers == nil {
 		gLoggers = make(map[string]*Logger)
 	}
-	for _, mode := range modes {
+	for mode, append := range modes {
 		_, exists := gLoggers[mode]
 		if !exists {
-			gLoggers[mode] = newLogger(filepath.Join(root, mode), mode, debug)
+			if append == "" {
+				append = mode
+			}
+			gLoggers[mode] = newLogger(filepath.Join(root, append), mode, debug)
 		}
 	}
 	msgLogger = gLoggers[Msg] // For faster access.

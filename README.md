@@ -36,9 +36,12 @@ OUT:
   dirs: # Outgoing directory configuration; relative to $STS_HOME or $PWD if not absolute
     cache : .sts     # Used to store queue cache(s)
     out   : data/out # Directory to watch for files to send; appends "/{target name}"
-    logs  : data/log # For log files; appends "outgoing_to/{target name}" and "messages"
+    logs  : data/log # Root directory for logging
+    logs-out  : out  # Appended to root logs dir for logging of files sent (DEFAULT: outgoing_to); appends /{target}
+    logs-flow : flow # Appended to root logs for error/info/debug messages (DEFAULT: messages)
   sources: # Supports multiple sources where omitted entries will inherit from previous sources hierarchically
     - name          : ...   # Name of the source (used by receiver)
+      out-dir       : /...  # Override the global output directory setting
       threads       : 8     # Maximum number of concurrent HTTP connections
       bin-size      : 10MB  # The generally-desired size for a given HTTP request (BEFORE any compression)
       compress      : 4     # Use GZIP compression of level 0-9 (0 = no compression, 9 = best but slowest)
@@ -69,7 +72,9 @@ IN:
   dirs: # Incoming directory configuration; relative to $STS_HOME or $PWD if not absolute
     stage : data/stage # Directory to stage data as it comes in; appends "/{source name}"
     final : data/in    # Final location for incoming files; appends "/{source name}"
-    logs  : data/log   # For log files; appends "incoming_from/{source name}" and "messages"
+    logs  : data/log   # Root directory for logging
+    logs-in   : in   # Appended to root logs dir for logging of files sent (DEFAULT: incoming_from); appends /{source}
+    logs-flow : flow # Appended to root logs for error/info/debug messages (DEFAULT: messages)
   server: # Server configuration.
     http-port     : 1992 # What port to listen on
     # HTTPS can be disabled by removing or commenting out the following two lines:

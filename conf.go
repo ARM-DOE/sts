@@ -48,15 +48,18 @@ type OutConf struct {
 
 // OutDirs is the struct for managing the outgoing directory configuration items.
 type OutDirs struct {
-	Out   string `yaml:"out"`
-	Logs  string `yaml:"logs"`
-	Disk  string `yaml:"disk"`
-	Cache string `yaml:"cache"`
+	Out     string `yaml:"out"`
+	Logs    string `yaml:"logs"`
+	LogsOut string `yaml:"logs-out"`
+	LogsMsg string `yaml:"logs-flow"`
+	Disk    string `yaml:"disk"`
+	Cache   string `yaml:"cache"`
 }
 
 // OutSource is the struct for managing the configuration of an outgoing source.
 type OutSource struct {
 	Name         string
+	OutDir       string
 	Threads      int
 	MinAge       time.Duration
 	MaxAge       time.Duration
@@ -77,6 +80,7 @@ type OutSource struct {
 func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 	var aux struct {
 		Name         string        `yaml:"name"`
+		OutDir       string        `yaml:"out-dir"`
 		Threads      int           `yaml:"threads"`
 		MinAge       time.Duration `yaml:"min-age"`
 		MaxAge       time.Duration `yaml:"max-age"`
@@ -95,6 +99,7 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 		return
 	}
 	ss.Name = aux.Name
+	ss.OutDir = aux.OutDir
 	ss.Threads = aux.Threads
 	ss.MinAge = aux.MinAge
 	ss.MaxAge = aux.MaxAge
@@ -143,9 +148,11 @@ type InConf struct {
 
 // InDirs is the struct for managing the incoming directory configuration items.
 type InDirs struct {
-	Logs  string `yaml:"logs"`
-	Stage string `yaml:"stage"`
-	Final string `yaml:"final"`
+	Logs    string `yaml:"logs"`
+	LogsIn  string `yaml:"logs-in"`
+	LogsMsg string `yaml:"logs-flow"`
+	Stage   string `yaml:"stage"`
+	Final   string `yaml:"final"`
 }
 
 // InServer is the struct for managing the incoming HTTP host.

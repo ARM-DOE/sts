@@ -28,7 +28,7 @@ mv $STS_HOME/data/out/stsin-1/collection $STS_HOME/data/out/stsin-2
 echo "Running in background..."
 $cmd > /dev/null &
 
-sleep 4 # Wait for it do some stuff.
+sleep 1 # Wait for it do some stuff.
 
 echo "Simulating crash..."
 pkill $exe
