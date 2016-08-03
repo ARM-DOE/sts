@@ -1,0 +1,87 @@
+#!/bin/bash
+#
+# /etc/init.d/stsd
+#
+# stsd    Site Transfer Software Daemon
+#
+# Sherman Beus
+# Pacific Northwest National Laboratory
+# sherman.beus@pnnl.gov
+#
+# chkconfig: 345 70 30
+# description: stsd is the Site Transfer Software daemon
+# processname: stsd
+
+# Source function library
+. /etc/init.d/functions
+
+# Variables needed for startup
+USER=dsmgr
+RETVAL=0
+BIN='sts'
+BINDIR="/apps/transfer/bin"
+PIDFILE="/var/lock/subsys/$BIN"
+CONFIG="/apps/transfer/conf/sts.yaml"
+FLAGS="-loop"
+CMD="$BINDIR/$BIN $FLAGS -conf $CONFIG"
+KILLDELAY=50 # 5 seconds delay for process to shut down.
+
+start() {
+    echo -n "Starting STS: "
+    daemon --pidfile=$PIDFILE --user=$USER $CMD > /var/log/stsd.log 2>&1 &
+    RETVAL=$?
+    sleep .1
+    pid=`ps -ef | egrep ":[0-9][0-9]\s+$BINDIR/$BIN" | awk '{print $2}'`
+    if [ -n "$pid" ]; then
+        echo $pid > $PIDFILE
+    fi
+    return $RETVAL
+}
+
+stop() {
+    echo -n "Shutting down STS: "
+    pid=`cat "$PIDFILE" 2>/dev/null`
+    if [ -n "$pid" ]; then
+        if [ "`ps -o comm= $pid`" = "$BIN" ]; then
+            # Ask process to terminate
+            kill -TERM $pid
+            while [ $KILLDELAY -gt 0 ] && [ "`ps -o comm= $pid`" = "$BIN" ]; do
+                sleep .1
+                KILLDELAY=$((KILLDELAY - 1))
+            done
+            if [ "`ps -o comm= $pid`" = "$BIN" ]; then
+                # Forcibly terminate process
+                kill -KILL $pid
+            else
+                echo "Process terminated peacefully."
+            fi
+        else
+            echo "Process already died or crashed."
+        fi
+    else
+        echo "Not running."
+    fi
+    rm -f $PIDFILE
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+#    status)
+#        ;;
+    restart)
+        stop
+        start
+        ;;
+#    reload)
+#        ;;
+    *)
+        echo "Usage: stsd {start|stop|restart}"
+        exit 1
+        ;;
+esac
+exit $?
