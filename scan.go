@@ -178,12 +178,28 @@ type ScannerConf struct {
 	MaxAge   time.Duration
 	OutOnce  bool
 	Nested   int
-	Ignore   []string
+	Include  []*regexp.Regexp
+	Ignore   []*regexp.Regexp
+}
+
+// AddInclude adds a pattern to the list that is used for including files in the scan list.
+func (c *ScannerConf) AddInclude(pattern *regexp.Regexp) {
+	c.Include = append(c.Include, pattern)
 }
 
 // AddIgnore adds a pattern to the list that is used for filtering files from the scan list.
-func (c *ScannerConf) AddIgnore(pattern string) {
+func (c *ScannerConf) AddIgnore(pattern *regexp.Regexp) {
 	c.Ignore = append(c.Ignore, pattern)
+}
+
+// AddIgnoreString calls AddIgnore after compiling the provided string to a regular expression.
+func (c *ScannerConf) AddIgnoreString(pattern string) (err error) {
+	var p *regexp.Regexp
+	if p, err = regexp.Compile(pattern); err != nil {
+		return
+	}
+	c.AddIgnore(p)
+	return
 }
 
 // NewScanner returns a Scanner instance.
@@ -199,9 +215,10 @@ func NewScanner(conf *ScannerConf) *Scanner {
 		scanner.queue.load(scanner.cachePath)
 	}
 
-	conf.AddIgnore(`\.DS_Store$`)
-	conf.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutils.LockExt)))
-	conf.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(DisabledName)))
+	// No need to look for an error because these are hard-coded strings.
+	_ = conf.AddIgnoreString(`\.DS_Store$`)
+	_ = conf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutils.LockExt)))
+	_ = conf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(DisabledName)))
 	return scanner
 }
 
@@ -350,7 +367,17 @@ func (scanner *Scanner) scan() (ScanFileList, bool) {
 }
 
 func (scanner *Scanner) handleNode(path string, info os.FileInfo, err error) error {
-	if info == nil || err != nil || info.IsDir() || scanner.shouldIgnore(path) {
+	if info == nil || err != nil {
+		return nil
+	}
+	if info.IsDir() {
+		if scanner.shouldIgnore(path, true) {
+			// Best to skip entire directories if they match an ignore pattern.
+			return filepath.SkipDir
+		}
+		return nil
+	}
+	if scanner.shouldIgnore(path, false) {
 		return nil
 	}
 	fTime := info.ModTime()
@@ -375,11 +402,19 @@ func (scanner *Scanner) handleNode(path string, info os.FileInfo, err error) err
 	return nil
 }
 
-func (scanner *Scanner) shouldIgnore(path string) bool {
+func (scanner *Scanner) shouldIgnore(path string, isDir bool) bool {
 	relPath := scanner.queue.toRelPath(path, scanner.conf.Nested)
-	for _, pattern := range scanner.conf.Ignore {
-		matched, err := regexp.MatchString(pattern, relPath)
-		if err != nil || matched {
+	var pattern *regexp.Regexp
+	if !isDir && len(scanner.conf.Include) > 0 {
+		for _, pattern = range scanner.conf.Include {
+			if pattern.MatchString(relPath) {
+				return false
+			}
+		}
+		return true
+	}
+	for _, pattern = range scanner.conf.Ignore {
+		if pattern.MatchString(relPath) {
 			return true
 		}
 	}

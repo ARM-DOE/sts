@@ -77,9 +77,10 @@ func (a *AppIn) Start(stop <-chan bool) <-chan bool {
 	// is renamed.  I could flip that but then there could be a race condition on reading a companion file
 	// that hasn't been updated yet (finalize).
 
-	scanConf.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutils.LockExt)))
-	scanConf.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(PartExt)))
-	scanConf.AddIgnore(fmt.Sprintf(`%s$`, regexp.QuoteMeta(CompExt)))
+	// OK to ignore returned error because these are valid constants and will compile.
+	_ = scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutils.LockExt)))
+	_ = scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(PartExt)))
+	_ = scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(CompExt)))
 
 	var wg sync.WaitGroup
 	wg.Add(3)

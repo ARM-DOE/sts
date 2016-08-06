@@ -24,7 +24,7 @@ type AppOut struct {
 	conf     *SenderConf
 	once     bool
 	scanChan chan []ScanFile
-	sortChan chan SortFile
+	sortChan map[string]chan SortFile
 	loopChan chan []SendFile
 	pollChan chan []SendFile
 	doneChan []chan []DoneFile
@@ -106,7 +106,9 @@ func (a *AppOut) initConf() {
 
 func (a *AppOut) initComponents() (err error) {
 	a.scanChan = make(chan []ScanFile, 1) // One batch at a time.
-	a.sortChan = make(chan SortFile, a.rawConf.Threads*2)
+	a.sortChan = map[string]chan SortFile{
+		MethodHTTP: make(chan SortFile, a.rawConf.Threads*2),
+	}
 	a.loopChan = make(chan []SendFile, a.rawConf.Threads*2)
 	a.pollChan = make(chan []SendFile, a.rawConf.Threads*2)
 	a.doneChan = []chan []DoneFile{
@@ -130,6 +132,8 @@ func (a *AppOut) initComponents() (err error) {
 		MaxAge:   a.rawConf.MaxAge,
 		OutOnce:  true,
 		Nested:   0,
+		Include:  a.rawConf.Include,
+		Ignore:   a.rawConf.Ignore,
 	}
 
 	a.scanner = NewScanner(&scanConf)
@@ -138,15 +142,6 @@ func (a *AppOut) initComponents() (err error) {
 		return
 	}
 	a.poller = NewPoller(a.conf)
-
-	for _, tag := range a.rawConf.Tags {
-		if tag.Method == MethodHTTP {
-			continue
-		}
-		if tag.Method == MethodNone || tag.Method == MethodDisk {
-			scanConf.AddIgnore(tag.Pattern)
-		}
-	}
 	return
 }
 
@@ -338,10 +333,10 @@ func (a *AppOut) Start(stop <-chan bool) <-chan bool {
 			Done:  out,
 			Close: close,
 		})
-	}(a.sender, a.sortChan, a.loopChan, pollStop, a.pollChan)
+	}(a.sender, a.sortChan[MethodHTTP], a.loopChan, pollStop, a.pollChan)
 
 	// Start the sorter.
-	go func(sorter *Sorter, in <-chan []ScanFile, out chan<- SortFile, done <-chan []DoneFile) {
+	go func(sorter *Sorter, in <-chan []ScanFile, out map[string]chan SortFile, done <-chan []DoneFile) {
 		defer wg.Done()
 		sorter.Start(in, out, done)
 	}(a.sorter, a.scanChan, a.sortChan, a.doneChan[0])

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"path/filepath"
 	"reflect"
@@ -27,9 +28,6 @@ const (
 
 	// MethodDisk indicates a disk transfer method.
 	MethodDisk = "disk"
-
-	// MethodNone indicates files are not to be sent.
-	MethodNone = "none"
 )
 
 // Conf is the outermost struct for holding STS configuration.
@@ -72,6 +70,8 @@ type OutSource struct {
 	PollAttempts int
 	Target       *OutTarget
 	GroupBy      *regexp.Regexp
+	Include      []*regexp.Regexp
+	Ignore       []*regexp.Regexp
 	Tags         []*Tag
 }
 
@@ -93,6 +93,8 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 		PollAttempts int           `yaml:"poll-attempts"`
 		Target       *OutTarget    `yaml:"target"`
 		GroupBy      string        `yaml:"group-by"`
+		Include      []string      `yaml:"include"`
+		Ignore       []string      `yaml:"ignore"`
 		Tags         []*Tag        `yaml:"tags"`
 	}
 	if err = unmarshal(&aux); err != nil {
@@ -117,17 +119,70 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 	if ss.GroupBy, err = regexp.Compile(aux.GroupBy); err != nil {
 		return
 	}
+	var patterns []*regexp.Regexp
+	for _, s := range append(aux.Include, aux.Ignore...) {
+		var p *regexp.Regexp
+		if p, err = regexp.Compile(s); err != nil {
+			return
+		}
+		patterns = append(patterns, p)
+	}
+	ss.Include = patterns[0:len(aux.Include)]
+	ss.Ignore = patterns[len(aux.Include):len(patterns)]
 	ss.Tags = aux.Tags
 	return nil
 }
 
 // Tag is the struct for managing configuration options for "tags" (groups) of files.
 type Tag struct {
-	Pattern  string `yaml:"pattern"`
-	Priority int    `yaml:"priority"`
-	Method   string `yaml:"method"`
-	Order    string `yaml:"order"`
-	Delete   bool   `yaml:"delete"`
+	Pattern   *regexp.Regexp
+	Priority  int
+	Method    string
+	Order     string
+	Delete    bool
+	LastDelay time.Duration
+}
+
+// UnmarshalYAML implements the Unmarshaler interface for handling custom member(s).
+// https://godoc.org/gopkg.in/yaml.v2
+func (t *Tag) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
+	var aux struct {
+		Pattern   string        `yaml:"pattern"`
+		Priority  int           `yaml:"priority"`
+		Method    string        `yaml:"method"`
+		Order     string        `yaml:"order"`
+		Delete    bool          `yaml:"delete"`
+		LastDelay time.Duration `yaml:"last-delay"`
+	}
+	if err = unmarshal(&aux); err != nil {
+		return
+	}
+	if aux.Pattern != DefaultTag {
+		if t.Pattern, err = regexp.Compile(aux.Pattern); err != nil {
+			return
+		}
+	}
+	if aux.Order == "" {
+		aux.Order = OrderFIFO
+	}
+	if aux.Method == "" {
+		aux.Method = MethodHTTP
+	} else {
+		switch aux.Method {
+		case MethodDisk:
+			break
+		case MethodHTTP:
+			break
+		default:
+			panic(fmt.Sprintf("Invalid \"tag\" method: %s", aux.Method))
+		}
+	}
+	t.Priority = aux.Priority
+	t.Method = aux.Method
+	t.Order = aux.Order
+	t.Delete = aux.Delete
+	t.LastDelay = aux.LastDelay
+	return
 }
 
 // OutTarget houses the configuration for the target host for a given source.
@@ -196,8 +251,8 @@ func NewConf(path string) (*Conf, error) {
 				src = conf.Out.Sources[i]
 				if len(src.Tags) > 1 {
 					tdef := src.Tags[0]
-					for i := 1; i < len(src.Tags); i++ {
-						copyStruct(src.Tags[i], tdef)
+					for j := 1; j < len(src.Tags); j++ {
+						copyStruct(src.Tags[j], tdef)
 					}
 				}
 			}
@@ -236,12 +291,17 @@ func isZero(v reflect.Value) bool {
 		return z
 	case reflect.Struct:
 		z := true
+		n := 0
 		for i := 0; i < v.NumField(); i++ {
 			if v.Field(i).CanSet() {
 				z = z && isZero(v.Field(i))
+				n++
 			}
 		}
-		return z
+		if n > 0 {
+			return z
+		}
+		return false
 	case reflect.Ptr:
 		if v.IsNil() {
 			return true

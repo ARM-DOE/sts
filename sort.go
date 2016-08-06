@@ -175,7 +175,7 @@ func NewSorter(tagData []*Tag, groupBy *regexp.Regexp) *Sorter {
 	sorter.groupMap = make(map[string]*sortedGroup)
 	sorter.tagData = tagData
 	for _, tag := range tagData {
-		if tag.Pattern == DefaultTag {
+		if tag.Pattern == nil {
 			sorter.tagDef = tag
 			break
 		}
@@ -183,8 +183,9 @@ func NewSorter(tagData []*Tag, groupBy *regexp.Regexp) *Sorter {
 	return sorter
 }
 
-// Start starts the daemon that listens for files on inChan and doneChan and puts files on outChan.
-func (sorter *Sorter) Start(inChan <-chan []ScanFile, outChan chan<- SortFile, doneChan <-chan []DoneFile) {
+// Start starts the daemon that listens for files on inChan and doneChan and puts files on outChan
+// according to the output "method".
+func (sorter *Sorter) Start(inChan <-chan []ScanFile, outChan map[string]chan SortFile, doneChan <-chan []DoneFile) {
 	for {
 		select {
 		case foundFiles, ok := <-inChan:
@@ -207,8 +208,13 @@ func (sorter *Sorter) Start(inChan <-chan []ScanFile, outChan chan<- SortFile, d
 		default:
 			next := sorter.getNext()
 			if next != nil {
+				grp := sorter.groupMap[next.GetGroup()]
+				out, ok := outChan[grp.conf.Method]
+				if !ok {
+					break // This really shouldn't happen but need to put logic in to catch it anyway.
+				}
 				select { // We don't want to block if the send queue is full so we can keep accepting incoming files.
-				case outChan <- next:
+				case out <- next:
 					prev := ""
 					if next.GetPrev() != nil {
 						prev = next.GetPrev().GetRelPath()
@@ -220,7 +226,11 @@ func (sorter *Sorter) Start(inChan <-chan []ScanFile, outChan chan<- SortFile, d
 					continue
 				}
 			} else if inChan == nil && outChan != nil {
-				close(outChan) // Only close once there are no more in the queue.
+				for _, ch := range outChan {
+					if ch != nil {
+						close(ch) // Only close once there are no more in the queue.
+					}
+				}
 				outChan = nil
 			}
 			time.Sleep(100 * time.Millisecond) // To avoid thrashing.
@@ -262,6 +272,15 @@ func (sorter *Sorter) getNext() SortFile {
 			if sorter.next[g.group] != nil {
 				// Make this file next one out the door.
 				next = sorter.next[g.group]
+				// But first we need to make sure we shouldn't skip this one...
+				if g.conf.LastDelay > 0 && next.GetNext() == nil {
+					if time.Now().Sub(time.Unix(next.GetTime(), 0)) < g.conf.LastDelay {
+						// This is the last file in the group and it's not old
+						// enough to send yet.
+						g = g.next
+						continue
+					}
+				}
 				// Push this tag to the last one of its priority to avoid starvation.
 				sorter.delayGroup(g)
 				break
@@ -302,11 +321,10 @@ func (sorter *Sorter) delayGroup(g *sortedGroup) {
 func (sorter *Sorter) getGroupConf(g string) *Tag {
 	conf := sorter.tagDef
 	for _, tag := range sorter.tagData {
-		if tag.Pattern == DefaultTag {
+		if tag.Pattern == nil { // DEFAULT
 			continue
 		}
-		matched, err := regexp.MatchString(tag.Pattern, g)
-		if matched && err == nil {
+		if tag.Pattern.MatchString(g) {
 			conf = tag
 			break
 		}
