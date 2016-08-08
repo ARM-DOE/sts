@@ -231,12 +231,12 @@ func (scanner *Scanner) Start(outChan chan<- []ScanFile, doneChan <-chan []DoneF
 		case <-stopChan:
 			stopChan = nil // So we don't get here again.
 		default:
-			if outChan != nil && scanner.out(outChan, force) > 0 {
+			if outChan != nil {
+				if scanner.out(outChan, force) == 0 {
+					time.Sleep(time.Millisecond * 100) // So we don't thrash.
+				}
 				force = false
-				break
 			}
-			time.Sleep(time.Millisecond * 100) // So we don't thrash.
-			break
 		}
 		// Important that we let at least one scan happen becuase if stopChan is passed
 		// in nil, then we just want a single scan.
