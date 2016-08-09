@@ -139,7 +139,7 @@ func (a *app) run() {
 		// 	}()
 		// }
 		sc := make(chan os.Signal, 1)
-		signal.Notify(sc, os.Interrupt)
+		signal.Notify(sc, os.Interrupt, os.Kill)
 
 		logging.Debug("Waiting for signal...")
 

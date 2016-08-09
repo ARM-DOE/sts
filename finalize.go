@@ -127,9 +127,11 @@ func (f *Finalizer) finalize(file ScanFile) (bool, error) {
 	// Move it.
 	finalPath := filepath.Join(f.Conf.FinalDir, cmp.SourceName, file.GetRelPath())
 	os.MkdirAll(filepath.Dir(finalPath), os.ModePerm)
-	err = os.Rename(file.GetPath(false), finalPath)
-	if err != nil {
-		return false, fmt.Errorf("Failed to move %s to %s: %s", file.GetPath(false), finalPath, err.Error())
+	if err = os.Rename(file.GetPath(false), finalPath+fileutils.LockExt); err != nil {
+		return false, fmt.Errorf("Failed to move %s to %s: %s", file.GetPath(false), finalPath+fileutils.LockExt, err.Error())
+	}
+	if err = os.Rename(finalPath+fileutils.LockExt, finalPath); err != nil {
+		return false, fmt.Errorf("Failed to unlock %s: %s", finalPath, err.Error())
 	}
 
 	// Log it.

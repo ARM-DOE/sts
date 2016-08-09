@@ -47,7 +47,9 @@ OUT:
       compress      : 4     # Use GZIP compression of level 0-9 (0 = no compression, 9 = best but slowest)
       min-age       : 15s   # How old a file must be before being added to the "outgoing" queue
       max-age       : 12h   # How old a file can be before getting logged as "stale" (remains in the queue)
+      scan-delay    : 30s   # How long to wait between scans of the outgoing directory
       timeout       : 1h    # The HTTP timeout for a single request
+      stat-interval : 5m    # How often to log throughput statistics
       poll-delay    : 5s    # How long to wait after file sent before final validation
       poll-interval : 1m    # How long to wait between polling requests
       poll-attempts : 10    # How many times to "poll" for the successful reception of a file before re-sending

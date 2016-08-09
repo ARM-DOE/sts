@@ -232,13 +232,12 @@ func (scanner *Scanner) Start(outChan chan<- []ScanFile, doneChan <-chan []DoneF
 			stopChan = nil // So we don't get here again.
 		default:
 			if outChan != nil {
-				if scanner.out(outChan, force) == 0 {
-					time.Sleep(time.Millisecond * 100) // So we don't thrash.
-				}
+				scanner.out(outChan, force)
 				force = false
 			}
+			time.Sleep(time.Millisecond * 100) // So we don't thrash.
 		}
-		// Important that we let at least one scan happen becuase if stopChan is passed
+		// Important that we let at least one scan happen because if stopChan is passed
 		// in nil, then we just want a single scan.
 		if outChan != nil && stopChan == nil { // We only want to close a channel once.
 			close(outChan)

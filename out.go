@@ -62,6 +62,15 @@ func (a *AppOut) setDefaults() {
 	if a.conf.PollDelay == 0 {
 		a.conf.PollDelay = 5
 	}
+	if a.conf.StatInterval == 0 {
+		a.conf.StatInterval = time.Minute * 5
+	}
+	if a.rawConf.ScanDelay == 0 {
+		a.rawConf.ScanDelay = time.Second * 30
+	}
+	if a.rawConf.GroupBy.String() == "" {
+		a.rawConf.GroupBy, _ = regexp.Compile(`^([^\.]*)`) // Default is up to the first dot of the relative path.
+	}
 }
 
 func (a *AppOut) initConf() {
@@ -87,12 +96,6 @@ func (a *AppOut) initConf() {
 	}
 	if a.conf.TargetHost == "" {
 		panic("Target host missing from configuration")
-	}
-	if a.conf.StatInterval.Nanoseconds() == 0 {
-		a.conf.StatInterval = time.Minute * 5
-	}
-	if a.rawConf.GroupBy.String() == "" {
-		a.rawConf.GroupBy, _ = regexp.Compile(`^([^\.]*)`) // Default is up to the first dot of the relative path.
 	}
 	if a.rawConf.Target.TLSCertPath != "" {
 		var err error
@@ -127,7 +130,7 @@ func (a *AppOut) initComponents() (err error) {
 	scanConf := ScannerConf{
 		ScanDir:  outDir,
 		CacheDir: cacheDir,
-		Delay:    time.Second * 10,
+		Delay:    a.rawConf.ScanDelay,
 		MinAge:   a.rawConf.MinAge,
 		MaxAge:   a.rawConf.MaxAge,
 		OutOnce:  true,

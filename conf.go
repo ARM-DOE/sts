@@ -61,6 +61,7 @@ type OutSource struct {
 	Threads      int
 	MinAge       time.Duration
 	MaxAge       time.Duration
+	ScanDelay    time.Duration
 	Timeout      time.Duration
 	BinSize      units.Base2Bytes
 	Compression  int
@@ -84,6 +85,7 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 		Threads      int           `yaml:"threads"`
 		MinAge       time.Duration `yaml:"min-age"`
 		MaxAge       time.Duration `yaml:"max-age"`
+		ScanDelay    time.Duration `yaml:"scan-delay"`
 		Timeout      time.Duration `yaml:"timeout"`
 		BinSize      string        `yaml:"bin-size"`
 		Compression  int           `yaml:"compress"`
@@ -105,6 +107,7 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 	ss.Threads = aux.Threads
 	ss.MinAge = aux.MinAge
 	ss.MaxAge = aux.MaxAge
+	ss.ScanDelay = aux.ScanDelay
 	ss.Timeout = aux.Timeout
 	if aux.BinSize != "" {
 		if ss.BinSize, err = units.ParseBase2Bytes(aux.BinSize); err != nil {
