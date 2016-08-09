@@ -261,7 +261,9 @@ func (scanner *Scanner) Start(outChan chan<- []ScanFile, doneChan <-chan []DoneF
 
 func (scanner *Scanner) out(ch chan<- []ScanFile, force bool) int {
 	// Make sure it's been long enough for another scan.
-	if !force && time.Now().Sub(time.Unix(scanner.queue.ScanTime, 0)) < scanner.conf.Delay {
+	// We need to offset the minimum age because the scan time did when set.
+	scanned := scanner.queue.ScanTime + int64(scanner.conf.MinAge.Seconds())
+	if !force && time.Now().Sub(time.Unix(scanned, 0)) < scanner.conf.Delay {
 		return 0
 	}
 
