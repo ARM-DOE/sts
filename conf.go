@@ -23,6 +23,9 @@ const (
 	// OrderFIFO indicates a first in, first out ordering for outgoing files.
 	OrderFIFO = "fifo"
 
+	// OrderLIFO indicates a last in, first out ordering for outgoing files.
+	OrderLIFO = "lifo"
+
 	// MethodHTTP indicates an HTTP outgoing method.
 	MethodHTTP = "http"
 
@@ -119,8 +122,10 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 	ss.PollInterval = aux.PollInterval
 	ss.PollAttempts = aux.PollAttempts
 	ss.Target = aux.Target
-	if ss.GroupBy, err = regexp.Compile(aux.GroupBy); err != nil {
-		return
+	if aux.GroupBy != "" {
+		if ss.GroupBy, err = regexp.Compile(aux.GroupBy); err != nil {
+			return
+		}
 	}
 	var patterns []*regexp.Regexp
 	for _, s := range append(aux.Include, aux.Ignore...) {
@@ -164,21 +169,23 @@ func (t *Tag) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 		if t.Pattern, err = regexp.Compile(aux.Pattern); err != nil {
 			return
 		}
-	}
-	if aux.Order == "" {
-		aux.Order = OrderFIFO
-	}
-	if aux.Method == "" {
-		aux.Method = MethodHTTP
 	} else {
-		switch aux.Method {
-		case MethodDisk:
-			break
-		case MethodHTTP:
-			break
-		default:
-			panic(fmt.Sprintf("Invalid \"tag\" method: %s", aux.Method))
+		if aux.Order == "" {
+			aux.Order = OrderFIFO
 		}
+		if aux.Method == "" {
+			aux.Method = MethodHTTP
+		}
+	}
+	switch aux.Method {
+	case MethodDisk:
+		break
+	case MethodHTTP:
+		break
+	case "":
+		break
+	default:
+		panic(fmt.Sprintf("Invalid \"tag\" method: %s", aux.Method))
 	}
 	t.Priority = aux.Priority
 	t.Method = aux.Method

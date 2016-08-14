@@ -109,7 +109,7 @@ func (file *sortedFile) GetPrev() SortFile {
 }
 
 func (file *sortedFile) GetPrevReq() SortFile {
-	if file.group.conf.Order == OrderFIFO {
+	if file.group.conf.Order != OrderNone {
 		return file.GetPrev()
 	}
 	return nil
@@ -261,7 +261,12 @@ func (sorter *Sorter) add(f ScanFile) {
 }
 
 func (sorter *Sorter) getGroup(relPath string) string {
-	return sorter.groupBy.FindString(relPath)
+	m := sorter.groupBy.FindStringSubmatch(relPath)
+	if len(m) > 1 {
+		logging.Debug("SORT Group:", m[1])
+		return m[1]
+	}
+	return ""
 }
 
 func (sorter *Sorter) getNext() SortFile {
@@ -362,23 +367,47 @@ func (sorter *Sorter) addFile(file SortFile) {
 		return
 	}
 	n := 0
+loop:
 	for f != nil {
-		if grp.conf.Order == OrderFIFO && file.GetTime() < f.GetTime() {
-			file.InsertBefore(f)
+		switch grp.conf.Order {
+		case OrderFIFO:
+			if file.GetTime() < f.GetTime() {
+				file.InsertBefore(f)
+				break loop
+			}
+			if file.GetTime() == f.GetTime() {
+				// It's important that the sorting be the same every time in order to recover
+				// gracefully when order matters for delivery.  In other words, if a file has
+				// a required previous file the first time through, it better have the same one
+				// (or none) if passed through again after a crash recovery.  This is why we're
+				// also doing an alpha sort in addition to mod time because mod times can match
+				// but names cannot.
+				if file.GetRelPath() < f.GetRelPath() {
+					file.InsertBefore(f)
+					break loop
+				}
+			}
 			break
-		}
-		// It's important that the sorting be the same every time in order to recover
-		// gracefully when order matters for delivery.  In other words, if a file has
-		// a required previous file the first time through, it better have the same one
-		// (or none) if passed through again after a crash recovery.  This is why we're
-		// also doing an alpha sort in addition to mod time because mod times can match
-		// but names cannot.
-		if grp.conf.Order != OrderNone && file.GetRelPath() < f.GetRelPath() {
-			file.InsertBefore(f)
+		case OrderLIFO:
+			if file.GetTime() > f.GetTime() {
+				logging.Debug("SORT LIFO:", file.GetTime(), "->", f.GetTime())
+				file.InsertBefore(f)
+				break loop
+			}
+			if file.GetTime() == f.GetTime() {
+				// Same reasoning as above.
+				if file.GetRelPath() < f.GetRelPath() {
+					file.InsertBefore(f)
+					break loop
+				}
+			}
 			break
+		default: // No ordering
+			break loop
 		}
 		n++
 		if f.GetNext() == nil {
+			logging.Debug("SORT:", grp.conf.Order, f.GetTime(), "->", file.GetTime())
 			file.InsertAfter(f)
 			break
 		}

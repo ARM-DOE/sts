@@ -68,7 +68,7 @@ func (a *AppOut) setDefaults() {
 	if a.rawConf.ScanDelay == 0 {
 		a.rawConf.ScanDelay = time.Second * 30
 	}
-	if a.rawConf.GroupBy.String() == "" {
+	if a.rawConf.GroupBy == nil || a.rawConf.GroupBy.String() == "" {
 		a.rawConf.GroupBy, _ = regexp.Compile(`^([^\.]*)`) // Default is up to the first dot of the relative path.
 	}
 }

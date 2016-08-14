@@ -193,13 +193,8 @@ func (c *ScannerConf) AddIgnore(pattern *regexp.Regexp) {
 }
 
 // AddIgnoreString calls AddIgnore after compiling the provided string to a regular expression.
-func (c *ScannerConf) AddIgnoreString(pattern string) (err error) {
-	var p *regexp.Regexp
-	if p, err = regexp.Compile(pattern); err != nil {
-		return
-	}
-	c.AddIgnore(p)
-	return
+func (c *ScannerConf) AddIgnoreString(pattern string) {
+	c.AddIgnore(regexp.MustCompile(pattern))
 }
 
 // NewScanner returns a Scanner instance.
@@ -215,10 +210,9 @@ func NewScanner(conf *ScannerConf) *Scanner {
 		scanner.queue.load(scanner.cachePath)
 	}
 
-	// No need to look for an error because these are hard-coded strings.
-	_ = conf.AddIgnoreString(`\.DS_Store$`)
-	_ = conf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutils.LockExt)))
-	_ = conf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(DisabledName)))
+	conf.AddIgnoreString(`\.DS_Store$`)
+	conf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutils.LockExt)))
+	conf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(DisabledName)))
 	return scanner
 }
 

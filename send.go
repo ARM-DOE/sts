@@ -357,6 +357,7 @@ func (sender *Sender) startWrap(wg *sync.WaitGroup) {
 			return
 		}
 		if sf.IsSent() {
+			logging.Debug("SEND File Already Done:", f.GetRelPath())
 			// If we get here then this is a "RecoverFile" that was fully sent
 			// before a crash and we need to make sure it got logged as "sent"
 			// and if not, we need to do it, even though we won't know how long

@@ -78,9 +78,9 @@ func (a *AppIn) Start(stop <-chan bool) <-chan bool {
 	// that hasn't been updated yet (finalize).
 
 	// OK to ignore returned error because these are valid constants and will compile.
-	_ = scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutils.LockExt)))
-	_ = scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(PartExt)))
-	_ = scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(CompExt)))
+	scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutils.LockExt)))
+	scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(PartExt)))
+	scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(CompExt)))
 
 	var wg sync.WaitGroup
 	wg.Add(3)
