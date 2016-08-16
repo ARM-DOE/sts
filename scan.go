@@ -351,14 +351,16 @@ func (scanner *Scanner) scan() (ScanFileList, bool) {
 	if err == nil {
 		return nil, false // Found .disabled, don't scan.
 	}
-	start := time.Now().Unix()
+	// start := time.Now().Unix()
 	filepath.Walk(scanner.queue.ScanDir, scanner.handleNode)
+	files := scanner.GetScanFiles()
 	// Cache the queue (if we need to make sure files are only sent once).
-	if scanner.conf.OutOnce {
-		scanner.queue.ScanTime = start - int64(scanner.conf.MinAge.Seconds()) - 1
+	if scanner.conf.OutOnce && len(files) > 0 {
+		// scanner.queue.ScanTime = start - int64(scanner.conf.MinAge.Seconds()) - 1
+		scanner.queue.ScanTime = files[len(files)-1].GetTime()
 		scanner.queue.cache(scanner.cachePath)
 	}
-	return scanner.GetScanFiles(), true
+	return files, true
 }
 
 func (scanner *Scanner) handleNode(path string, info os.FileInfo, err error) error {
