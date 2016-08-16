@@ -17,7 +17,8 @@ import (
 const DisabledName = ".disabled"
 
 type scanQueue struct {
-	ScanTime int64                 `json:"time"`
+	scanTime int64
+	LastTime int64                 `json:"time"`
 	ScanDir  string                `json:"dir"`
 	Files    map[string]*foundFile `json:"files"`
 }
@@ -219,15 +220,13 @@ func NewScanner(conf *ScannerConf) *Scanner {
 // Start starts the daemon that puts files on the outChan and reads from the doneChan.
 // If stopChan is nil, only scan once and trigger shutdown.
 func (scanner *Scanner) Start(outChan chan<- []ScanFile, doneChan <-chan []DoneFile, stopChan <-chan bool) {
-	force := true // Force the first scan.
 	for {
 		select {
 		case <-stopChan:
 			stopChan = nil // So we don't get here again.
 		default:
 			if outChan != nil {
-				scanner.out(outChan, force)
-				force = false
+				scanner.out(outChan, false)
 			}
 			time.Sleep(time.Millisecond * 100) // So we don't thrash.
 		}
@@ -255,8 +254,7 @@ func (scanner *Scanner) Start(outChan chan<- []ScanFile, doneChan <-chan []DoneF
 
 func (scanner *Scanner) out(ch chan<- []ScanFile, force bool) int {
 	// Make sure it's been long enough for another scan.
-	// We need to offset the minimum age because the scan time did when set.
-	scanned := scanner.queue.ScanTime + int64(scanner.conf.MinAge.Seconds())
+	scanned := scanner.queue.scanTime
 	if !force && time.Now().Sub(time.Unix(scanned, 0)) < scanner.conf.Delay {
 		return 0
 	}
@@ -297,11 +295,6 @@ func (scanner *Scanner) done(ch <-chan []DoneFile) int {
 		break
 	}
 	return 0
-}
-
-// GetScanTime returns the last scan time.
-func (scanner *Scanner) GetScanTime() time.Time {
-	return time.Unix(scanner.queue.ScanTime, 0)
 }
 
 // GetScanFiles returns the cached list of files in the queue.
@@ -351,13 +344,13 @@ func (scanner *Scanner) scan() (ScanFileList, bool) {
 	if err == nil {
 		return nil, false // Found .disabled, don't scan.
 	}
-	// start := time.Now().Unix()
+	logging.Debug("SCAN Scanning...")
+	scanner.queue.scanTime = time.Now().Unix()
 	filepath.Walk(scanner.queue.ScanDir, scanner.handleNode)
 	files := scanner.GetScanFiles()
 	// Cache the queue (if we need to make sure files are only sent once).
 	if scanner.conf.OutOnce && len(files) > 0 {
-		// scanner.queue.ScanTime = start - int64(scanner.conf.MinAge.Seconds()) - 1
-		scanner.queue.ScanTime = files[len(files)-1].GetTime()
+		scanner.queue.LastTime = files[len(files)-1].GetTime()
 		scanner.queue.cache(scanner.cachePath)
 	}
 	return files, true
@@ -382,7 +375,7 @@ func (scanner *Scanner) handleNode(path string, info os.FileInfo, err error) err
 	if fAge < scanner.conf.MinAge {
 		return nil
 	}
-	if !scanner.conf.OutOnce || fTime.After(time.Unix(scanner.queue.ScanTime, 0)) {
+	if !scanner.conf.OutOnce || fTime.Unix() > scanner.queue.LastTime {
 		_, err = scanner.queue.add(path)
 		if err != nil && scanner.conf.OutOnce {
 			logging.Error("Failed to add file to queue:", err.Error())
