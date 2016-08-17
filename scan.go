@@ -172,15 +172,16 @@ type Scanner struct {
 
 // ScannerConf is the struct for external configuration.
 type ScannerConf struct {
-	ScanDir  string
-	CacheDir string
-	Delay    time.Duration
-	MinAge   time.Duration
-	MaxAge   time.Duration
-	OutOnce  bool
-	Nested   int
-	Include  []*regexp.Regexp
-	Ignore   []*regexp.Regexp
+	ScanDir   string
+	CacheDir  string
+	Delay     time.Duration
+	MinAge    time.Duration
+	MaxAge    time.Duration
+	OutOnce   bool
+	Nested    int
+	Include   []*regexp.Regexp
+	Ignore    []*regexp.Regexp
+	ZeroError bool // Log error for zero-length files
 }
 
 // AddInclude adds a pattern to the list that is used for including files in the scan list.
@@ -376,6 +377,12 @@ func (scanner *Scanner) handleNode(path string, info os.FileInfo, err error) err
 		return nil
 	}
 	if !scanner.conf.OutOnce || fTime.Unix() > scanner.queue.LastTime {
+		if info.Size() == 0 {
+			if scanner.conf.ZeroError {
+				logging.Error(fmt.Sprintf("Zero-length file found: %s", path))
+			}
+			return nil
+		}
 		_, err = scanner.queue.add(path)
 		if err != nil && scanner.conf.OutOnce {
 			logging.Error("Failed to add file to queue:", err.Error())
