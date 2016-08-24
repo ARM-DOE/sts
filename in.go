@@ -69,7 +69,7 @@ func (a *AppIn) Start(stop <-chan bool) <-chan bool {
 	}
 
 	a.finalizer = NewFinalizer(a.conf)
-	a.scanner = NewScanner(&scanConf)
+	a.scanner, _ = NewScanner(&scanConf) // Ignore error because we don't have a cache to read.
 	a.server = NewReceiver(a.conf, a.finalizer)
 
 	// TODO: on startup, receiver should check for .cmp files with .part counterparts where the .cmp

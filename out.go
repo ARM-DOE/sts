@@ -140,7 +140,9 @@ func (a *AppOut) initComponents() (err error) {
 		ZeroError: true,
 	}
 
-	a.scanner = NewScanner(&scanConf)
+	if a.scanner, err = NewScanner(&scanConf); err != nil {
+		return
+	}
 	a.sorter = NewSorter(a.rawConf.Tags, a.rawConf.GroupBy)
 	if a.sender, err = NewSender(a.conf); err != nil {
 		return

@@ -17,6 +17,7 @@ import (
 const DisabledName = ".disabled"
 
 type scanQueue struct {
+	nested   int
 	scanTime int64
 	dirty    bool
 	LastTime int64                 `json:"time"`
@@ -24,8 +25,9 @@ type scanQueue struct {
 	Files    map[string]*foundFile `json:"files"`
 }
 
-func newScanQueue(scanDir string) *scanQueue {
+func newScanQueue(scanDir string, nested int) *scanQueue {
 	q := &scanQueue{}
+	q.nested = nested
 	q.ScanDir = scanDir
 	q.Files = make(map[string]*foundFile)
 	return q
@@ -36,6 +38,7 @@ func (q *scanQueue) add(path string) (f ScanFile, err error) {
 	if !has {
 		file = &foundFile{q: q}
 		file.path = path
+		file.relPath = q.toRelPath(path, q.nested)
 		q.Files[path] = file
 	}
 	if _, err = file.Reset(); err != nil {
@@ -46,21 +49,26 @@ func (q *scanQueue) add(path string) (f ScanFile, err error) {
 }
 
 func (q *scanQueue) remove(path string) {
-	delete(q.Files, path)
+	if _, ok := q.Files[path]; ok {
+		delete(q.Files, path)
+		q.dirty = true
+	}
 }
 
-func (q *scanQueue) load(path string) error {
+func (q *scanQueue) load(path string) (err error) {
 	if path == "" {
 		return nil
 	}
-	if err := fileutils.LoadJSON(path, q); err != nil {
+	if err = fileutils.LoadJSON(path, q); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	// Add back the needed reference to the queue.
-	for _, f := range q.Files {
+	err = nil
+	for p, f := range q.Files {
 		f.q = q
+		f.path = p
+		f.relPath = q.toRelPath(p, q.nested)
 	}
-	return nil
+	return
 }
 
 func (q *scanQueue) cache(path string) (err error) {
@@ -216,22 +224,24 @@ func (c *ScannerConf) AddIgnoreString(pattern string) {
 }
 
 // NewScanner returns a Scanner instance.
-func NewScanner(conf *ScannerConf) *Scanner {
+func NewScanner(conf *ScannerConf) (*Scanner, error) {
 	scanner := &Scanner{}
 	scanner.conf = conf
 	scanner.aged = make(map[string]int)
 
-	scanner.queue = newScanQueue(conf.ScanDir)
+	scanner.queue = newScanQueue(conf.ScanDir, conf.Nested)
 
 	if conf.CacheDir != "" {
 		scanner.cachePath = filepath.Join(conf.CacheDir, toCacheName(conf.ScanDir))
-		scanner.queue.load(scanner.cachePath)
+		if err := scanner.queue.load(scanner.cachePath); err != nil {
+			return scanner, err
+		}
 	}
 
 	conf.AddIgnoreString(`\.DS_Store$`)
 	conf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutils.LockExt)))
 	conf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(DisabledName)))
-	return scanner
+	return scanner, nil
 }
 
 // Start starts the daemon that puts files on the outChan and reads from the doneChan.
@@ -323,8 +333,8 @@ func (scanner *Scanner) done(ch <-chan []DoneFile) int {
 // GetScanFiles returns the cached list of files in the queue.
 func (scanner *Scanner) GetScanFiles() ScanFileList {
 	files := make(ScanFileList, 0)
-	for path, info := range scanner.queue.Files {
-		if scanner.conf.OutOnce && info.queued {
+	for path, f := range scanner.queue.Files {
+		if scanner.conf.OutOnce && f.queued {
 			continue
 		}
 		if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -338,14 +348,7 @@ func (scanner *Scanner) GetScanFiles() ScanFileList {
 			scanner.queue.remove(path)
 			continue
 		}
-		files = append(files, &foundFile{
-			path:    path,
-			relPath: scanner.queue.toRelPath(path, scanner.conf.Nested),
-			Size:    info.Size,
-			Time:    info.Time,
-			Link:    info.Link,
-			queued:  false,
-		})
+		files = append(files, f)
 	}
 	sort.Sort(files)
 	return files
