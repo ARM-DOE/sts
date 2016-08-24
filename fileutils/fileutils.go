@@ -43,14 +43,16 @@ func GuessCompressed(path string) bool {
 }
 
 // WriteJSON writes the input data in JSON format to the specified path.
-func WriteJSON(path string, data interface{}) error {
-	jsonBytes, err := json.Marshal(data)
-	if err != nil {
-		return err
+func WriteJSON(path string, data interface{}) (err error) {
+	var jsonBytes []byte
+	if jsonBytes, err = json.Marshal(data); err != nil {
+		return
 	}
-	ioutil.WriteFile(path+LockExt, jsonBytes, 0644)
-	os.Rename(path+LockExt, path)
-	return nil
+	if err = ioutil.WriteFile(path+LockExt, jsonBytes, 0644); err != nil {
+		return
+	}
+	err = os.Rename(path+LockExt, path)
+	return
 }
 
 // LoadJSON reads the file at specified path and decodes the JSON into the specified
