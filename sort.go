@@ -64,6 +64,7 @@ type sortedFile struct {
 	group *sortedGroup
 	next  SortFile
 	prev  SortFile
+	dirty bool
 }
 
 func newSortedFile(foundFile ScanFile) *sortedFile {
@@ -94,6 +95,18 @@ func (file *sortedFile) GetTime() int64 {
 
 func (file *sortedFile) Reset() (bool, error) {
 	return file.file.Reset()
+}
+
+func (file *sortedFile) Invalidate() {
+	file.dirty = true
+}
+
+func (file *sortedFile) Validate() (changed bool, err error) {
+	if file.dirty {
+		changed, err = file.Reset()
+		file.dirty = false
+	}
+	return
 }
 
 func (file *sortedFile) GetGroup() string {
@@ -213,6 +226,17 @@ func (sorter *Sorter) Start(inChan <-chan []ScanFile, outChan map[string]chan So
 				if !ok {
 					break // This really shouldn't happen but need to put logic in to catch it anyway.
 				}
+				// In case it was invalidated at some point, this will get the file stats current.
+				// A file can potentially sit in the sort queue for some time and so we want to make
+				// sure now that it's ready to be sent that its stats are accurate.
+				changed, err := next.Validate()
+				if err != nil {
+					logging.Error("Failed to validate post-sort:", next.GetRelPath(), err.Error())
+					break
+				}
+				if changed {
+					logging.Debug("SORT File Changed:", next.GetRelPath())
+				}
 				select { // We don't want to block if the send queue is full so we can keep accepting incoming files.
 				case out <- next:
 					prev := ""
@@ -279,9 +303,17 @@ func (sorter *Sorter) getNext() SortFile {
 				next = sorter.next[g.group]
 				// But first we need to make sure we shouldn't skip this one...
 				if g.conf.LastDelay > 0 && next.GetNext() == nil {
+					next.Reset() // This is to make sure we get the current mod time.
 					if time.Now().Sub(time.Unix(next.GetTime(), 0)) < g.conf.LastDelay {
 						// This is the last file in the group and it's not old
-						// enough to send yet.
+						// enough to send yet.  And we need to "invalidate" it
+						// in order to get proper file stats when it finally is
+						// ready to be sent.  If we don't do this then if the file
+						// had been growing, we could easily have an incorrect
+						// size value for the file and it would eventually fail
+						// and have to be resent.
+						next.Invalidate()
+						next = nil
 						g = g.next
 						continue
 					}

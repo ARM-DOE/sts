@@ -15,6 +15,8 @@ type ScanFile interface {
 // Implements ScanFile.
 type SortFile interface {
 	ScanFile
+	Invalidate()
+	Validate() (bool, error)
 	GetOrigFile() ScanFile
 	GetGroup() string
 	GetNext() SortFile

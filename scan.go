@@ -18,6 +18,7 @@ const DisabledName = ".disabled"
 
 type scanQueue struct {
 	scanTime int64
+	dirty    bool
 	LastTime int64                 `json:"time"`
 	ScanDir  string                `json:"dir"`
 	Files    map[string]*foundFile `json:"files"`
@@ -33,7 +34,7 @@ func newScanQueue(scanDir string) *scanQueue {
 func (q *scanQueue) add(path string) (f ScanFile, err error) {
 	file, has := q.Files[path]
 	if !has {
-		file = &foundFile{}
+		file = &foundFile{q: q}
 		file.path = path
 		q.Files[path] = file
 	}
@@ -52,14 +53,25 @@ func (q *scanQueue) load(path string) error {
 	if path == "" {
 		return nil
 	}
-	return fileutils.LoadJSON(path, q)
+	if err := fileutils.LoadJSON(path, q); err != nil {
+		return err
+	}
+	// Add back the needed reference to the queue.
+	for _, f := range q.Files {
+		f.q = q
+	}
+	return nil
 }
 
-func (q *scanQueue) cache(path string) error {
+func (q *scanQueue) cache(path string) (err error) {
 	if path == "" {
 		return nil
 	}
-	return fileutils.WriteJSON(path, q)
+	if err = fileutils.WriteJSON(path, q); err != nil {
+		return
+	}
+	q.dirty = false
+	return
 }
 
 func (q *scanQueue) reset() {
@@ -79,6 +91,7 @@ func (q *scanQueue) toRelPath(path string, nested int) string {
 }
 
 type foundFile struct {
+	q       *scanQueue
 	path    string
 	relPath string
 	Size    int64  `json:"size"`
@@ -145,6 +158,9 @@ func (f *foundFile) Reset() (changed bool, err error) {
 		changed = true
 		f.Size = size
 		f.Time = time
+	}
+	if changed {
+		f.q.dirty = true
 	}
 	return
 }
@@ -254,6 +270,12 @@ func (scanner *Scanner) Start(outChan chan<- []ScanFile, doneChan <-chan []DoneF
 }
 
 func (scanner *Scanner) out(ch chan<- []ScanFile, force bool) int {
+	// Cache the queue if it's dirty.
+	if scanner.conf.OutOnce && scanner.queue.dirty {
+		logging.Debug("SCAN Updating Stale Cache:", scanner.conf.ScanDir)
+		scanner.queue.cache(scanner.cachePath)
+	}
+
 	// Make sure it's been long enough for another scan.
 	scanned := scanner.queue.scanTime
 	if !force && time.Now().Sub(time.Unix(scanned, 0)) < scanner.conf.Delay {
