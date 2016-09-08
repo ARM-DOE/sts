@@ -247,7 +247,9 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 	// before being able to let the sender know.
 	go func() {
 		for _, pr := range parts {
-			rcv.completePart(pr, source)
+			if err := rcv.completePart(pr, source); err != nil {
+				logging.Error(err.Error())
+			}
 		}
 	}()
 }
@@ -341,7 +343,7 @@ func (rcv *Receiver) parsePart(pr *PartDecoder, source string) (err error) {
 	return
 }
 
-func (rcv *Receiver) completePart(pr *PartDecoder, source string) {
+func (rcv *Receiver) completePart(pr *PartDecoder, source string) error {
 	path := filepath.Join(rcv.Conf.StageDir, source, pr.Meta.Path)
 
 	// Make sure we're the only one updating the companion
@@ -352,28 +354,24 @@ func (rcv *Receiver) completePart(pr *PartDecoder, source string) {
 	// Update the companion file
 	cmp, err := NewCompanion(source, path, pr.Meta.PrevPath, pr.Meta.FileSize, pr.Meta.FileHash)
 	if err != nil {
-		return
+		return err
 	}
 	cmp.AddPart(pr.Meta.Hash, pr.Meta.Beg, pr.Meta.End)
-	err = cmp.Write()
-	if err != nil {
-		err = fmt.Errorf("Failed to write updated companion: %s", err.Error())
-		return
+	if err = cmp.Write(); err != nil {
+		return fmt.Errorf("Failed to write updated companion: %s", err.Error())
 	}
 	if cmp.IsComplete() {
 		defer rcv.delLock(path)
 
 		// Touch the file with current time to make sure it can't get picked up immediately.
-		err = os.Chtimes(path+PartExt, time.Now(), time.Now())
-		if err != nil {
-			logging.Error(err.Error())
+		if err = os.Chtimes(path+PartExt, time.Now(), time.Now()); err != nil {
+			return err
 		}
 		// Finish file by removing the "partial" extension so the scanner will pick it up.
-		err = os.Rename(path+PartExt, path)
-		if err != nil {
-			logging.Error(err.Error())
-			return
+		if err = os.Rename(path+PartExt, path); err != nil {
+			return fmt.Errorf("Failed to drop \"partial\" extension: %s", err.Error())
 		}
 		logging.Debug("RECEIVE File Done:", path)
 	}
+	return nil
 }
