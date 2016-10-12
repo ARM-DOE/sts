@@ -19,6 +19,13 @@ const modeSend = "out"
 const modeRecv = "in"
 const modeAuto = "auto"
 
+var (
+	// Version is set based on -X option passed at build.
+	Version = ""
+	// BuildTime is set based on -X option passed at build.
+	BuildTime = ""
+)
+
 func main() {
 	app := newApp()
 	app.run()
@@ -78,6 +85,7 @@ func newApp() *app {
 
 	// Initialize command line arguments
 	help := flag.Bool("help", false, "Print the help message")
+	vers := flag.Bool("version", false, "Print version information")
 	debug := flag.Bool("debug", false, "Log program flow")
 	mode := flag.String("mode", modeAuto, fmt.Sprintf("Mode: \"%s\", \"%s\", \"%s\"", modeSend, modeRecv, modeAuto))
 	loop := flag.Bool("loop", false, "Run in a loop, i.e. don't exit until interrupted")
@@ -90,6 +98,11 @@ func newApp() *app {
 	if *help {
 		flag.PrintDefaults()
 		os.Exit(1)
+	}
+
+	if *vers {
+		fmt.Printf("%s @ %s\n", Version, BuildTime)
+		os.Exit(0)
 	}
 
 	a := &app{
