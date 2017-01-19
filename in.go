@@ -55,37 +55,37 @@ func (a *AppIn) initConf() {
 func (a *AppIn) Start(stop <-chan bool) <-chan bool {
 	a.initConf()
 
-	// TODO: Use the scanner to just scan once at startup and then put those files on the "finalize" channel.
-	// Setup the HTTP server to send on what is now the "scan" channel instead of relying on the scanner
-	// and file extensions.
-
-	a.scanChan = make(chan []ScanFile)
+	a.scanChan = make(chan []ScanFile, 10)
 
 	scanConf := ScannerConf{
 		ScanDir: a.conf.StageDir,
 		MaxAge:  time.Hour * 1,
-		Delay:   time.Second * 10,
 		Nested:  1,
 	}
 
-	a.finalizer = NewFinalizer(a.conf)
-	a.scanner, _ = NewScanner(&scanConf) // Ignore error because we don't have a cache to read.
-	a.server = NewReceiver(a.conf, a.finalizer)
-
-	// TODO: on startup, receiver should check for .cmp files with .part counterparts where the .cmp
-	// indicates a completed file.  This is possible because the companion is written before the counterpart
-	// is renamed.  I could flip that but then there could be a race condition on reading a companion file
-	// that hasn't been updated yet (finalize).
+	// TODO: use the scanner to look for orphaned companions...
 
 	// OK to ignore returned error because these are valid constants and will compile.
 	scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutils.LockExt)))
 	scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(PartExt)))
 	scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(CompExt)))
 
-	var wg sync.WaitGroup
-	wg.Add(3)
+	// Scan once for files not finalized before previous shutdown.
+	a.scanner, _ = NewScanner(&scanConf) // Ignore error because we don't have a cache to read.
+	files, _ := a.scanner.Scan()
+	if len(files) > 0 {
+		for _, f := range files {
+			logging.Debug("IN Found Stage File:", f.GetRelPath())
+		}
+		a.scanChan <- files
+	}
 
-	scanStop := make(chan bool)
+	a.finalizer = NewFinalizer(a.conf)
+	a.server = NewReceiver(a.conf, a.finalizer)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
 	httpStop := make(chan bool)
 
 	go func(a *AppIn, wg *sync.WaitGroup) {
@@ -95,25 +95,20 @@ func (a *AppIn) Start(stop <-chan bool) <-chan bool {
 	}(a, &wg)
 	go func(a *AppIn, wg *sync.WaitGroup, stop <-chan bool) {
 		defer wg.Done()
-		a.scanner.Start(a.scanChan, nil, stop)
-		logging.Debug("IN Scanner Done")
-	}(a, &wg, scanStop)
-	go func(a *AppIn, wg *sync.WaitGroup, stop <-chan bool) {
-		defer wg.Done()
-		a.server.Serve(stop)
+		a.server.Serve(a.scanChan, stop)
+		close(a.scanChan)
 		logging.Debug("IN Server Done")
 	}(a, &wg, httpStop)
 
 	logging.Debug(fmt.Sprintf("RECEIVER Ready: Port %d", a.conf.Port))
 
 	done := make(chan bool)
-	go func(stop <-chan bool, scanStop chan<- bool, done chan<- bool) {
+	go func(stop <-chan bool, done chan<- bool) {
 		<-stop
 		logging.Debug("IN Got Shutdown Signal")
-		close(scanStop)
 		close(httpStop)
 		wg.Wait()
 		close(done)
-	}(stop, scanStop, done)
+	}(stop, done)
 	return done
 }

@@ -24,6 +24,50 @@ import (
 // received.
 const PartExt = ".part"
 
+type recvFile struct {
+	path    string
+	relPath string
+	size    int64
+	time    int64
+	comp    *Companion
+}
+
+func (f *recvFile) GetPath(follow bool) string {
+	// Symbolic links are irrelevant for received files
+	return f.path
+}
+func (f *recvFile) GetRelPath() string {
+	return f.relPath
+}
+func (f *recvFile) GetSize() int64 {
+	f.Reset()
+	return f.size
+}
+func (f *recvFile) GetTime() int64 {
+	f.Reset()
+	return f.time
+}
+func (f *recvFile) Reset() (changed bool, err error) {
+	var info os.FileInfo
+	if info, err = os.Stat(f.path); err != nil {
+		return
+	}
+	s := info.Size()
+	t := info.ModTime().Unix()
+	if s != f.size {
+		f.size = s
+		changed = true
+	}
+	if t != f.time {
+		f.time = t
+		changed = true
+	}
+	return
+}
+func (f *recvFile) GetCompanion() *Companion {
+	return f.comp
+}
+
 // ReceiverConf struct contains configuration parameters needed to run.
 type ReceiverConf struct {
 	StageDir    string
@@ -65,6 +109,7 @@ type Receiver struct {
 	lock      sync.Mutex
 	fileLocks map[string]*sync.Mutex
 	finalizer *Finalizer
+	outChan   chan<- []ScanFile
 }
 
 // NewReceiver creates new receiver instance according to the input configuration.
@@ -79,7 +124,9 @@ func NewReceiver(conf *ReceiverConf, f *Finalizer) *Receiver {
 }
 
 // Serve starts HTTP server.
-func (rcv *Receiver) Serve(stop <-chan bool) {
+func (rcv *Receiver) Serve(out chan<- []ScanFile, stop <-chan bool) {
+	rcv.outChan = out
+
 	http.Handle("/data", rcv.handleValidate(http.HandlerFunc(rcv.routeData)))
 	http.Handle("/validate", rcv.handleValidate(http.HandlerFunc(rcv.routeValidate)))
 	http.Handle("/partials", rcv.handleValidate(http.HandlerFunc(rcv.routePartials)))
@@ -181,14 +228,7 @@ func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
 			f.RelPath = filepath.Join(strings.Split(f.RelPath, sep)...)
 		}
 		logging.Debug("SEARCH", source, f.RelPath)
-		success, found := rcv.finalizer.IsFinal(source, f.RelPath, time.Unix(f.Started, 0))
-		code := ConfirmNone
-		if found && success {
-			code = ConfirmPassed
-		} else if found && !success {
-			code = ConfirmFailed
-		}
-		respMap[f.RelPath] = code
+		respMap[f.RelPath] = rcv.finalizer.GetFileStatus(source, f.RelPath, time.Unix(f.Started, 0))
 	}
 	respJSON, _ := json.Marshal(respMap)
 	w.Header().Set(httputils.HeaderSep, string(os.PathSeparator))
@@ -231,7 +271,7 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			break
 		}
-		err := rcv.parsePart(next, source)
+		err := rcv.writePart(next, source)
 		if err != nil {
 			logging.Error(err.Error())
 			w.Header().Add(httputils.HeaderPartCount, strconv.Itoa(len(parts)))
@@ -240,18 +280,6 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 		}
 		parts = append(parts, next)
 	}
-	if len(parts) == 0 {
-		return
-	}
-	// Better to handle companion updates after sending response in case we crash
-	// before being able to let the sender know.
-	go func() {
-		for _, pr := range parts {
-			if err := rcv.completePart(pr, source); err != nil {
-				logging.Error(err.Error())
-			}
-		}
-	}()
 }
 
 func (rcv *Receiver) respond(w http.ResponseWriter, status int, data []byte) error {
@@ -317,7 +345,7 @@ func (rcv *Receiver) initStage(path string, size int64) {
 	fh.Truncate(size)
 }
 
-func (rcv *Receiver) parsePart(pr *PartDecoder, source string) (err error) {
+func (rcv *Receiver) writePart(pr *PartDecoder, source string) (err error) {
 	path := filepath.Join(rcv.Conf.StageDir, source, pr.Meta.Path)
 
 	rcv.initStage(path, pr.Meta.FileSize)
@@ -340,11 +368,6 @@ func (rcv *Receiver) parsePart(pr *PartDecoder, source string) (err error) {
 		return
 	}
 	logging.Debug("RECEIVE Part OK:", path, n)
-	return
-}
-
-func (rcv *Receiver) completePart(pr *PartDecoder, source string) error {
-	path := filepath.Join(rcv.Conf.StageDir, source, pr.Meta.Path)
 
 	// Make sure we're the only one updating the companion
 	lock := rcv.getLock(path)
@@ -363,15 +386,19 @@ func (rcv *Receiver) completePart(pr *PartDecoder, source string) error {
 	if cmp.IsComplete() {
 		defer rcv.delLock(path)
 
-		// Touch the file with current time to make sure it can't get picked up immediately.
-		if err = os.Chtimes(path+PartExt, time.Now(), time.Now()); err != nil {
-			return err
-		}
-		// Finish file by removing the "partial" extension so the scanner will pick it up.
+		// Finish file by removing the "partial" extension so the scanner will pick it up
+		// on startup in case something does wrong between now and when it's finalized.
 		if err = os.Rename(path+PartExt, path); err != nil {
 			return fmt.Errorf("Failed to drop \"partial\" extension: %s", err.Error())
 		}
 		logging.Debug("RECEIVE File Done:", path)
+
+		// Use a go routine in case the finalize channel is full.  We don't want to hold
+		// up the response.
+		go func() {
+			// Add to the finalize channel
+			rcv.outChan <- []ScanFile{&recvFile{path: path, relPath: pr.Meta.Path, comp: cmp}}
+		}()
 	}
 	return nil
 }

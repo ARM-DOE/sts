@@ -65,6 +65,12 @@ type RecoverFile interface {
 	IsSent() bool
 }
 
+// RecvFile is the interface for a received file
+type RecvFile interface {
+	ScanFile
+	GetCompanion() *Companion
+}
+
 // PollFile is the interface for a file as needed for polling.
 type PollFile interface {
 	GetOrigFile() interface{} // Needs to be generic to accommodate polling at different stages.

@@ -88,8 +88,8 @@ func NewPoller(conf *SenderConf) *Poller {
 func (poller *Poller) Start(ch *PollerChan) {
 	var t time.Time
 	var err error
+	var poll []PollFile
 	fail := []SendFile{}
-	poll := []PollFile{}
 	done := make([][]DoneFile, len(ch.Done))
 	loop := 0
 	pause := time.Millisecond * 100

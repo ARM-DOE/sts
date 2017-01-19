@@ -292,7 +292,7 @@ func (scanner *Scanner) out(ch chan<- []ScanFile, force bool) int {
 		return 0
 	}
 
-	files, success := scanner.scan()
+	files, success := scanner.Scan()
 	if !success || len(files) == 0 {
 		return 0
 	}
@@ -365,7 +365,7 @@ func (scanner *Scanner) SetQueued(path string) {
 }
 
 // Scan does a directory scan and returns a sorted list of found paths.
-func (scanner *Scanner) scan() (ScanFileList, bool) {
+func (scanner *Scanner) Scan() (ScanFileList, bool) {
 	_, err := os.Stat(filepath.Join(scanner.queue.ScanDir, DisabledName))
 	if err == nil {
 		return nil, false // Found .disabled, don't scan.
