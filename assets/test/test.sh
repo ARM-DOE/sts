@@ -32,7 +32,7 @@ sleep 1 # Wait for it do some stuff.
 
 echo "Simulating crash..."
 pkill $exe
-sleep 1 # Wait for it to die.
+sleep 3 # Wait for it to die.
 
 echo "-------------------------------------------------------------------------"
 echo "STAGE DIR:"

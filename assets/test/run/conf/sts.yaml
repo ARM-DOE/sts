@@ -22,14 +22,14 @@ OUT: # Outgoing configuration
       tags: # Tags are for configuration based on file patterns (omitted attributes are inherited)
         - pattern   : DEFAULT # The file "tag" pattern
           priority  : 0       # Relative importance (higher the number, greater the importance)
-          order     : fifo    # File order (fifo (first in, first out) or none)
+          order     : fifo    # File order (fifo (first in, first out), lifo, or none)
           delete    : true    # Whether or not to delete files after reception confirmation
           method    : http    # Transfer method (http)
         - pattern   : ^info/
           priority  : 3
         - pattern   : ^comlogs/
           priority  : 2
-        - pattern   : ^collection/C1/
+        - pattern   : ^collection/
           priority  : 1
     - name: stsout-2
       target:
