@@ -21,29 +21,64 @@ BIN='sts'
 BINDIR="/apps/transfer/bin"
 LOCKFILE="/var/lock/subsys/$BIN"
 CONFIG="/apps/transfer/conf/sts.yaml"
-FLAGS="-loop"
+FLAGS="-loop -debug"
 
 start() {
     echo -n "Starting STS: "
 
     if [ -e $LOCKFILE ]
       then
-        echo -n "STS already running! Exiting...\n"
+        OLDPID=$(cat $LOCKFILE)
+        echo -n -e "\e[31mSTS already running as \e[33mPID $OLDPID\e[31m! \e[39mExiting...\n"
         return 1
     fi
 
-    $BINDIR/$BIN $FLAGS -conf $CONFIG 2>&1 /dev/null
-    $RETVAL=$?
+    $BINDIR/$BIN $FLAGS -conf $CONFIG > /dev/null 2>&1 &
+    RETVAL=$?
+
+    # Non succesful start
+    if [ $RETVAL != 0 ]
+      then
+        echo -e "... \e[31mSTS failed to start. \e[39mReturn: $RETVAL"
+        return $RETVAL
+    fi
+
+    # Successful start
     touch $LOCKFILE
+    PID=$(pgrep -n -x sts)
+    echo $PID > $LOCKFILE
+    echo -e "... \e[32mdone\e[39m"
     return $RETVAL
 }
 
 stop() {
     echo -n "Shutting down STS: "
-    pkill $BIN
-    $RETVAL=$?
-    rm -f $LOCKFILE
-    return $RETVAL
+    if [ -e $LOCKFILE ]
+      then
+        rm -f $LOCKFILE
+        pkill $BIN > /dev/null 2>&1 &
+        RETVAL=$?
+
+        echo -e "... \e[32mdone\e[39m"
+        return $RETVAL
+    fi
+
+    echo "STS is not running!"
+    return 0
+}
+
+status() {
+    # Currently running
+    if [ -e $LOCKFILE ]
+      then
+        PID=$(cat $LOCKFILE)
+        echo -e "STS is currently running as \e[33mPID $PID\e[39m."
+        return 0
+    fi
+
+    # Not running
+    echo "STS is not currently running."
+
 }
 
 case "$1" in
@@ -53,8 +88,9 @@ case "$1" in
     stop)
         stop
         ;;
-#    status)
-#        ;;
+    status)
+        status
+        ;;
     restart)
         stop
         start
@@ -62,7 +98,7 @@ case "$1" in
 #    reload)
 #        ;;
     *)
-        echo "Usage: stsd {start|stop|restart}"
+        echo "Usage: stsd {start|stop|restart|status}"
         exit 1
         ;;
 esac
