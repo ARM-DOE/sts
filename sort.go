@@ -243,7 +243,7 @@ func (sorter *Sorter) Start(inChan <-chan []ScanFile, outChan map[string]chan So
 					if next.GetPrev() != nil {
 						prev = next.GetPrev().GetRelPath()
 					}
-					logging.Debug("SORT File Out:", next.GetRelPath(), prev)
+					logging.Debug("SORT File Out:", next.GetRelPath(), "<-", prev)
 					sorter.clearNext(next)
 					continue
 				default:

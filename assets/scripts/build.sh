@@ -18,9 +18,9 @@ echo "-- Preparing"
 mkdir -p $GOPATH/bin
 
 echo "-- Building Dependencies"
-go get $race gopkg.in/yaml.v2
-go get $race github.com/alecthomas/units
-go get $race github.com/davecgh/go-spew/spew
+go install gopkg.in/yaml.v2
+go install github.com/alecthomas/units
+go install github.com/davecgh/go-spew/spew
 go get $race github.com/ARM-DOE/sts/fileutils
 go get $race github.com/ARM-DOE/sts/httputils
 go get $race github.com/ARM-DOE/sts/logging

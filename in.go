@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
-	"time"
 
-	"github.com/ARM-DOE/sts/fileutils"
 	"github.com/ARM-DOE/sts/httputils"
 	"github.com/ARM-DOE/sts/logging"
 )
@@ -16,8 +17,7 @@ type AppIn struct {
 	root      string
 	rawConf   *InConf
 	conf      *ReceiverConf
-	scanChan  chan []ScanFile
-	scanner   *Scanner
+	finChan   chan []ScanFile
 	finalizer *Finalizer
 	server    *Receiver
 }
@@ -51,34 +51,84 @@ func (a *AppIn) initConf() {
 	}
 }
 
+func (a *AppIn) recover() {
+	scanConf := ScannerConf{
+		ScanDir: a.conf.StageDir,
+		Nested:  1,
+	}
+	// Look for any files left behind after previous run.
+	scanner, _ := NewScanner(&scanConf) // Ignore error because we don't have a cache to read.
+	files, _ := scanner.Scan()
+	if len(files) == 0 {
+		return
+	}
+	var out []ScanFile
+	var rescan bool
+	for _, f := range files {
+		ext := filepath.Ext(f.GetPath(false))
+		if ext == PartExt {
+			continue
+		}
+		if ext == CompExt {
+			logging.Debug("IN Reading Companion:", f.GetRelPath())
+			base := strings.TrimSuffix(f.GetPath(false), CompExt)
+			comp, err := ReadCompanion(base)
+			if err != nil {
+				logging.Error("Failed to read companion:", f.GetPath(false), err.Error())
+				continue
+			}
+			if _, err := os.Stat(base + PartExt); !os.IsNotExist(err) {
+				if comp.IsComplete() {
+					if err := os.Rename(base+PartExt, base); err != nil {
+						logging.Error("Failed to drop \"partial\" extension:", err.Error())
+						continue
+					}
+					rescan = true
+				}
+			} else if _, err := os.Stat(base); os.IsNotExist(err) {
+				logging.Debug("IN Removing Orphaned Companion:", f.GetPath(false))
+				if err = comp.Delete(); err != nil {
+					logging.Error("Failed to remove companion file:", f.GetPath(false), err.Error())
+					continue
+				}
+			}
+			continue
+		}
+		logging.Debug("IN Found Stage File:", f.GetRelPath())
+		out = append(out, f)
+	}
+	if rescan {
+		scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(CompExt)))
+		scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(PartExt)))
+		scanner.Reset()
+		files, _ = scanner.Scan()
+		for _, f := range files {
+			found := false
+			for _, fo := range out {
+				if fo.GetPath(false) == f.GetPath(false) {
+					found = true
+					break
+				}
+			}
+			if found {
+				continue
+			}
+			logging.Debug("IN Found Stage File:", f.GetRelPath())
+			out = append(out, f)
+		}
+	}
+	if len(out) > 0 {
+		a.finChan <- out
+	}
+}
+
 // Start initializes and starts the receiver.
 func (a *AppIn) Start(stop <-chan bool) <-chan bool {
 	a.initConf()
 
-	a.scanChan = make(chan []ScanFile, 10)
+	a.finChan = make(chan []ScanFile, 10)
 
-	scanConf := ScannerConf{
-		ScanDir: a.conf.StageDir,
-		MaxAge:  time.Hour * 1,
-		Nested:  1,
-	}
-
-	// TODO: use the scanner to look for orphaned companions...
-
-	// OK to ignore returned error because these are valid constants and will compile.
-	scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutils.LockExt)))
-	scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(PartExt)))
-	scanConf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(CompExt)))
-
-	// Scan once for files not finalized before previous shutdown.
-	a.scanner, _ = NewScanner(&scanConf) // Ignore error because we don't have a cache to read.
-	files, _ := a.scanner.Scan()
-	if len(files) > 0 {
-		for _, f := range files {
-			logging.Debug("IN Found Stage File:", f.GetRelPath())
-		}
-		a.scanChan <- files
-	}
+	a.recover()
 
 	a.finalizer = NewFinalizer(a.conf)
 	a.server = NewReceiver(a.conf, a.finalizer)
@@ -90,13 +140,13 @@ func (a *AppIn) Start(stop <-chan bool) <-chan bool {
 
 	go func(a *AppIn, wg *sync.WaitGroup) {
 		defer wg.Done()
-		a.finalizer.Start(a.scanChan)
+		a.finalizer.Start(a.finChan)
 		logging.Debug("IN Finalize Done")
 	}(a, &wg)
 	go func(a *AppIn, wg *sync.WaitGroup, stop <-chan bool) {
 		defer wg.Done()
-		a.server.Serve(a.scanChan, stop)
-		close(a.scanChan)
+		a.server.Serve(a.finChan, stop)
+		close(a.finChan)
 		logging.Debug("IN Server Done")
 	}(a, &wg, httpStop)
 

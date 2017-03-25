@@ -13,12 +13,11 @@ cmd3="$bin $debug --mode=in"
 
 echo "Cleaning last run..."
 rm -rf $STS_HOME/.sts
-rm -rf $STS_HOME/data
-rm -rf $STS_HOME/data2
+rm -rf $STS_HOME/data*
 
 echo "Staging test data..."
 mkdir -p $STS_HOME/data/out/stsin-1
-tar -C $STS_HOME/data/out/stsin-1 -xzf $PWD/$basedir/sts.tar.gz
+tar -C $STS_HOME/data/out/stsin-1 -xzf $PWD/$basedir/clean.tgz
 
 echo "Running sender in background..."
 $cmd2 > /dev/null &

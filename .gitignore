@@ -1,5 +1,5 @@
 .DS_Store
-assets/test/sts.tar.gz
+assets/test/*.tgz
 assets/test/run/data*
 assets/test/run/.sts
 *.crt

@@ -24,14 +24,17 @@ const LogSearch = time.Duration(30 * 24 * time.Hour)
 type Finalizer struct {
 	Conf      *ReceiverConf
 	last      time.Time
-	wait      map[string][]ScanFile
+	wait      map[string][]*finalFile
 	waitLock  sync.RWMutex
 	cache     map[string]*finalFile
 	cacheLock sync.RWMutex
+	finalLock sync.Mutex
 }
 
 type finalFile struct {
 	file    ScanFile
+	comp    *Companion
+	hash    string
 	time    time.Time
 	success bool
 }
@@ -40,20 +43,45 @@ type finalFile struct {
 func NewFinalizer(conf *ReceiverConf) *Finalizer {
 	f := &Finalizer{}
 	f.Conf = conf
-	f.wait = make(map[string][]ScanFile)
+	f.wait = make(map[string][]*finalFile)
 	f.cache = make(map[string]*finalFile)
 	return f
 }
 
 // Start starts the finalizer daemon that listens on the provided channel.
 func (f *Finalizer) Start(inChan chan []ScanFile) {
+	validated := make(chan *finalFile, cap(inChan))
 	for {
-		files, ok := <-inChan
-		if !ok {
-			break
+		select {
+		case files, ok := <-inChan:
+			if !ok {
+				return
+			}
+			for _, file := range files {
+				go f.validate(file, validated)
+			}
+		case ff, ok := <-validated:
+			if !ok {
+				return
+			}
+			done, err := f.finalize(ff)
+			if err != nil {
+				logging.Error(err.Error())
+				continue
+			}
+			if done {
+				// See if any files were waiting on this one.
+				n := f.fromWait(ff.file.GetPath(false))
+				if n != nil {
+					for _, ff = range n {
+						logging.Debug("FINAL Found Waiting:", ff.file.GetRelPath())
+						go func(ff *finalFile, out chan *finalFile) {
+							out <- ff
+						}(ff, validated)
+					}
+				}
+			}
 		}
-		// Let's keep things moving by running each batch asynchronously.
-		go f.finalizeBatch(files)
 	}
 }
 
@@ -77,127 +105,118 @@ func (f *Finalizer) GetFileStatus(source string, relPath string, sent time.Time)
 	return ConfirmFailed
 }
 
-func (f *Finalizer) finalizeBatch(files []ScanFile) {
-	var next []ScanFile
-	for {
-		if len(files) == 0 {
-			break
-		}
-		next = nil
-		for _, file := range files {
-			valid, err := f.finalize(file)
-			if err != nil {
-				logging.Error(err.Error())
-			}
-			if valid {
-				// See if any files were waiting on this one.
-				n := f.fromWait(file.GetPath(false))
-				if n != nil {
-					logging.Debug("FINAL Found Waiting: ", n[0].GetRelPath(), len(n))
-					next = append(next, n...)
-				}
-			}
-		}
-		files = next
-	}
-}
+func (f *Finalizer) validate(file ScanFile, out chan<- *finalFile) {
+	var err error
 
-func (f *Finalizer) finalize(file ScanFile) (valid bool, err error) {
 	// Make sure it exists.
-	info, err := os.Stat(file.GetPath(false))
-	if err != nil {
+	if _, err = os.Stat(file.GetPath(false)); err != nil {
 		return
 	}
 
-	// Read companion metadata.
-	var cmp *Companion
-	if _, ok := file.(RecvFile); ok {
-		cmp = file.(RecvFile).GetCompanion()
-	} else {
-		cmp, err = ReadCompanion(file.GetPath(false))
-		if err != nil {
-			os.Remove(file.GetPath(false))
-			return false, fmt.Errorf("Missing/invalid companion (%s): %s", err.Error(), file.GetRelPath())
-		}
-	}
+	logging.Debug("FINAL Validating:", file.GetRelPath())
 
-	// Make sure it doesn't need to wait in line.
-	if cmp.PrevFile != "" {
-		stagedPrevFile := filepath.Join(f.Conf.StageDir, cmp.SourceName, cmp.PrevFile)
-		success, found := f.fromCache(stagedPrevFile)
-		if !found {
-			_, err = os.Stat(stagedPrevFile + PartExt)
-			if !os.IsNotExist(err) {
-				logging.Debug("FINAL Previous File in Progress:", file.GetRelPath(), "<-", cmp.PrevFile)
-				f.toWait(stagedPrevFile, file)
-				return false, nil
-			}
-			_, err = os.Stat(stagedPrevFile)
-			if !os.IsNotExist(err) {
-				logging.Debug("FINAL Waiting for Previous File:", file.GetRelPath(), "<-", cmp.PrevFile)
-				f.toWait(stagedPrevFile, file)
-				return false, nil
-			}
-			found = logging.FindReceived(cmp.PrevFile, time.Now(), time.Now().Add(-LogSearch), cmp.SourceName)
-			if !found {
-				logging.Debug("FINAL Previous File Not Found in Log:", file.GetRelPath(), "<-", cmp.PrevFile)
-				f.toWait(stagedPrevFile, file)
-				return false, nil
-			}
-		} else if !success {
-			logging.Debug("FINAL Previous File Failed:", file.GetRelPath(), "<-", cmp.PrevFile)
-			f.toWait(stagedPrevFile, file)
-			return false, nil
+	ff := &finalFile{file: file}
+
+	// Read companion metadata.
+	if _, ok := file.(RecvFile); ok {
+		ff.comp = file.(RecvFile).GetCompanion()
+	} else {
+		if ff.comp, err = ReadCompanion(file.GetPath(false)); err != nil {
+			os.Remove(file.GetPath(false))
+			logging.Error(fmt.Sprintf("Missing/invalid companion (%s): %s", err.Error(), file.GetRelPath()))
+			return
 		}
 	}
 
 	// Validate checksum.
-	hash, err := fileutils.FileMD5(file.GetPath(false))
-	if err != nil {
-		return false, fmt.Errorf("Failed to calculate MD5 of %s: %s", file.GetRelPath(), err.Error())
-	}
-	if hash != cmp.Hash {
-		f.toCache(file, false)
-		cmp.Delete()
+	if ff.hash, err = fileutils.FileMD5(file.GetPath(false)); err != nil {
+		ff.comp.Delete()
 		os.Remove(file.GetPath(false))
-		return false, fmt.Errorf("Failed validation: %s", file.GetPath(false))
+		logging.Error(fmt.Sprintf("Failed to calculate MD5 of %s: %s", file.GetRelPath(), err.Error()))
+		return
+	}
+	if ff.hash != ff.comp.Hash {
+		f.toCache(ff)
+		ff.comp.Delete()
+		os.Remove(file.GetPath(false))
+		logging.Error(fmt.Sprintf("Failed validation: %s", file.GetPath(false)))
+		return
 	}
 
-	logging.Debug("FINAL Finalizing", cmp.SourceName, file.GetRelPath())
+	logging.Debug("FINAL Validated:", file.GetRelPath())
+
+	// Send to be finalized.
+	ff.success = true
+	out <- ff
+}
+
+func (f *Finalizer) finalize(ff *finalFile) (done bool, err error) {
+
+	// Make sure it doesn't need to wait in line.
+	if ff.comp.PrevFile != "" {
+		stagedPrevFile := filepath.Join(f.Conf.StageDir, ff.comp.SourceName, ff.comp.PrevFile)
+		success, found := f.fromCache(stagedPrevFile)
+		if !found {
+			if _, err = os.Stat(stagedPrevFile + PartExt); !os.IsNotExist(err) {
+				logging.Debug("FINAL Previous File in Progress:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
+				f.toWait(stagedPrevFile, ff)
+				return
+			}
+			if _, err = os.Stat(stagedPrevFile); !os.IsNotExist(err) {
+				logging.Debug("FINAL Waiting for Previous File:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
+				f.toWait(stagedPrevFile, ff)
+				return
+			}
+			if !logging.FindReceived(ff.comp.PrevFile, time.Now(), time.Now().Add(-LogSearch), ff.comp.SourceName) {
+				logging.Debug("FINAL Previous File Not Found in Log:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
+				f.toWait(stagedPrevFile, ff)
+				return
+			}
+		} else if !success {
+			logging.Debug("FINAL Previous File Failed:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
+			f.toWait(stagedPrevFile, ff)
+			return
+		}
+	}
+
+	logging.Debug("FINAL Finalizing", ff.comp.SourceName, ff.file.GetRelPath())
 
 	// Let's log it and update the cache before actually putting the file away in order
 	// to properly recover in case something happens between now and then.
-	logging.Received(file.GetRelPath(), hash, info.Size(), cmp.SourceName)
+	logging.Received(ff.file.GetRelPath(), ff.comp.Hash, ff.comp.Size, ff.comp.SourceName)
 
-	f.toCache(file, true)
+	f.toCache(ff)
 
 	// Move it.
-	finalPath := filepath.Join(f.Conf.FinalDir, cmp.SourceName, file.GetRelPath())
+	finalPath := filepath.Join(f.Conf.FinalDir, ff.comp.SourceName, ff.file.GetRelPath())
 	os.MkdirAll(filepath.Dir(finalPath), os.ModePerm)
-	if err = os.Rename(file.GetPath(false), finalPath+fileutils.LockExt); err != nil {
-		return false, fmt.Errorf("Failed to move %s to %s: %s", file.GetPath(false), finalPath+fileutils.LockExt, err.Error())
+	if err = os.Rename(ff.file.GetPath(false), finalPath+fileutils.LockExt); err != nil {
+		err = fmt.Errorf("Failed to move %s to %s: %s", ff.file.GetPath(false), finalPath+fileutils.LockExt, err.Error())
+		return
 	}
 	if err = os.Rename(finalPath+fileutils.LockExt, finalPath); err != nil {
-		return false, fmt.Errorf("Failed to unlock %s: %s", finalPath, err.Error())
+		err = fmt.Errorf("Failed to unlock %s: %s", finalPath, err.Error())
+		return
 	}
 
 	// Clean up the companion.
-	if err = cmp.Delete(); err != nil {
-		return true, fmt.Errorf("Failed to remove companion file for %s: %s", cmp.Path, err.Error())
+	if err = ff.comp.Delete(); err != nil {
+		err = fmt.Errorf("Failed to remove companion file for %s: %s", ff.comp.Path, err.Error())
+		return
 	}
 
-	logging.Debug("FINAL Finalized", cmp.SourceName, file.GetRelPath())
+	logging.Debug("FINAL Finalized", ff.comp.SourceName, ff.file.GetRelPath())
 
-	valid = true
+	done = true
 	return
 }
 
 func (f *Finalizer) isWaiting(path string) bool {
 	f.waitLock.RLock()
 	defer f.waitLock.RUnlock()
-	for _, ff := range f.wait {
-		for _, file := range ff {
-			if file.GetPath(false) == path {
+	for _, fList := range f.wait {
+		for _, ff := range fList {
+			if ff.file.GetPath(false) == path {
 				return true
 			}
 		}
@@ -205,30 +224,30 @@ func (f *Finalizer) isWaiting(path string) bool {
 	return false
 }
 
-func (f *Finalizer) fromWait(path string) []ScanFile {
+func (f *Finalizer) fromWait(path string) []*finalFile {
 	f.waitLock.Lock()
 	defer f.waitLock.Unlock()
-	files, ok := f.wait[path]
+	fList, ok := f.wait[path]
 	if ok {
 		delete(f.wait, path)
-		return files
+		return fList
 	}
 	return nil
 }
 
-func (f *Finalizer) toWait(path string, file ScanFile) {
+func (f *Finalizer) toWait(path string, ff *finalFile) {
 	f.waitLock.Lock()
 	defer f.waitLock.Unlock()
 	files, ok := f.wait[path]
 	if ok {
-		for _, ff := range files {
-			if ff.GetPath(false) == file.GetPath(false) {
+		for _, wf := range files {
+			if wf.file.GetPath(false) == ff.file.GetPath(false) {
 				return
 			}
 		}
-		files = append(files, file)
+		files = append(files, ff)
 	} else {
-		files = []ScanFile{file}
+		files = []*finalFile{ff}
 	}
 	f.wait[path] = files
 }
@@ -243,14 +262,14 @@ func (f *Finalizer) fromCache(path string) (bool, bool) {
 	return false, false
 }
 
-func (f *Finalizer) toCache(file ScanFile, success bool) {
+func (f *Finalizer) toCache(ff *finalFile) {
 	f.cacheLock.Lock()
 	defer f.cacheLock.Unlock()
 	now := time.Now()
-	ff := &finalFile{file: file, time: now, success: success}
-	f.cache[file.GetPath(false)] = ff
-	if success {
-		f.last = ff.time
+	ff.time = now
+	f.cache[ff.file.GetPath(false)] = ff
+	if ff.success {
+		f.last = now
 	}
 	if len(f.cache)%CacheCnt == 0 {
 		for key, cfile := range f.cache {

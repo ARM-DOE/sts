@@ -402,7 +402,7 @@ func (f *askFile) GetOrigFile() interface{} {
 	return f.file
 }
 
-// Implements RecoverFile
+// partialFile implements RecoverFile
 type partialFile struct {
 	file  ScanFile
 	prev  string
