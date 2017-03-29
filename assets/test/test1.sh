@@ -17,7 +17,15 @@ echo "Staging test data..."
 mkdir -p $STS_HOME/data/out/stsin-1
 mkdir -p $STS_HOME/data/out/stsin-2
 tar -C $STS_HOME/data/out/stsin-1 -xzf $PWD/$basedir/clean.tgz
-mv $STS_HOME/data/out/stsin-1/collection $STS_HOME/data/out/stsin-2
+
+# For testing a symbolically linked file:
+# mv $STS_HOME/data/out/stsin-1/info/nsastsC1.20130806.134501.asc $STS_HOME/data/out
+# mkdir -p $STS_HOME/data/out/stsin-2/info
+# ln -s $STS_HOME/data/out/nsastsC1.20130806.134501.asc $STS_HOME/data/out/stsin-2/info/nsastsC1.20130806.134501.asc
+
+# For testing a symbolically linked directory (requires out-follow: true in conf):
+# mv $STS_HOME/data/out/stsin-1/collection $STS_HOME/data/out/stsin-3
+# ln -s $STS_HOME/data/out/stsin-3 $STS_HOME/data/out/stsin-2
 
 # cp -rp $STS_HOME/test/.sts $STS_HOME/
 # cp -rp $STS_HOME/test/data $STS_HOME/

@@ -128,16 +128,17 @@ func (a *AppOut) initComponents() (err error) {
 	cacheDir := InitPath(a.root, a.dirConf.Cache, true)
 
 	scanConf := ScannerConf{
-		ScanDir:   outDir,
-		CacheDir:  cacheDir,
-		Delay:     a.rawConf.ScanDelay,
-		MinAge:    a.rawConf.MinAge,
-		MaxAge:    a.rawConf.MaxAge,
-		OutOnce:   true,
-		Nested:    0,
-		Include:   a.rawConf.Include,
-		Ignore:    a.rawConf.Ignore,
-		ZeroError: true,
+		ScanDir:        outDir,
+		CacheDir:       cacheDir,
+		Delay:          a.rawConf.ScanDelay,
+		MinAge:         a.rawConf.MinAge,
+		MaxAge:         a.rawConf.MaxAge,
+		OutOnce:        true,
+		Nested:         0,
+		Include:        a.rawConf.Include,
+		Ignore:         a.rawConf.Ignore,
+		FollowSymlinks: a.dirConf.OutFollow,
+		ZeroError:      true,
 	}
 
 	if a.scanner, err = NewScanner(&scanConf); err != nil {

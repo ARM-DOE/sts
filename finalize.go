@@ -28,7 +28,6 @@ type Finalizer struct {
 	waitLock  sync.RWMutex
 	cache     map[string]*finalFile
 	cacheLock sync.RWMutex
-	finalLock sync.Mutex
 }
 
 type finalFile struct {
@@ -73,11 +72,11 @@ func (f *Finalizer) Start(inChan chan []ScanFile) {
 				// See if any files were waiting on this one.
 				n := f.fromWait(ff.file.GetPath(false))
 				if n != nil {
-					for _, ff = range n {
-						logging.Debug("FINAL Found Waiting:", ff.file.GetRelPath())
-						go func(ff *finalFile, out chan *finalFile) {
-							out <- ff
-						}(ff, validated)
+					for _, wf := range n {
+						logging.Debug("FINAL Found Waiting:", wf.file.GetRelPath())
+						go func(wf *finalFile, out chan *finalFile) {
+							out <- wf
+						}(wf, validated)
 					}
 				}
 			}
@@ -137,8 +136,8 @@ func (f *Finalizer) validate(file ScanFile, out chan<- *finalFile) {
 	}
 	if ff.hash != ff.comp.Hash {
 		f.toCache(ff)
-		ff.comp.Delete()
-		os.Remove(file.GetPath(false))
+		// ff.comp.Delete()
+		// os.Remove(file.GetPath(false))
 		logging.Error(fmt.Sprintf("Failed validation: %s", file.GetPath(false)))
 		return
 	}
@@ -160,16 +159,19 @@ func (f *Finalizer) finalize(ff *finalFile) (done bool, err error) {
 			if _, err = os.Stat(stagedPrevFile + PartExt); !os.IsNotExist(err) {
 				logging.Debug("FINAL Previous File in Progress:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
 				f.toWait(stagedPrevFile, ff)
+				err = nil
 				return
 			}
 			if _, err = os.Stat(stagedPrevFile); !os.IsNotExist(err) {
 				logging.Debug("FINAL Waiting for Previous File:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
 				f.toWait(stagedPrevFile, ff)
+				err = nil
 				return
 			}
 			if !logging.FindReceived(ff.comp.PrevFile, time.Now(), time.Now().Add(-LogSearch), ff.comp.SourceName) {
 				logging.Debug("FINAL Previous File Not Found in Log:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
 				f.toWait(stagedPrevFile, ff)
+				err = nil
 				return
 			}
 		} else if !success {

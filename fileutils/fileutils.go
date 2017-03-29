@@ -113,3 +113,96 @@ func PartialMD5(path string, start int64, end int64) (hash string, err error) {
 func HashHex(h hash.Hash) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
+
+// Readdir is a simple wrapper around File.Readdir that accepts a path argument
+// as opposed to a file pointer.
+func Readdir(dirname string) ([]os.FileInfo, error) {
+	f, err := os.Open(dirname)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return f.Readdir(-1)
+}
+
+// walk mimics the internal filepath.walk() function except that it keeps track of
+// the path relative to the original root separate from the path normalized by
+// filepath.EvalSymlinks() and also tracks a history of the latter to avoid
+// unintentional infinite loops caused by recursive linking.
+func walk(path string, evalPath string, info os.FileInfo, walkFn filepath.WalkFunc, history map[string]os.FileInfo) error {
+	err := walkFn(path, info, nil)
+	if err != nil {
+		if info.IsDir() && err == filepath.SkipDir {
+			return nil
+		}
+		return err
+	}
+
+	if !info.IsDir() {
+		return nil
+	}
+
+	if history != nil {
+		if _, ok := history[evalPath]; ok {
+			return nil
+		}
+		history[evalPath] = info
+	}
+
+	nodes, err := Readdir(evalPath)
+	if err != nil {
+		return walkFn(path, info, err)
+	}
+
+	for _, node := range nodes {
+		nodePath := filepath.Join(path, node.Name())
+		nodeEvalPath := nodePath
+		if history != nil {
+			nodeEvalPath, err = filepath.EvalSymlinks(nodePath)
+			if err != nil {
+				continue // Just skip it.
+			}
+		}
+		nodeInfo, err := os.Lstat(nodeEvalPath)
+		if err != nil {
+			if err = walkFn(nodePath, nodeInfo, err); err != nil && err != filepath.SkipDir {
+				return err
+			}
+		} else {
+			err = walk(nodePath, nodeEvalPath, nodeInfo, walkFn, history)
+			if err != nil {
+				if !nodeInfo.IsDir() || err != filepath.SkipDir {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// Walk mimics https://golang.org/pkg/path/filepath/#Walk wih the exceptions that
+// 1) it allows for the option to follow symbolic links, and 2) the order of the
+// calls to walkFn are NOT deterministic (i.e. no lexical ordering).
+func Walk(root string, walkFn filepath.WalkFunc, followSymLinks bool) (err error) {
+	path := root
+	if followSymLinks {
+		path, err = filepath.EvalSymlinks(root)
+		if err != nil {
+			return
+		}
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		err = walkFn(root, info, err)
+	} else {
+		var history map[string]os.FileInfo
+		if followSymLinks {
+			history = make(map[string]os.FileInfo)
+		}
+		err = walk(root, path, info, walkFn, history)
+	}
+	if err == filepath.SkipDir {
+		return nil
+	}
+	return
+}

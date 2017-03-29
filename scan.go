@@ -33,7 +33,7 @@ func newScanCache(scanDir string, nested int) *scanCache {
 	return q
 }
 
-func (q *scanCache) add(path string) (f ScanFile, err error) {
+func (q *scanCache) add(path string, info os.FileInfo) (f ScanFile, err error) {
 	nesting, relPath := q.parsePath(path)
 	key := q.toKey(nesting, relPath)
 	file, has := q.Files[key]
@@ -44,12 +44,16 @@ func (q *scanCache) add(path string) (f ScanFile, err error) {
 		file.Nesting = nesting
 		q.Files[key] = file
 	}
-	if _, err = file.Reset(); err != nil {
+	changed, err := file.reset(info)
+	if err != nil {
 		q.remove(key)
+		return
 	}
-	file.queued = false
-	file.Done = false
-	q.dirty = true
+	if changed {
+		file.queued = false
+		file.Done = false
+		q.dirty = true
+	}
 	f = file
 	return
 }
@@ -178,13 +182,15 @@ func (f *foundFile) GetTime() int64 {
 	return f.Time
 }
 
-func (f *foundFile) Reset() (changed bool, err error) {
-	info, err := os.Stat(f.path)
-	if err != nil {
-		return
+func (f *foundFile) reset(info os.FileInfo) (changed bool, err error) {
+	if info == nil {
+		info, err = os.Lstat(f.path)
+		if err != nil {
+			return
+		}
 	}
 	var size, time int64
-	if info.Mode() == os.ModeSymlink {
+	if info.Mode()&os.ModeSymlink != 0 {
 		var p string
 		var i os.FileInfo
 		if p, err = os.Readlink(f.path); err != nil {
@@ -194,10 +200,11 @@ func (f *foundFile) Reset() (changed bool, err error) {
 			return
 		}
 		if i.IsDir() {
-			err = fmt.Errorf("Found sym link to directory")
+			err = fmt.Errorf("Found symbolic link to directory")
 			return
 		}
 		size = i.Size()
+		time = i.ModTime().Unix()
 		if f.Link != p {
 			changed = true
 			f.Link = p
@@ -215,6 +222,10 @@ func (f *foundFile) Reset() (changed bool, err error) {
 		f.q.dirty = true
 	}
 	return
+}
+
+func (f *foundFile) Reset() (bool, error) {
+	return f.reset(nil)
 }
 
 // ScanFileList is used for sorting ScanFiles.
@@ -240,16 +251,17 @@ type Scanner struct {
 
 // ScannerConf is the struct for external configuration.
 type ScannerConf struct {
-	ScanDir   string
-	CacheDir  string
-	Delay     time.Duration
-	MinAge    time.Duration
-	MaxAge    time.Duration
-	OutOnce   bool
-	Nested    int
-	Include   []*regexp.Regexp
-	Ignore    []*regexp.Regexp
-	ZeroError bool // Log error for zero-length files
+	ScanDir        string
+	CacheDir       string
+	Delay          time.Duration
+	MinAge         time.Duration
+	MaxAge         time.Duration
+	OutOnce        bool
+	Nested         int
+	Include        []*regexp.Regexp
+	Ignore         []*regexp.Regexp
+	FollowSymlinks bool
+	ZeroError      bool // Log error for zero-length files
 }
 
 // AddInclude adds a pattern to the list that is used for including files in the scan list.
@@ -404,7 +416,7 @@ func (scanner *Scanner) GetScanFiles() ScanFileList {
 				continue
 			}
 		}
-		if _, err := os.Stat(f.path); os.IsNotExist(err) {
+		if _, err := os.Lstat(f.path); os.IsNotExist(err) {
 			if scanner.conf.OutOnce {
 				// This can happen (legitimately) if a crash occurs after a file
 				// is cleaned following a successful transfer but before the scanner
@@ -438,13 +450,15 @@ func (scanner *Scanner) SetQueued(path string) {
 
 // Scan does a directory scan and returns a sorted list of found paths.
 func (scanner *Scanner) Scan() (ScanFileList, bool) {
-	_, err := os.Stat(filepath.Join(scanner.cache.ScanDir, DisabledName))
+	_, err := os.Lstat(filepath.Join(scanner.cache.ScanDir, DisabledName))
 	if err == nil {
 		return nil, false // Found .disabled, don't scan.
 	}
 	logging.Debug("SCAN Scanning...")
 	scanner.cache.scanTime = time.Now().Unix()
-	filepath.Walk(scanner.cache.ScanDir, scanner.handleNode)
+	if err := fileutils.Walk(scanner.cache.ScanDir, scanner.handleNode, scanner.conf.FollowSymlinks); err != nil {
+		logging.Error(err.Error())
+	}
 	scanner.cache.LastTime = scanner.cache.scanTime - int64(scanner.conf.MinAge.Seconds())
 	return scanner.GetScanFiles(), true
 }
@@ -483,7 +497,7 @@ func (scanner *Scanner) handleNode(path string, info os.FileInfo, err error) err
 		return nil
 	}
 	if !scanner.conf.OutOnce {
-		scanner.cache.add(path)
+		scanner.cache.add(path, info)
 		return nil
 	}
 	key := scanner.cache.toKey(nesting, relPath)
@@ -496,8 +510,8 @@ func (scanner *Scanner) handleNode(path string, info os.FileInfo, err error) err
 		return nil
 	}
 	logging.Debug("SCAN Found:", path)
-	if _, err = scanner.cache.add(path); err != nil {
-		logging.Error("Failed to add file to queue:", err.Error())
+	if _, err = scanner.cache.add(path, info); err != nil {
+		logging.Error("Failed to add file to queue:", path, "->", err.Error())
 		return nil
 	}
 	return nil

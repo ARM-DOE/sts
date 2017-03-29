@@ -49,12 +49,13 @@ type OutConf struct {
 
 // OutDirs is the struct for managing the outgoing directory configuration items.
 type OutDirs struct {
-	Out     string `yaml:"out"`
-	Logs    string `yaml:"logs"`
-	LogsOut string `yaml:"logs-out"`
-	LogsMsg string `yaml:"logs-flow"`
-	Disk    string `yaml:"disk"`
-	Cache   string `yaml:"cache"`
+	Out       string `yaml:"out"`
+	OutFollow bool   `yaml:"out-follow"`
+	Logs      string `yaml:"logs"`
+	LogsOut   string `yaml:"logs-out"`
+	LogsMsg   string `yaml:"logs-flow"`
+	Disk      string `yaml:"disk"`
+	Cache     string `yaml:"cache"`
 }
 
 // OutSource is the struct for managing the configuration of an outgoing source.

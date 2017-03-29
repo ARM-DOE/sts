@@ -1,8 +1,9 @@
 OUT: # Outgoing configuration
   dirs: # Outgoing directory configuration
-    cache     : .sts/out # Used to store internal caches
-    out       : data/out # Directory to watch for files to send; appends "/{target}" unless overridden
-    logs      : data/log
+    cache      : .sts/out # Used to store internal caches
+    logs       : data/log
+    out        : data/out # Directory to watch for files to send; appends "/{target}" unless overridden
+    out-follow : true
   sources: # Supports multiple sources where omitted entries will inherit from previous sources hierarchically
     - name          : stsout-1 # Name of the source
       threads       : 8        # Maximum number of concurrent connections
