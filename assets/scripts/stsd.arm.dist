@@ -16,12 +16,14 @@
 . /etc/init.d/functions
 
 # Variables needed for startup
+USER='dsmgr'
 RETVAL=0
 BIN='sts'
 BINDIR="/apps/transfer/bin"
 LOCKFILE="/var/lock/subsys/$BIN"
 CONFIG="/apps/transfer/conf/sts.yaml"
 FLAGS="-loop -debug"
+CMD="$BINDIR/$BIN $FLAGS -conf $CONFIG"
 
 start() {
     echo -n "Starting STS: "
@@ -33,7 +35,7 @@ start() {
         return 1
     fi
 
-    $BINDIR/$BIN $FLAGS -conf $CONFIG > /dev/null 2>&1 &
+    daemon --pidfile=$LOCKFILE --user=$USER $CMD > /var/log/stsd.log 2>&1 &
     RETVAL=$?
 
     # Non succesful start
@@ -78,7 +80,6 @@ status() {
 
     # Not running
     echo "STS is not currently running."
-
 }
 
 case "$1" in
