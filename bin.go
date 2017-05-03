@@ -139,6 +139,7 @@ func (bin *Bin) Validate() []SendFile {
 	}
 	bin.Parts = pass
 	bin.Bytes = b
+	bin.BytesLeft = 0
 	return fail
 }
 
@@ -156,7 +157,7 @@ func (bin *Bin) Split(n int) (b *Bin) {
 	b.BytesLeft = 0
 	b.Parts = bin.Parts[n:]
 	bin.Parts = bin.Parts[:n]
-	bin.Bytes -= nb
+	bin.Bytes = bin.Bytes - bin.BytesLeft - nb
 	bin.BytesLeft = 0
 	return b
 }

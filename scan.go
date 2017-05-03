@@ -390,13 +390,12 @@ func (scanner *Scanner) pruneCache() {
 	}
 	logging.Debug("SCAN Pruning Cache:", scanner.conf.ScanDir)
 	for key, file := range scanner.cache.Files {
-		// Keep files in the cache that haven't finished or that are older than the
-		// start time of the previous scan (to avoid potentially sending a file
-		// more than once).
-		if !file.Done || file.GetTime() < scanner.cache.LastTime {
-			continue
+		// Only remove files from the cache that have finished and that are older
+		// than the start time of the previous scan (to avoid potentially sending
+		// a file more than once).
+		if file.Done && file.GetTime() < scanner.cache.LastTime {
+			scanner.cache.remove(key)
 		}
-		scanner.cache.remove(key)
 	}
 }
 
