@@ -508,7 +508,7 @@ func (sender *Sender) startDone(wg *sync.WaitGroup) {
 		}
 		s := b.GetCompleted().Sub(b.GetStarted()).Seconds()
 		mb := float64(b.Bytes-b.BytesLeft) / float64(1024) / float64(1024)
-		logging.Info(fmt.Sprintf("SEND Bin Throughput: %.2fMB, %.2fs, %.2f MB/s", mb, s, mb/s))
+		logging.Info(fmt.Sprintf("SEND Bin Throughput: %3d part(s), %10.2f MB, %6.2f sec, %6.2f MB/sec", len(b.Parts), mb, s, mb/s))
 		sender.addStats(b.Bytes - b.BytesLeft)
 		sender.done(done)
 	}
