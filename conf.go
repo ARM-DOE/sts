@@ -119,6 +119,7 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 		}
 	}
 	ss.Compression = aux.Compression
+	ss.StatInterval = aux.StatInterval
 	ss.PollDelay = aux.PollDelay
 	ss.PollInterval = aux.PollInterval
 	ss.PollAttempts = aux.PollAttempts
