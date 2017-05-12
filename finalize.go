@@ -28,6 +28,7 @@ type Finalizer struct {
 	waitLock  sync.RWMutex
 	cache     map[string]*finalFile
 	cacheLock sync.RWMutex
+	validChan chan *finalFile
 }
 
 type finalFile struct {
@@ -49,7 +50,7 @@ func NewFinalizer(conf *ReceiverConf) *Finalizer {
 
 // Start starts the finalizer daemon that listens on the provided channel.
 func (f *Finalizer) Start(inChan chan []ScanFile) {
-	validated := make(chan *finalFile, cap(inChan))
+	f.validChan = make(chan *finalFile, cap(inChan))
 	for {
 		select {
 		case files, ok := <-inChan:
@@ -57,11 +58,18 @@ func (f *Finalizer) Start(inChan chan []ScanFile) {
 				return
 			}
 			for _, file := range files {
-				go f.validate(file, validated)
+				go f.validate(file, f.validChan)
 			}
-		case ff, ok := <-validated:
+		case ff, ok := <-f.validChan:
 			if !ok {
 				return
+			}
+			if _, found := f.fromCache(ff.file.GetPath(false)); found {
+				// It's possible to get duplicates on the validChan since the
+				// externally visible GetFileStatus() can put files here that
+				// are also in the wait cache.  We just need to let the first
+				// one win and the cache is a good way to do that.
+				continue
 			}
 			done, err := f.finalize(ff)
 			if err != nil {
@@ -76,7 +84,7 @@ func (f *Finalizer) Start(inChan chan []ScanFile) {
 						logging.Debug("FINAL Found Waiting:", wf.file.GetRelPath())
 						go func(wf *finalFile, out chan *finalFile) {
 							out <- wf
-						}(wf, validated)
+						}(wf, f.validChan)
 					}
 				}
 			}
@@ -93,8 +101,14 @@ func (f *Finalizer) GetFileStatus(source string, relPath string, sent time.Time)
 		return ConfirmPassed
 	}
 	if !found {
-		if f.isWaiting(path) {
-			return ConfirmNone
+		wf := f.getWaiting(path)
+		if wf != nil {
+			if f.validChan != nil {
+				go func(wf *finalFile, out chan *finalFile) {
+					out <- wf
+				}(wf, f.validChan)
+			}
+			return ConfirmWaiting
 		}
 		if logging.FindReceived(relPath, sent, time.Now(), source) {
 			return ConfirmPassed
@@ -156,6 +170,11 @@ func (f *Finalizer) finalize(ff *finalFile) (done bool, err error) {
 		stagedPrevFile := filepath.Join(f.Conf.StageDir, ff.comp.SourceName, ff.comp.PrevFile)
 		success, found := f.fromCache(stagedPrevFile)
 		if !found {
+			if f.isWaiting(stagedPrevFile) {
+				logging.Debug("FINAL Previous File Waiting:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
+				f.toWait(stagedPrevFile, ff)
+				return
+			}
 			if _, err = os.Stat(stagedPrevFile + PartExt); !os.IsNotExist(err) {
 				logging.Debug("FINAL Previous File in Progress:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
 				f.toWait(stagedPrevFile, ff)
@@ -170,9 +189,15 @@ func (f *Finalizer) finalize(ff *finalFile) (done bool, err error) {
 			}
 			if !logging.FindReceived(ff.comp.PrevFile, time.Now(), time.Now().Add(-LogSearch), ff.comp.SourceName) {
 				logging.Debug("FINAL Previous File Not Found in Log:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
-				f.toWait(stagedPrevFile, ff)
-				err = nil
-				return
+				if !f.isWaiting(ff.file.GetPath(false)) {
+					f.toWait(stagedPrevFile, ff)
+					err = nil
+					return
+				}
+				// If this file was already waiting and we still can't find any
+				// trace of its predecessor (which is the case if we get here)
+				// then release it anyway at the risk of getting data out of order.
+				// We can only do so much.
 			}
 		} else if !success {
 			logging.Debug("FINAL Previous File Failed:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
@@ -214,16 +239,20 @@ func (f *Finalizer) finalize(ff *finalFile) (done bool, err error) {
 }
 
 func (f *Finalizer) isWaiting(path string) bool {
+	return f.getWaiting(path) != nil
+}
+
+func (f *Finalizer) getWaiting(path string) *finalFile {
 	f.waitLock.RLock()
 	defer f.waitLock.RUnlock()
 	for _, fList := range f.wait {
 		for _, ff := range fList {
 			if ff.file.GetPath(false) == path {
-				return true
+				return ff
 			}
 		}
 	}
-	return false
+	return nil
 }
 
 func (f *Finalizer) fromWait(path string) []*finalFile {
