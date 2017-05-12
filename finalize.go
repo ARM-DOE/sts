@@ -198,6 +198,7 @@ func (f *Finalizer) finalize(ff *finalFile) (done bool, err error) {
 				// trace of its predecessor (which is the case if we get here)
 				// then release it anyway at the risk of getting data out of order.
 				// We can only do so much.
+				logging.Info("Done Waiting:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
 			}
 		} else if !success {
 			logging.Debug("FINAL Previous File Failed:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
