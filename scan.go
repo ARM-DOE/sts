@@ -457,14 +457,15 @@ func (scanner *Scanner) Scan() (ScanFileList, bool) {
 	scanner.cache.scanTime = time.Now().Unix()
 	if err := fileutils.Walk(scanner.cache.ScanDir, scanner.handleNode, scanner.conf.FollowSymlinks); err != nil {
 		logging.Error(err.Error())
+	} else {
+		scanner.cache.LastTime = scanner.cache.scanTime - int64(scanner.conf.MinAge.Seconds())
 	}
-	scanner.cache.LastTime = scanner.cache.scanTime - int64(scanner.conf.MinAge.Seconds())
 	return scanner.GetScanFiles(), true
 }
 
 func (scanner *Scanner) handleNode(path string, info os.FileInfo, err error) error {
 	if info == nil || err != nil {
-		return nil
+		return err
 	}
 	nesting, relPath := scanner.cache.parsePath(path)
 	if info.IsDir() {
