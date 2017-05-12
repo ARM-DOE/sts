@@ -373,8 +373,15 @@ func (scanner *Scanner) done(ch <-chan []DoneFile) int {
 			return -1
 		}
 		for _, doneFile := range doneFiles {
-			logging.Debug("SCAN File Done:", doneFile.GetRelPath())
-			scanner.cache.done(doneFile.GetPath())
+			if doneFile.GetSuccess() {
+				logging.Debug("SCAN File Done:", doneFile.GetRelPath())
+				scanner.cache.done(doneFile.GetPath())
+				continue
+			}
+			if f, ok := scanner.cache.get(doneFile.GetPath()); ok {
+				logging.Debug("SCAN File Failed:", doneFile.GetPath())
+				f.queued = false
+			}
 		}
 		scanner.writeCache()
 		return len(doneFiles)

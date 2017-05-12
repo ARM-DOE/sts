@@ -63,6 +63,7 @@ type RecoverFile interface {
 	AddAlloc(int64)
 	AddSent(int64)
 	IsSent() bool
+	Stat() (bool, error)
 }
 
 // RecvFile is the interface for a received file

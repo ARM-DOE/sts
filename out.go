@@ -264,7 +264,7 @@ func (a *AppOut) Recover() error {
 	}
 	// Poll files need to be polled just once before moving on.
 	if len(poll) > 0 {
-		none, fail, done, err := a.poller.Poll(poll)
+		none, fail, done, wait, err := a.poller.Poll(poll)
 		if err != nil {
 			return err
 		}
@@ -272,6 +272,7 @@ func (a *AppOut) Recover() error {
 		// so that the file order stays intact.  Otherwise we might get a circular
 		// dependency since the recover group might include files that were meant to
 		// be put away after some of these that haven't been partially sent yet.
+		none = append(none, wait...)
 		for _, f := range append(none, fail...) {
 			send = append(send, f.GetOrigFile().(ScanFile))
 		}
@@ -490,9 +491,15 @@ func (p *partialFile) IsSent() bool {
 }
 
 func (p *partialFile) Reset() (changed bool, err error) {
+	p.alloc = nil
+	p.sent = 0
 	changed, err = p.file.Reset()
 	if changed {
 		p.hash, err = fileutils.FileMD5(p.file.GetPath(true))
 	}
 	return
+}
+
+func (p *partialFile) Stat() (changed bool, err error) {
+	return p.file.Reset()
 }

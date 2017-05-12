@@ -23,6 +23,10 @@ const ConfirmFailed = 1
 // ConfirmPassed is the indicator that file confirmation succeeded.
 const ConfirmPassed = 2
 
+// ConfirmWaiting is the indicator that file confirmation succeeded but its
+// predecessor has not been confirmed.
+const ConfirmWaiting = 3
+
 // Poller continually asks the receiver to confirm that files allocated as -1 were
 // successfully assembled. Broker constantly feeds Poller new files while allocating
 // bins.
@@ -91,7 +95,6 @@ func (poller *Poller) Start(ch *PollerChan) {
 	var poll []PollFile
 	fail := []SendFile{}
 	done := make([][]DoneFile, len(ch.Done))
-	loop := 0
 	pause := time.Millisecond * 100
 	for {
 		select {
@@ -100,12 +103,14 @@ func (poller *Poller) Start(ch *PollerChan) {
 		case s, ok := <-ch.Stop:
 			if s || !ok {
 				logging.Debug("POLL Got Shutdown Signal")
+				close(ch.Fail)
 				ch.Stop = nil // Select will always drop to default (starting next iteration).
+				ch.Fail = nil
 			}
 		default:
 			// If we got the shutdown signal that means everything is in our court.
-			// So if we have nothing in the queue and nothing looped back for a resend, then we're done.
-			if ch.Stop == nil && len(poller.Files) == 0 && loop == 0 {
+			// So if we have nothing in the queue, then we're done.
+			if ch.Stop == nil && len(poller.Files) == 0 {
 				empty := true
 				for i, dc := range ch.Done {
 					if len(done[i]) > 0 {
@@ -115,7 +120,6 @@ func (poller *Poller) Start(ch *PollerChan) {
 					close(dc)
 				}
 				if empty {
-					close(ch.Fail)
 					return
 				}
 			}
@@ -123,14 +127,10 @@ func (poller *Poller) Start(ch *PollerChan) {
 		}
 		time.Sleep(pause) // To keep from thrashing
 		for {
-			if len(fail) > 0 { // Send out any failed.
+			if len(fail) > 0 && ch.Fail != nil { // Send out any failed.
 				logging.Debug("POLL Failed:", len(fail))
-				if ch.Stop == nil {
-					loop += len(fail) // Remember how many are in the loop so we know when to shutdown.
-				}
 				select {
 				case ch.Fail <- fail:
-					logging.Debug("POLL Looping Back:", len(fail))
 					fail = []SendFile{}
 				default:
 					break
@@ -149,9 +149,6 @@ func (poller *Poller) Start(ch *PollerChan) {
 			select {
 			case files, ok := <-ch.In: // Get incoming.
 				if !ok {
-					// Shouldn't ever get here since incoming channel should be open
-					// until loop channel closed, which only happens [above] just before
-					// returning.  But leaving it here for completeness' sake.
 					ch.In = nil
 					break
 				}
@@ -182,13 +179,15 @@ func (poller *Poller) Start(ch *PollerChan) {
 		f, poll = poller.buildList()
 		for _, ff := range f {
 			fail = append(fail, ff.GetOrigFile().(SendFile))
+			// Cancel files that have exceeded maximum poll attempts.
+			ff.GetOrigFile().(SendFile).SetCancel(true)
 		}
 		if len(poll) < 1 {
 			continue
 		}
 		nerr := 0
 		for {
-			_, f, d, err = poller.Poll(poll)
+			_, f, d, _, err = poller.Poll(poll)
 			if err == nil {
 				break
 			}
@@ -198,9 +197,6 @@ func (poller *Poller) Start(ch *PollerChan) {
 		}
 		for _, pf := range poll {
 			poller.Files[pf.GetRelPath()].nPoll++
-		}
-		if loop > 0 {
-			loop -= len(d) // Offset the loop counter so we know when the "retry" loop is empty.
 		}
 		for _, ff := range f {
 			fail = append(fail, ff.GetOrigFile().(SendFile))
@@ -248,7 +244,7 @@ func (poller *Poller) buildList() (fail []PollFile, poll []PollFile) {
 }
 
 // Poll attempts to confirm whether files have been properly received on target.
-func (poller *Poller) Poll(files []PollFile) (none []PollFile, fail []PollFile, pass []PollFile, err error) {
+func (poller *Poller) Poll(files []PollFile) (none []PollFile, fail []PollFile, pass []PollFile, wait []PollFile, err error) {
 	fmap := make(map[string]PollFile)
 	var cf []*ConfirmFile
 	for _, f := range files {
@@ -307,6 +303,8 @@ func (poller *Poller) Poll(files []PollFile) (none []PollFile, fail []PollFile, 
 			pass = append(pass, pf)
 		case ConfirmFailed:
 			fail = append(fail, pf)
+		case ConfirmWaiting:
+			wait = append(wait, pf)
 		}
 	}
 	return

@@ -184,6 +184,9 @@ func (f *sendFile) isSent() bool {
 func (f *sendFile) Stat() (bool, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
+	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
+		return f.file.GetOrigFile().(RecoverFile).Stat()
+	}
 	return f.file.GetOrigFile().Reset()
 }
 
@@ -191,12 +194,13 @@ func (f *sendFile) Reset() (changed bool, err error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	f.started = time.Time{}
-	f.bytesAlloc = 0
-	f.bytesSent = 0
 	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
 		changed, err = f.file.GetOrigFile().Reset()
+		// Return because the RecoverFile recomputes MD5 itself.
 		return
 	}
+	f.bytesAlloc = 0
+	f.bytesSent = 0
 	changed, err = f.file.GetOrigFile().Reset()
 	if err != nil {
 		return
@@ -437,17 +441,28 @@ func (sender *Sender) startRebin(wg *sync.WaitGroup) {
 		var cancel []SendFile
 		for _, sf := range f {
 			logging.Debug("SEND Resend:", sf.GetRelPath())
-			// If we need to resend a file, let's make sure it hasn't changed...
+			// The poller will cancel a file if it exceeded its maximum allowed
+			// polling attempts.
+			if sf.GetCancel() {
+				cancel = append(cancel, sf)
+				continue
+			}
+			// If we need to resend a file, let's make sure it hasn't changed.
+			// Since bin validation cancels changed files we should do the same.
 			changed, err := sf.Reset()
-			if err != nil {
-				logging.Error("Failed to reset:", sf.GetPath(false), err.Error())
+			if changed || err != nil {
+				if changed {
+					logging.Debug("SEND File Changed:", sf.GetPath(false))
+				}
+				if err != nil {
+					logging.Error("Failed to reset:", sf.GetPath(false), err.Error())
+				}
 				sf.SetCancel(true)
 				cancel = append(cancel, sf)
 				continue
 			}
-			if changed {
-				logging.Debug("SEND File Changed:", sf.GetPath(false))
-			}
+			// We only get here if the file failed validation on the receiving
+			// end and the file hasn't changed locally.
 			sender.ch.sendFile <- sf
 		}
 		sender.done(cancel)
