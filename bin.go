@@ -248,8 +248,19 @@ func (b *BinEncoder) Read(p []byte) (n int, err error) {
 		// end of the file yet, we don't want to lose bytes.
 		n = int(bytesLeft)
 	}
-	// Read from file
-	n, err = b.fh.Read(p[:n])
+	// Read from file.
+	// If our buffer is bigger than what the file reader will read, let's read
+	// until our buffer is full if we can.
+	nn := 0
+	var nread int
+	for {
+		nread, err = b.fh.Read(p[nn:n])
+		nn += nread
+		if err == nil && nn < n {
+			continue
+		}
+		break
+	}
 	bytesLeft -= int64(n)
 	b.partProgress += int64(n)
 	logging.Debug("BIN Bytes Read", n, b.binPart.File.GetRelPath(), bytesLeft)

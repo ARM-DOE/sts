@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -575,14 +576,18 @@ func (sender *Sender) httpBin(bin *Bin, gz *gzip.Writer) (n int, err error) {
 	mr := bytes.NewReader(meta)
 	pr, pw := io.Pipe()
 	go func() {
+		// Default buffer (using io.Copy) is 32 KB.  Let's try to improve performance
+		// slightly by increasing that buffer up to 1 MB as long as the bin size
+		// is at least that big.
+		buff := make([]byte, int(math.Min(float64(bin.Bytes), 1*1024*1024)))
 		if gz != nil {
 			gz.Reset(pw)
-			io.Copy(gz, mr)
-			io.Copy(gz, br)
+			io.CopyBuffer(gz, mr, buff)
+			io.CopyBuffer(gz, br, buff)
 			gz.Close()
 		} else {
-			io.Copy(pw, mr)
-			io.Copy(pw, br)
+			io.CopyBuffer(pw, mr, buff)
+			io.CopyBuffer(pw, br, buff)
 		}
 		pw.Close()
 	}()
