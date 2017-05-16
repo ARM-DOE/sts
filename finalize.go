@@ -17,6 +17,10 @@ const CacheAge = time.Minute * 60
 // CacheCnt is the number of files after which to age the cache.
 const CacheCnt = 1000
 
+// WaitPollCount is the number of times a file can be polled before a file
+// in waiting is released without any sign of its predecessor.
+const WaitPollCount = 5
+
 // LogSearch is how far back (max) to look in the logs for a finalized file.
 const LogSearch = time.Duration(30 * 24 * time.Hour)
 
@@ -24,6 +28,8 @@ const LogSearch = time.Duration(30 * 24 * time.Hour)
 type Finalizer struct {
 	Conf      *ReceiverConf
 	last      time.Time
+	poll      map[string]int
+	pollLock  sync.RWMutex
 	wait      map[string][]*finalFile
 	waitLock  sync.RWMutex
 	cache     map[string]*finalFile
@@ -43,6 +49,7 @@ type finalFile struct {
 func NewFinalizer(conf *ReceiverConf) *Finalizer {
 	f := &Finalizer{}
 	f.Conf = conf
+	f.poll = make(map[string]int)
 	f.wait = make(map[string][]*finalFile)
 	f.cache = make(map[string]*finalFile)
 	return f
@@ -92,12 +99,17 @@ func (f *Finalizer) Start(inChan chan []ScanFile) {
 	}
 }
 
-// GetFileStatus is for outside components to ask for the confirmation status of a file.
-// It returns one of these constants: ConfirmPassed, ConfirmFailed, ConfirmNone
-func (f *Finalizer) GetFileStatus(source string, relPath string, sent time.Time) int {
+// GetFileStatus is for outside components to poll the confirmation status of a file.
+// It returns one of these constants:
+// -> ConfirmPassed: MD5 validation was successful and file put away
+// -> ConfirmFailed: MD5 validation was unsuccessful and file should be resent
+// -> ConfirmWaiting: MD5 validation was successful but waiting on predecessor
+// -> ConfirmNone: No knowledge of file
+func (f *Finalizer) GetFileStatus(source, relPath string, sent time.Time) int {
 	path := filepath.Join(f.Conf.StageDir, source, relPath)
 	success, found := f.fromCache(path)
 	if success {
+		f.removePoll(path)
 		return ConfirmPassed
 	}
 	if !found {
@@ -108,9 +120,11 @@ func (f *Finalizer) GetFileStatus(source string, relPath string, sent time.Time)
 					out <- wf
 				}(wf, f.validChan)
 			}
+			f.incrementPollCount(path)
 			return ConfirmWaiting
 		}
 		if logging.FindReceived(relPath, sent, time.Now(), source) {
+			f.removePoll(path)
 			return ConfirmPassed
 		}
 		return ConfirmNone
@@ -189,13 +203,13 @@ func (f *Finalizer) finalize(ff *finalFile) (done bool, err error) {
 			}
 			if !logging.FindReceived(ff.comp.PrevFile, time.Now(), time.Now().Add(-LogSearch), ff.comp.SourceName) {
 				logging.Debug("FINAL Previous File Not Found in Log:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
-				if !f.isWaiting(ff.file.GetPath(false)) {
+				if count := f.getPollCount(ff.file.GetPath(false)); count < WaitPollCount {
 					f.toWait(stagedPrevFile, ff)
 					err = nil
 					return
 				}
-				// If this file was already waiting and we still can't find any
-				// trace of its predecessor (which is the case if we get here)
+				// If this file has been polled MaxPollCount times and we still can't
+				// find any trace of its predecessor (which is the case if we get here)
 				// then release it anyway at the risk of getting data out of order.
 				// We can only do so much.
 				logging.Info("Done Waiting:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
@@ -237,6 +251,37 @@ func (f *Finalizer) finalize(ff *finalFile) (done bool, err error) {
 
 	done = true
 	return
+}
+
+func (f *Finalizer) getPollCount(path string) int {
+	f.pollLock.RLock()
+	defer f.pollLock.RUnlock()
+	if count, ok := f.poll[path]; ok {
+		return count
+	}
+	return 0
+}
+
+func (f *Finalizer) incrementPollCount(path string) (c int) {
+	f.pollLock.Lock()
+	defer f.pollLock.Unlock()
+	var ok bool
+	if c, ok = f.poll[path]; ok {
+		c++
+		f.poll[path] = c
+		return
+	}
+	c = 1
+	f.poll[path] = c
+	return
+}
+
+func (f *Finalizer) removePoll(path string) {
+	f.pollLock.Lock()
+	defer f.pollLock.Unlock()
+	if _, ok := f.poll[path]; ok {
+		delete(f.poll, path)
+	}
 }
 
 func (f *Finalizer) isWaiting(path string) bool {

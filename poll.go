@@ -174,6 +174,7 @@ func (poller *Poller) Start(ch *PollerChan) {
 		if len(poller.Files) < 1 {
 			continue
 		}
+		var n []PollFile
 		var f []PollFile
 		var d []PollFile
 		f, poll = poller.buildList()
@@ -187,7 +188,7 @@ func (poller *Poller) Start(ch *PollerChan) {
 		}
 		nerr := 0
 		for {
-			_, f, d, _, err = poller.Poll(poll)
+			n, f, d, _, err = poller.Poll(poll)
 			if err == nil {
 				break
 			}
@@ -195,7 +196,10 @@ func (poller *Poller) Start(ch *PollerChan) {
 			logging.Error("Poll failed:", err.Error())
 			time.Sleep(time.Duration(nerr) * time.Second) // Wait longer the more it fails.
 		}
-		for _, pf := range poll {
+		// Only increase the poll count for "none" files.
+		// Files that are "waiting" should continue to be polled since eventually
+		// (even if the previous file is never found) the file will be released.
+		for _, pf := range n {
 			poller.Files[pf.GetRelPath()].nPoll++
 		}
 		for _, ff := range f {
