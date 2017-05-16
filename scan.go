@@ -253,6 +253,7 @@ type Scanner struct {
 type ScannerConf struct {
 	ScanDir        string
 	CacheDir       string
+	CacheAge       time.Duration
 	Delay          time.Duration
 	MinAge         time.Duration
 	MaxAge         time.Duration
@@ -398,8 +399,9 @@ func (scanner *Scanner) pruneCache() {
 	logging.Debug("SCAN Pruning Cache:", scanner.conf.ScanDir)
 	for key, file := range scanner.cache.Files {
 		// Only remove files from the cache that have finished and that are older
-		// than the start time of the previous scan (to avoid potentially sending
-		// a file more than once).
+		// than the cache boundary time, which is the start time of the previous
+		// scan minus the minimum file age minus the configured cache age (to
+		// avoid potentially sending a file more than once).
 		if file.Done && file.GetTime() < scanner.cache.LastTime {
 			scanner.cache.remove(key)
 		}
@@ -465,7 +467,9 @@ func (scanner *Scanner) Scan() (ScanFileList, bool) {
 	if err := fileutils.Walk(scanner.cache.ScanDir, scanner.handleNode, scanner.conf.FollowSymlinks); err != nil {
 		logging.Error(err.Error())
 	} else {
-		scanner.cache.LastTime = scanner.cache.scanTime - int64(scanner.conf.MinAge.Seconds())
+		scanner.cache.LastTime = scanner.cache.scanTime -
+			int64(scanner.conf.MinAge.Seconds()) -
+			int64(scanner.conf.CacheAge.Seconds())
 	}
 	return scanner.GetScanFiles(), true
 }
@@ -512,7 +516,7 @@ func (scanner *Scanner) handleNode(path string, info os.FileInfo, err error) err
 	if f, ok := scanner.cache.Files[key]; ok && fTime.Unix() == f.Time && info.Size() == f.Size {
 		return nil
 	}
-	// If this file has a mod time before the start of the previous scan, skip it.
+	// If this file has a mod time before the cache boundary time, skip it.
 	if fTime.Unix() < scanner.cache.LastTime {
 		return nil
 	}

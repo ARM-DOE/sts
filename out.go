@@ -65,6 +65,9 @@ func (a *AppOut) setDefaults() {
 	if a.conf.StatInterval == 0 {
 		a.conf.StatInterval = time.Minute * 5
 	}
+	if a.rawConf.CacheAge == 0 {
+		a.rawConf.CacheAge = a.conf.StatInterval
+	}
 	if a.rawConf.ScanDelay == 0 {
 		a.rawConf.ScanDelay = time.Second * 30
 	}
@@ -130,6 +133,7 @@ func (a *AppOut) initComponents() (err error) {
 	scanConf := ScannerConf{
 		ScanDir:        outDir,
 		CacheDir:       cacheDir,
+		CacheAge:       a.rawConf.CacheAge,
 		Delay:          a.rawConf.ScanDelay,
 		MinAge:         a.rawConf.MinAge,
 		MaxAge:         a.rawConf.MaxAge,

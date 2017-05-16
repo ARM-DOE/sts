@@ -63,6 +63,7 @@ type OutSource struct {
 	Name         string
 	OutDir       string
 	Threads      int
+	CacheAge     time.Duration
 	MinAge       time.Duration
 	MaxAge       time.Duration
 	ScanDelay    time.Duration
@@ -87,6 +88,7 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 		Name         string        `yaml:"name"`
 		OutDir       string        `yaml:"out-dir"`
 		Threads      int           `yaml:"threads"`
+		CacheAge     time.Duration `yaml:"cache-age"`
 		MinAge       time.Duration `yaml:"min-age"`
 		MaxAge       time.Duration `yaml:"max-age"`
 		ScanDelay    time.Duration `yaml:"scan-delay"`
@@ -109,6 +111,7 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 	ss.Name = aux.Name
 	ss.OutDir = aux.OutDir
 	ss.Threads = aux.Threads
+	ss.CacheAge = aux.CacheAge
 	ss.MinAge = aux.MinAge
 	ss.MaxAge = aux.MaxAge
 	ss.ScanDelay = aux.ScanDelay
