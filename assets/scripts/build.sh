@@ -24,6 +24,7 @@ go install github.com/davecgh/go-spew/spew
 go get $race github.com/ARM-DOE/sts/fileutils
 go get $race github.com/ARM-DOE/sts/httputils
 go get $race github.com/ARM-DOE/sts/logging
+go get $race github.com/ARM-DOE/sts/sts
 
 date=`date -u '+%Y-%m-%d %H:%M:%S'`
 vers=`git describe --tags`
@@ -31,4 +32,4 @@ vers=`git describe --tags`
 echo "-- Building STS"
 go build -o $GOPATH/bin/sts $race \
     -ldflags="-X 'main.BuildTime=$date UTC' -X 'main.Version=$vers'" \
-    $GOPATH/src/github.com/ARM-DOE/sts/*.go
+    $GOPATH/src/github.com/ARM-DOE/sts/main.go
