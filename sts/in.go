@@ -14,8 +14,8 @@ import (
 
 // AppIn is the struct container for the incoming portion of the STS app.
 type AppIn struct {
-	root      string
-	rawConf   *InConf
+	Root      string
+	RawConf   *InConf
 	conf      *ReceiverConf
 	finChan   chan []ScanFile
 	finalizer *Finalizer
@@ -24,26 +24,26 @@ type AppIn struct {
 
 func (a *AppIn) initConf() {
 	a.conf = &ReceiverConf{}
-	a.conf.Keys = a.rawConf.Keys
-	a.conf.Sources = a.rawConf.Sources
-	stage := a.rawConf.Dirs.Stage
+	a.conf.Keys = a.RawConf.Keys
+	a.conf.Sources = a.RawConf.Sources
+	stage := a.RawConf.Dirs.Stage
 	if stage == "" {
 		stage = "stage"
 	}
-	final := a.rawConf.Dirs.Final
+	final := a.RawConf.Dirs.Final
 	if final == "" {
 		final = "final"
 	}
-	a.conf.StageDir = InitPath(a.root, stage, true)
-	a.conf.FinalDir = InitPath(a.root, final, true)
-	a.conf.Port = a.rawConf.Server.Port
+	a.conf.StageDir = InitPath(a.Root, stage, true)
+	a.conf.FinalDir = InitPath(a.Root, final, true)
+	a.conf.Port = a.RawConf.Server.Port
 	if a.conf.Port == 0 {
 		panic("Server port not specified")
 	}
-	a.conf.Compression = a.rawConf.Server.Compression
-	if a.rawConf.Server.TLSCertPath != "" && a.rawConf.Server.TLSKeyPath != "" {
-		certPath := InitPath(a.root, a.rawConf.Server.TLSCertPath, false)
-		keyPath := InitPath(a.root, a.rawConf.Server.TLSKeyPath, false)
+	a.conf.Compression = a.RawConf.Server.Compression
+	if a.RawConf.Server.TLSCertPath != "" && a.RawConf.Server.TLSKeyPath != "" {
+		certPath := InitPath(a.Root, a.RawConf.Server.TLSCertPath, false)
+		keyPath := InitPath(a.Root, a.RawConf.Server.TLSKeyPath, false)
 		var err error
 		if a.conf.TLS, err = httputils.GetTLSConf(certPath, keyPath, ""); err != nil {
 			panic(err)

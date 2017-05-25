@@ -18,9 +18,9 @@ import (
 
 // AppOut is the struct container for the outgoing portion of the STS app.
 type AppOut struct {
-	root     string
-	dirConf  *OutDirs
-	rawConf  *OutSource
+	Root     string
+	DirConf  *OutDirs
+	RawConf  *OutSource
 	conf     *SenderConf
 	once     bool
 	scanChan chan []ScanFile
@@ -28,24 +28,24 @@ type AppOut struct {
 	loopChan chan []SendFile
 	pollChan chan []SendFile
 	doneChan []chan []DoneFile
-	scanner  *Scanner
-	sorter   *Sorter
-	sender   *Sender
-	poller   *Poller
+	Scanner  *Scanner
+	Sorter   *Sorter
+	Sender   *Sender
+	Poller   *Poller
 }
 
 func (a *AppOut) setDefaults() {
-	if a.dirConf.Cache == "" {
-		a.dirConf.Cache = ".sts"
+	if a.DirConf.Cache == "" {
+		a.DirConf.Cache = ".sts"
 	}
-	if a.dirConf.Disk == "" {
-		a.dirConf.Disk = "disk"
+	if a.DirConf.Disk == "" {
+		a.DirConf.Disk = "disk"
 	}
-	if a.dirConf.Logs == "" {
-		a.dirConf.Logs = "logs"
+	if a.DirConf.Logs == "" {
+		a.DirConf.Logs = "logs"
 	}
-	if a.dirConf.Out == "" {
-		a.dirConf.Out = "out"
+	if a.DirConf.Out == "" {
+		a.DirConf.Out = "out"
 	}
 	if a.conf.BinSize == 0 {
 		a.conf.BinSize = 10 * 1024 * 1024 * 1024
@@ -65,31 +65,31 @@ func (a *AppOut) setDefaults() {
 	if a.conf.StatInterval == 0 {
 		a.conf.StatInterval = time.Minute * 5
 	}
-	if a.rawConf.CacheAge == 0 {
-		a.rawConf.CacheAge = a.conf.StatInterval
+	if a.RawConf.CacheAge == 0 {
+		a.RawConf.CacheAge = a.conf.StatInterval
 	}
-	if a.rawConf.ScanDelay == 0 {
-		a.rawConf.ScanDelay = time.Second * 30
+	if a.RawConf.ScanDelay == 0 {
+		a.RawConf.ScanDelay = time.Second * 30
 	}
-	if a.rawConf.GroupBy == nil || a.rawConf.GroupBy.String() == "" {
-		a.rawConf.GroupBy, _ = regexp.Compile(`^([^\.]*)`) // Default is up to the first dot of the relative path.
+	if a.RawConf.GroupBy == nil || a.RawConf.GroupBy.String() == "" {
+		a.RawConf.GroupBy, _ = regexp.Compile(`^([^\.]*)`) // Default is up to the first dot of the relative path.
 	}
 }
 
 func (a *AppOut) initConf() {
 	a.conf = &SenderConf{
-		Threads:      a.rawConf.Threads,
-		Compression:  a.rawConf.Compression,
-		SourceName:   a.rawConf.Name,
-		TargetName:   a.rawConf.Target.Name,
-		TargetHost:   a.rawConf.Target.Host,
-		TargetKey:    a.rawConf.Target.Key,
-		BinSize:      a.rawConf.BinSize,
-		Timeout:      a.rawConf.Timeout,
-		StatInterval: a.rawConf.StatInterval,
-		PollInterval: a.rawConf.PollInterval,
-		PollDelay:    a.rawConf.PollDelay,
-		PollAttempts: a.rawConf.PollAttempts,
+		Threads:      a.RawConf.Threads,
+		Compression:  a.RawConf.Compression,
+		SourceName:   a.RawConf.Name,
+		TargetName:   a.RawConf.Target.Name,
+		TargetHost:   a.RawConf.Target.Host,
+		TargetKey:    a.RawConf.Target.Key,
+		BinSize:      a.RawConf.BinSize,
+		Timeout:      a.RawConf.Timeout,
+		StatInterval: a.RawConf.StatInterval,
+		PollInterval: a.RawConf.PollInterval,
+		PollDelay:    a.RawConf.PollDelay,
+		PollAttempts: a.RawConf.PollAttempts,
 	}
 	if a.conf.SourceName == "" {
 		panic("Source name missing from configuration")
@@ -100,9 +100,9 @@ func (a *AppOut) initConf() {
 	if a.conf.TargetHost == "" {
 		panic("Target host missing from configuration")
 	}
-	if a.rawConf.Target.TLSCertPath != "" {
+	if a.RawConf.Target.TLSCertPath != "" {
 		var err error
-		certPath := InitPath(a.root, a.rawConf.Target.TLSCertPath, false)
+		certPath := InitPath(a.Root, a.RawConf.Target.TLSCertPath, false)
 		if a.conf.TLS, err = httputils.GetTLSConf("", "", certPath); err != nil {
 			panic(err)
 		}
@@ -113,46 +113,46 @@ func (a *AppOut) initConf() {
 func (a *AppOut) initComponents() (err error) {
 	a.scanChan = make(chan []ScanFile, 1) // One batch at a time.
 	a.sortChan = map[string]chan SortFile{
-		MethodHTTP: make(chan SortFile, a.rawConf.Threads*2),
+		MethodHTTP: make(chan SortFile, a.RawConf.Threads*2),
 	}
-	a.loopChan = make(chan []SendFile, a.rawConf.Threads*2)
-	a.pollChan = make(chan []SendFile, a.rawConf.Threads*2)
+	a.loopChan = make(chan []SendFile, a.RawConf.Threads*2)
+	a.pollChan = make(chan []SendFile, a.RawConf.Threads*2)
 	a.doneChan = []chan []DoneFile{
-		make(chan []DoneFile, a.rawConf.Threads*2),
-		make(chan []DoneFile, a.rawConf.Threads*2),
+		make(chan []DoneFile, a.RawConf.Threads*2),
+		make(chan []DoneFile, a.RawConf.Threads*2),
 	}
 
 	var outDir string
-	if a.rawConf.OutDir != "" {
-		outDir = InitPath(a.root, a.rawConf.OutDir, true)
+	if a.RawConf.OutDir != "" {
+		outDir = InitPath(a.Root, a.RawConf.OutDir, true)
 	} else {
-		outDir = InitPath(a.root, filepath.Join(a.dirConf.Out, a.rawConf.Target.Name), true)
+		outDir = InitPath(a.Root, filepath.Join(a.DirConf.Out, a.RawConf.Target.Name), true)
 	}
-	cacheDir := InitPath(a.root, a.dirConf.Cache, true)
+	cacheDir := InitPath(a.Root, a.DirConf.Cache, true)
 
 	scanConf := ScannerConf{
 		ScanDir:        outDir,
 		CacheDir:       cacheDir,
-		CacheAge:       a.rawConf.CacheAge,
-		Delay:          a.rawConf.ScanDelay,
-		MinAge:         a.rawConf.MinAge,
-		MaxAge:         a.rawConf.MaxAge,
+		CacheAge:       a.RawConf.CacheAge,
+		Delay:          a.RawConf.ScanDelay,
+		MinAge:         a.RawConf.MinAge,
+		MaxAge:         a.RawConf.MaxAge,
 		OutOnce:        true,
 		Nested:         0,
-		Include:        a.rawConf.Include,
-		Ignore:         a.rawConf.Ignore,
-		FollowSymlinks: a.dirConf.OutFollow,
+		Include:        a.RawConf.Include,
+		Ignore:         a.RawConf.Ignore,
+		FollowSymlinks: a.DirConf.OutFollow,
 		ZeroError:      true,
 	}
 
-	if a.scanner, err = NewScanner(&scanConf); err != nil {
+	if a.Scanner, err = NewScanner(&scanConf); err != nil {
 		return
 	}
-	a.sorter = NewSorter(a.rawConf.Tags, a.rawConf.GroupBy)
-	if a.sender, err = NewSender(a.conf); err != nil {
+	a.Sorter = NewSorter(a.RawConf.Tags, a.RawConf.GroupBy)
+	if a.Sender, err = NewSender(a.conf); err != nil {
 		return
 	}
-	a.poller = NewPoller(a.conf)
+	a.Poller = NewPoller(a.conf)
 	return
 }
 
@@ -190,7 +190,7 @@ func (a *AppOut) getPartials() ([]*Companion, error) {
 }
 
 func (a *AppOut) getRecoverable() (send []ScanFile, poll []PollFile, err error) {
-	files := a.scanner.GetScanFiles()
+	files := a.Scanner.GetScanFiles()
 	partials, err := a.getPartials()
 	if err != nil {
 		return nil, nil, err
@@ -268,7 +268,7 @@ func (a *AppOut) Recover() error {
 	}
 	// Poll files need to be polled just once before moving on.
 	if len(poll) > 0 {
-		none, fail, done, wait, err := a.poller.Poll(poll)
+		none, fail, done, wait, err := a.Poller.Poll(poll)
 		if err != nil {
 			return err
 		}
@@ -286,7 +286,7 @@ func (a *AppOut) Recover() error {
 			var d []DoneFile
 			for _, f := range done {
 				logging.Debug("RECOVER Found Already Done:", f.(DoneFile).GetRelPath())
-				a.scanner.SetQueued(f.(DoneFile).GetPath()) // So they don't get added again.
+				a.Scanner.SetQueued(f.(DoneFile).GetPath()) // So they don't get added again.
 				d = append(d, f.(DoneFile))
 				if !logging.FindSent(f.GetRelPath(), f.GetStarted(), time.Now(), a.conf.TargetName) {
 					// Log that it was sent if crashed between being sent and being logged.
@@ -300,7 +300,7 @@ func (a *AppOut) Recover() error {
 	}
 	if len(send) > 0 {
 		for _, f := range send {
-			a.scanner.SetQueued(f.GetPath(false)) // So they don't get added again.
+			a.Scanner.SetQueued(f.GetPath(false)) // So they don't get added again.
 		}
 		a.scanChan <- send // Sneakily insert these files into the send queue ahead of everything else.
 	}
@@ -334,7 +334,7 @@ func (a *AppOut) Start(stop <-chan bool) <-chan bool {
 			Done: out,
 			Stop: stop,
 		})
-	}(a.poller, a.pollChan, a.loopChan, pollStop, dc...)
+	}(a.Poller, a.pollChan, a.loopChan, pollStop, dc...)
 
 	// Start the sender.
 	go func(sender *Sender, in <-chan SortFile, loop <-chan []SendFile, close chan<- bool, out ...chan<- []SendFile) {
@@ -345,13 +345,13 @@ func (a *AppOut) Start(stop <-chan bool) <-chan bool {
 			Done:  out,
 			Close: close,
 		})
-	}(a.sender, a.sortChan[MethodHTTP], a.loopChan, pollStop, a.pollChan)
+	}(a.Sender, a.sortChan[MethodHTTP], a.loopChan, pollStop, a.pollChan)
 
 	// Start the sorter.
 	go func(sorter *Sorter, in <-chan []ScanFile, out map[string]chan SortFile, done <-chan []DoneFile) {
 		defer wg.Done()
 		sorter.Start(in, out, done)
-	}(a.sorter, a.scanChan, a.sortChan, a.doneChan[0])
+	}(a.Sorter, a.scanChan, a.sortChan, a.doneChan[0])
 
 	// Start the scanner.
 	var scanStop chan bool
@@ -361,7 +361,7 @@ func (a *AppOut) Start(stop <-chan bool) <-chan bool {
 	go func(scanner *Scanner, out chan<- []ScanFile, done <-chan []DoneFile, stop <-chan bool) {
 		defer wg.Done()
 		scanner.Start(out, done, stop)
-	}(a.scanner, a.scanChan, a.doneChan[1], scanStop)
+	}(a.Scanner, a.scanChan, a.doneChan[1], scanStop)
 
 	// Ready.
 	logging.Debug(fmt.Sprintf("SENDER Ready: %s -> %s", a.conf.SourceName, a.conf.TargetName))

@@ -1,4 +1,4 @@
-package sts
+package main
 
 import (
 	"flag"
@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/ARM-DOE/sts/logging"
+	"github.com/ARM-DOE/sts/sts"
 )
 
 const modeSend = "out"
@@ -45,36 +46,15 @@ func getRoot() string {
 	return root
 }
 
-// InitPath will turn a relative path into absolute (based on root) and make sure it exists.
-func InitPath(root string, path string, isdir bool) string {
-	var err error
-	if !filepath.IsAbs(path) {
-		path, err = filepath.Abs(filepath.Join(root, path))
-		if err != nil {
-			logging.Error("Failed to initialize: ", path, err.Error())
-		}
-	}
-	pdir := path
-	if !isdir {
-		pdir = filepath.Dir(pdir)
-	}
-	_, err = os.Stat(pdir)
-	if os.IsNotExist(err) {
-		logging.Debug("MAIN Make Path:", pdir)
-		os.MkdirAll(pdir, os.ModePerm)
-	}
-	return path
-}
-
 type app struct {
 	debug    bool
 	once     bool
 	mode     string
 	root     string
 	confPath string
-	conf     *Conf
-	in       *AppIn
-	out      []*AppOut
+	conf     *sts.Conf
+	in       *sts.AppIn
+	out      []*sts.AppOut
 	inStop   chan<- bool
 	inDone   <-chan bool
 	outStop  map[chan<- bool]<-chan bool
@@ -125,7 +105,7 @@ func newApp() *app {
 			panic(err.Error())
 		}
 	}
-	conf, err := NewConf(a.confPath)
+	conf, err := sts.NewConf(a.confPath)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to parse configuration:\n%s", err.Error()))
 	}
@@ -179,10 +159,10 @@ func (a *app) startIn() bool {
 	logging.Init(map[string]string{
 		logging.In:  a.conf.In.Dirs.LogsIn,
 		logging.Msg: a.conf.In.Dirs.LogsMsg,
-	}, InitPath(a.root, a.conf.In.Dirs.Logs, true), a.debug)
-	a.in = &AppIn{
-		root:    a.root,
-		rawConf: a.conf.In,
+	}, sts.InitPath(a.root, a.conf.In.Dirs.Logs, true), a.debug)
+	a.in = &sts.AppIn{
+		Root:    a.root,
+		RawConf: a.conf.In,
 	}
 	stop := make(chan bool)
 	a.inStop = stop
@@ -215,13 +195,13 @@ func (a *app) startOut(once bool) bool {
 	logging.Init(map[string]string{
 		logging.Out: a.conf.Out.Dirs.LogsOut,
 		logging.Msg: a.conf.Out.Dirs.LogsMsg,
-	}, InitPath(a.root, a.conf.Out.Dirs.Logs, true), a.debug)
+	}, sts.InitPath(a.root, a.conf.Out.Dirs.Logs, true), a.debug)
 	a.outStop = make(map[chan<- bool]<-chan bool)
 	for _, source := range a.conf.Out.Sources {
-		out := &AppOut{
-			root:    a.root,
-			dirConf: a.conf.Out.Dirs,
-			rawConf: source,
+		out := &sts.AppOut{
+			Root:    a.root,
+			DirConf: a.conf.Out.Dirs,
+			RawConf: source,
 		}
 		out.Init()
 		a.out = append(a.out, out)
@@ -247,7 +227,7 @@ func (a *app) startOut(once bool) bool {
 				a.outStop[c] = a.out[i].Start(c)
 			}
 			started[i] = true
-			watch := a.out[i].scanner.conf.ScanDir
+			watch := a.out[i].Scanner.Conf.ScanDir
 			if _, ok := watching[watch]; ok {
 				panic("Multiple sources configured to watch the same outgoing directory")
 			}

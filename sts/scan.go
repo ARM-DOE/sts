@@ -243,7 +243,7 @@ func (f ScanFileList) Swap(i, j int) { f[i], f[j] = f[j], f[i] }
 
 // Scanner is responsible for traversing a directory tree for files.
 type Scanner struct {
-	conf      *ScannerConf
+	Conf      *ScannerConf
 	cache     *scanCache
 	aged      map[string]int
 	cachePath string
@@ -283,7 +283,7 @@ func (c *ScannerConf) AddIgnoreString(pattern string) {
 // NewScanner returns a Scanner instance.
 func NewScanner(conf *ScannerConf) (*Scanner, error) {
 	scanner := &Scanner{}
-	scanner.conf = conf
+	scanner.Conf = conf
 	scanner.aged = make(map[string]int)
 
 	scanner.cache = newScanCache(conf.ScanDir, conf.Nested)
@@ -341,7 +341,7 @@ func (scanner *Scanner) out(ch chan<- []ScanFile, force bool) int {
 
 	// Make sure it's been long enough for another scan.
 	scanned := scanner.cache.scanTime
-	if !force && time.Now().Sub(time.Unix(scanned, 0)) < scanner.conf.Delay {
+	if !force && time.Now().Sub(time.Unix(scanned, 0)) < scanner.Conf.Delay {
 		return 0
 	}
 
@@ -393,10 +393,10 @@ func (scanner *Scanner) done(ch <-chan []DoneFile) int {
 }
 
 func (scanner *Scanner) pruneCache() {
-	if !scanner.conf.OutOnce {
+	if !scanner.Conf.OutOnce {
 		return
 	}
-	logging.Debug("SCAN Pruning Cache:", scanner.conf.ScanDir)
+	logging.Debug("SCAN Pruning Cache:", scanner.Conf.ScanDir)
 	for key, file := range scanner.cache.Files {
 		// Only remove files from the cache that have finished and that are older
 		// than the cache boundary time, which is the start time of the previous
@@ -409,8 +409,8 @@ func (scanner *Scanner) pruneCache() {
 }
 
 func (scanner *Scanner) writeCache() {
-	if scanner.conf.OutOnce && scanner.cache.dirty {
-		logging.Debug("SCAN Writing Cache:", scanner.conf.ScanDir)
+	if scanner.Conf.OutOnce && scanner.cache.dirty {
+		logging.Debug("SCAN Writing Cache:", scanner.Conf.ScanDir)
 		scanner.cache.cache(scanner.cachePath)
 	}
 }
@@ -419,13 +419,13 @@ func (scanner *Scanner) writeCache() {
 func (scanner *Scanner) GetScanFiles() ScanFileList {
 	files := make(ScanFileList, 0)
 	for k, f := range scanner.cache.Files {
-		if scanner.conf.OutOnce {
+		if scanner.Conf.OutOnce {
 			if f.queued || f.Done {
 				continue
 			}
 		}
 		if _, err := os.Lstat(f.path); os.IsNotExist(err) {
-			if scanner.conf.OutOnce {
+			if scanner.Conf.OutOnce {
 				// This can happen (legitimately) if a crash occurs after a file
 				// is cleaned following a successful transfer but before the scanner
 				// is notified to remove the file from the list.  In this case,
@@ -464,12 +464,12 @@ func (scanner *Scanner) Scan() (ScanFileList, bool) {
 	}
 	logging.Debug("SCAN Scanning...")
 	scanner.cache.scanTime = time.Now().Unix()
-	if err := fileutils.Walk(scanner.cache.ScanDir, scanner.handleNode, scanner.conf.FollowSymlinks); err != nil {
+	if err := fileutils.Walk(scanner.cache.ScanDir, scanner.handleNode, scanner.Conf.FollowSymlinks); err != nil {
 		logging.Error(err.Error())
 	} else {
 		scanner.cache.LastTime = scanner.cache.scanTime -
-			int64(scanner.conf.MinAge.Seconds()) -
-			int64(scanner.conf.CacheAge.Seconds())
+			int64(scanner.Conf.MinAge.Seconds()) -
+			int64(scanner.Conf.CacheAge.Seconds())
 	}
 	return scanner.GetScanFiles(), true
 }
@@ -491,23 +491,23 @@ func (scanner *Scanner) handleNode(path string, info os.FileInfo, err error) err
 	}
 	fTime := info.ModTime()
 	fAge := time.Now().Sub(fTime)
-	if fAge < scanner.conf.MinAge {
+	if fAge < scanner.Conf.MinAge {
 		return nil
 	}
-	if scanner.conf.MaxAge > 0 {
-		n := int(fAge / scanner.conf.MaxAge)
+	if scanner.Conf.MaxAge > 0 {
+		n := int(fAge / scanner.Conf.MaxAge)
 		if count, exists := scanner.aged[path]; n > 0 && (!exists || n > count) {
 			logging.Error(fmt.Sprintf("Stale file found: %s (%dh)", path, int(fAge.Hours())))
 			scanner.aged[path] = n
 		}
 	}
 	if info.Size() == 0 {
-		if scanner.conf.ZeroError {
+		if scanner.Conf.ZeroError {
 			logging.Error(fmt.Sprintf("Zero-length file found: %s", path))
 		}
 		return nil
 	}
-	if !scanner.conf.OutOnce {
+	if !scanner.Conf.OutOnce {
 		scanner.cache.add(path, info)
 		return nil
 	}
@@ -530,15 +530,15 @@ func (scanner *Scanner) handleNode(path string, info os.FileInfo, err error) err
 
 func (scanner *Scanner) shouldIgnore(relPath string, isDir bool) bool {
 	var pattern *regexp.Regexp
-	if !isDir && len(scanner.conf.Include) > 0 {
-		for _, pattern = range scanner.conf.Include {
+	if !isDir && len(scanner.Conf.Include) > 0 {
+		for _, pattern = range scanner.Conf.Include {
 			if pattern.MatchString(relPath) {
 				return false
 			}
 		}
 		return true
 	}
-	for _, pattern = range scanner.conf.Ignore {
+	for _, pattern = range scanner.Conf.Ignore {
 		if pattern.MatchString(relPath) {
 			return true
 		}
