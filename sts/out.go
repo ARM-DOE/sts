@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ARM-DOE/sts/fileutils"
-	"github.com/ARM-DOE/sts/httputils"
-	"github.com/ARM-DOE/sts/logging"
+	"code.arm.gov/dataflow/sts/fileutils"
+	"code.arm.gov/dataflow/sts/httputils"
+	"code.arm.gov/dataflow/sts/logging"
 )
 
 // AppOut is the struct container for the outgoing portion of the STS app.

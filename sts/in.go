@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ARM-DOE/sts/httputils"
-	"github.com/ARM-DOE/sts/logging"
+	"code.arm.gov/dataflow/sts/httputils"
+	"code.arm.gov/dataflow/sts/logging"
 )
 
 // AppIn is the struct container for the incoming portion of the STS app.

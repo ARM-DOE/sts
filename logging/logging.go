@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ARM-DOE/sts/fileutils"
+	"code.arm.gov/dataflow/sts/fileutils"
 )
 
 // Out is the log directory for send log entries to match legacy STS.

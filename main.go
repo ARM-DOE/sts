@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ARM-DOE/sts/logging"
-	"github.com/ARM-DOE/sts/sts"
+	"code.arm.gov/dataflow/sts/logging"
+	"code.arm.gov/dataflow/sts/sts"
 )
 
 const modeSend = "out"

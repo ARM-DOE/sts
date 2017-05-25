@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ARM-DOE/sts/fileutils"
-	"github.com/ARM-DOE/sts/httputils"
-	"github.com/ARM-DOE/sts/logging"
+	"code.arm.gov/dataflow/sts/fileutils"
+	"code.arm.gov/dataflow/sts/httputils"
+	"code.arm.gov/dataflow/sts/logging"
 )
 
 // PartExt is the file extension added to files in the stage area as they are

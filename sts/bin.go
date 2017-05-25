@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ARM-DOE/sts/logging"
+	"code.arm.gov/dataflow/sts/logging"
 )
 
 // BinFluff is the percentage of the bin size that can fluctuate based on input files.

@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ARM-DOE/sts/logging"
+	"code.arm.gov/dataflow/sts/logging"
 )
 
 func InitPath(root string, path string, isdir bool) string {

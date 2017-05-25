@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ARM-DOE/sts/fileutils"
-	"github.com/ARM-DOE/sts/logging"
+	"code.arm.gov/dataflow/sts/fileutils"
+	"code.arm.gov/dataflow/sts/logging"
 )
 
 // CacheAge is how long a finalized file is kept in memory.

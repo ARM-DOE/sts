@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/ARM-DOE/sts/logging"
+	"code.arm.gov/dataflow/sts/logging"
 )
 
 type sortedGroup struct {

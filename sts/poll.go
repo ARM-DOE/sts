@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ARM-DOE/sts/httputils"
-	"github.com/ARM-DOE/sts/logging"
+	"code.arm.gov/dataflow/sts/httputils"
+	"code.arm.gov/dataflow/sts/logging"
 )
 
 // ConfirmNone is the indicator that a file has not been confirmed.
