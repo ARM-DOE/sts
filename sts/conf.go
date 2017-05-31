@@ -1,10 +1,8 @@
 package sts
 
 import (
-	"fmt"
 	"io/ioutil"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"time"
 
@@ -28,23 +26,55 @@ const (
 
 	// MethodHTTP indicates an HTTP outgoing method.
 	MethodHTTP = "http"
-
-	// MethodDisk indicates a disk transfer method.
-	MethodDisk = "disk"
 )
 
 // Conf is the outermost struct for holding STS configuration.
 type Conf struct {
 	Out *OutConf `yaml:"OUT"`
 	In  *InConf  `yaml:"IN"`
-
-	path string
 }
 
 // OutConf is the struct for housing all outgoing configuration.
 type OutConf struct {
-	Dirs    *OutDirs     `yaml:"dirs"`
-	Sources []*OutSource `yaml:"sources"`
+	Dirs    *OutDirs
+	Sources []*OutSource
+}
+
+// UnmarshalYAML implements the Unmarshaler interface for handling custom member(s).
+// https://godoc.org/gopkg.in/yaml.v2
+// This is where we implement the feature of propagating options.
+func (conf *OutConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
+	var aux struct {
+		Dirs    *OutDirs     `yaml:"dirs"`
+		Sources []*OutSource `yaml:"sources"`
+	}
+	if err = unmarshal(&aux); err != nil {
+		return
+	}
+	conf.Dirs = aux.Dirs
+	conf.Sources = aux.Sources
+	if len(conf.Sources) == 0 {
+		return
+	}
+	var src *OutSource
+	var tgt *OutSource
+	for i := 0; i < len(conf.Sources); i++ {
+		if src != nil {
+			tgt = conf.Sources[i]
+			CopyStruct(tgt, src)
+			if src.Target != nil && tgt.Target != nil {
+				CopyStruct(tgt.Target, src.Target)
+			}
+		}
+		src = conf.Sources[i]
+		if len(src.Tags) > 1 {
+			tdef := src.Tags[0]
+			for j := 1; j < len(src.Tags); j++ {
+				CopyStruct(src.Tags[j], tdef)
+			}
+		}
+	}
+	return
 }
 
 // OutDirs is the struct for managing the outgoing directory configuration items.
@@ -54,7 +84,6 @@ type OutDirs struct {
 	Logs      string `yaml:"logs"`
 	LogsOut   string `yaml:"logs-out"`
 	LogsMsg   string `yaml:"logs-flow"`
-	Disk      string `yaml:"disk"`
 	Cache     string `yaml:"cache"`
 }
 
@@ -143,7 +172,7 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 	ss.Include = patterns[0:len(aux.Include)]
 	ss.Ignore = patterns[len(aux.Include):len(patterns)]
 	ss.Tags = aux.Tags
-	return nil
+	return
 }
 
 // Tag is the struct for managing configuration options for "tags" (groups) of files.
@@ -182,15 +211,8 @@ func (t *Tag) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 			aux.Method = MethodHTTP
 		}
 	}
-	switch aux.Method {
-	case MethodDisk:
-		break
-	case MethodHTTP:
-		break
-	case "":
-		break
-	default:
-		panic(fmt.Sprintf("Invalid \"tag\" method: %s", aux.Method))
+	if aux.Method == "" {
+		aux.Method = MethodHTTP
 	}
 	t.Priority = aux.Priority
 	t.Method = aux.Method
@@ -249,81 +271,7 @@ func NewConf(path string) (*Conf, error) {
 	}
 	err = yaml.Unmarshal(fh, conf)
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
-	if conf.Out != nil {
-		if len(conf.Out.Sources) > 0 {
-			var src *OutSource
-			var tgt *OutSource
-			for i := 0; i < len(conf.Out.Sources); i++ {
-				if src != nil {
-					tgt = conf.Out.Sources[i]
-					copyStruct(tgt, src)
-					if src.Target != nil && tgt.Target != nil {
-						copyStruct(tgt.Target, src.Target)
-					}
-				}
-				src = conf.Out.Sources[i]
-				if len(src.Tags) > 1 {
-					tdef := src.Tags[0]
-					for j := 1; j < len(src.Tags); j++ {
-						copyStruct(src.Tags[j], tdef)
-					}
-				}
-			}
-		}
-	}
-	conf.path = path
 	return conf, nil
-}
-
-func copyStruct(tgt interface{}, src interface{}) {
-	v := reflect.ValueOf(tgt)
-	z := reflect.ValueOf(src)
-	if v.Kind() == reflect.Ptr {
-		v = reflect.Indirect(v)
-		z = reflect.Indirect(z)
-	}
-	if v.Kind() != reflect.Struct || v.Type() != z.Type() {
-		return
-	}
-	for i := 0; i < v.NumField(); i++ {
-		if isZero(v.Field(i)) {
-			v.Field(i).Set(reflect.ValueOf(z.Field(i).Interface()))
-		}
-	}
-}
-
-func isZero(v reflect.Value) bool {
-	switch v.Kind() {
-	case reflect.Func, reflect.Map, reflect.Slice:
-		return v.IsNil()
-	case reflect.Array:
-		z := true
-		for i := 0; i < v.Len(); i++ {
-			z = z && isZero(v.Index(i))
-		}
-		return z
-	case reflect.Struct:
-		z := true
-		n := 0
-		for i := 0; i < v.NumField(); i++ {
-			if v.Field(i).CanSet() {
-				z = z && isZero(v.Field(i))
-				n++
-			}
-		}
-		if n > 0 {
-			return z
-		}
-		return false
-	case reflect.Ptr:
-		if v.IsNil() {
-			return true
-		}
-		return isZero(reflect.Indirect(v))
-	}
-	// Compare other types directly:
-	z := reflect.Zero(v.Type())
-	return v.Interface() == z.Interface()
 }

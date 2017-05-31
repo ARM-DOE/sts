@@ -38,9 +38,6 @@ func (a *AppOut) setDefaults() {
 	if a.DirConf.Cache == "" {
 		a.DirConf.Cache = ".sts"
 	}
-	if a.DirConf.Disk == "" {
-		a.DirConf.Disk = "disk"
-	}
 	if a.DirConf.Logs == "" {
 		a.DirConf.Logs = "logs"
 	}
@@ -72,7 +69,7 @@ func (a *AppOut) setDefaults() {
 		a.RawConf.ScanDelay = time.Second * 30
 	}
 	if a.RawConf.GroupBy == nil || a.RawConf.GroupBy.String() == "" {
-		a.RawConf.GroupBy, _ = regexp.Compile(`^([^\.]*)`) // Default is up to the first dot of the relative path.
+		a.RawConf.GroupBy = regexp.MustCompile(`^([^\.]*)`) // Default is up to the first dot of the relative path.
 	}
 }
 
@@ -148,7 +145,20 @@ func (a *AppOut) initComponents() (err error) {
 	if a.Scanner, err = NewScanner(&scanConf); err != nil {
 		return
 	}
-	a.Sorter = NewSorter(a.RawConf.Tags, a.RawConf.GroupBy)
+	var tags []*Tag
+	for _, tag := range a.RawConf.Tags {
+		switch tag.Method {
+		case MethodHTTP:
+			tags = append(tags, tag)
+		default:
+			// Ignore unknown methods.
+			// This allows us to extend the configuration for outside uses like
+			// disk mode, which is not part of this package.
+			scanConf.AddIgnore(tag.Pattern)
+		}
+	}
+
+	a.Sorter = NewSorter(tags, a.RawConf.GroupBy)
 	if a.Sender, err = NewSender(a.conf); err != nil {
 		return
 	}

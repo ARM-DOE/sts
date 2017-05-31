@@ -368,6 +368,9 @@ func (scanner *Scanner) out(ch chan<- []ScanFile, force bool) int {
 }
 
 func (scanner *Scanner) done(ch <-chan []DoneFile) int {
+	if ch == nil {
+		return 0
+	}
 	select {
 	case doneFiles, ok := <-ch:
 		if !ok {
@@ -409,7 +412,7 @@ func (scanner *Scanner) pruneCache() {
 }
 
 func (scanner *Scanner) writeCache() {
-	if scanner.Conf.OutOnce && scanner.cache.dirty {
+	if scanner.cachePath != "" && scanner.Conf.OutOnce && scanner.cache.dirty {
 		logging.Debug("SCAN Writing Cache:", scanner.Conf.ScanDir)
 		scanner.cache.cache(scanner.cachePath)
 	}

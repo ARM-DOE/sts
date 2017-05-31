@@ -20,9 +20,6 @@ const Out = "outgoing_to"
 // In is the log directory for incoming log entries to match legacy STS.
 const In = "incoming_from"
 
-// Disk is the log directory for disk read/write messages to match legacy STS.
-const Disk = "to_disk"
-
 // Msg is the log directory for debug and error messages to match legacy STS.
 const Msg = "messages"
 
@@ -117,15 +114,6 @@ func Error(params ...interface{}) {
 	params = append([]interface{}{fmt.Sprintf("ERROR %s:%d", filepath.Base(file), line)}, params...)
 	msgLogger.out(os.Stderr, params...)
 	msgLogger.log(params...)
-}
-
-// Disked writes a formatted string to the "to_disk" log file.
-func Disked(msg string, hash string, size int64, prefix ...string) {
-	logger, exists := getLogger(Disk, prefix...)
-	if !exists {
-		return
-	}
-	logger.log(fmt.Sprintf("%s:%s:%d:%d", msg, hash, size, time.Now().Unix()))
 }
 
 // Sent writes a formatted string to the "outgoing_to" log file.
