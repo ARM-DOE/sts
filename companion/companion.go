@@ -1,4 +1,4 @@
-package sts
+package companion
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"code.arm.gov/dataflow/sts/fileutils"
+	"code.arm.gov/dataflow/sts/fileutil"
 	"code.arm.gov/dataflow/sts/logging"
 )
 

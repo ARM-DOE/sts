@@ -1,4 +1,4 @@
-package sts
+package scan
 
 import (
 	"fmt"
@@ -9,7 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"code.arm.gov/dataflow/sts/fileutils"
+	"code.arm.gov/dataflow/sts"
+	"code.arm.gov/dataflow/sts/fileutil"
 	"code.arm.gov/dataflow/sts/logging"
 )
 
@@ -33,7 +34,7 @@ func newScanCache(scanDir string, nested int) *scanCache {
 	return q
 }
 
-func (q *scanCache) add(path string, info os.FileInfo) (f ScanFile, err error) {
+func (q *scanCache) add(path string, info os.FileInfo) (f sts.ScanFile, err error) {
 	nesting, relPath := q.parsePath(path)
 	key := q.toKey(nesting, relPath)
 	file, has := q.Files[key]
@@ -228,18 +229,18 @@ func (f *foundFile) Reset() (bool, error) {
 	return f.reset(nil)
 }
 
-// ScanFileList is used for sorting ScanFiles.
-type ScanFileList []ScanFile
+// FileList is for being able to sort a slice of ScanFile references.
+type FileList []sts.ScanFile
 
-func (f ScanFileList) Len() int { return len(f) }
-func (f ScanFileList) Less(i, j int) bool {
+func (f FileList) Len() int { return len(f) }
+func (f FileList) Less(i, j int) bool {
 	diff := f[i].GetTime() - f[j].GetTime()
 	if diff == 0 {
 		return f[i].GetRelPath() < f[j].GetRelPath()
 	}
 	return diff < 0
 }
-func (f ScanFileList) Swap(i, j int) { f[i], f[j] = f[j], f[i] }
+func (f FileList) Swap(i, j int) { f[i], f[j] = f[j], f[i] }
 
 // Scanner is responsible for traversing a directory tree for files.
 type Scanner struct {
@@ -303,7 +304,7 @@ func NewScanner(conf *ScannerConf) (*Scanner, error) {
 
 // Start starts the daemon that puts files on the outChan and reads from the doneChan.
 // If stopChan is nil, only scan once and trigger shutdown.
-func (scanner *Scanner) Start(outChan chan<- []ScanFile, doneChan <-chan []DoneFile, stopChan <-chan bool) {
+func (scanner *Scanner) Start(outChan chan<- []sts.ScanFile, doneChan <-chan []sts.DoneFile, stopChan <-chan bool) {
 	for {
 		select {
 		case <-stopChan:
@@ -336,7 +337,7 @@ func (scanner *Scanner) Start(outChan chan<- []ScanFile, doneChan <-chan []DoneF
 	}
 }
 
-func (scanner *Scanner) out(ch chan<- []ScanFile, force bool) int {
+func (scanner *Scanner) out(ch chan<- []sts.ScanFile, force bool) int {
 	scanner.writeCache()
 
 	// Make sure it's been long enough for another scan.
@@ -367,7 +368,7 @@ func (scanner *Scanner) out(ch chan<- []ScanFile, force bool) int {
 	return 0
 }
 
-func (scanner *Scanner) done(ch <-chan []DoneFile) int {
+func (scanner *Scanner) done(ch <-chan []sts.DoneFile) int {
 	if ch == nil {
 		return 0
 	}
@@ -419,8 +420,8 @@ func (scanner *Scanner) writeCache() {
 }
 
 // GetScanFiles returns the list of files in the cache.
-func (scanner *Scanner) GetScanFiles() ScanFileList {
-	files := make(ScanFileList, 0)
+func (scanner *Scanner) GetScanFiles() FileList {
+	files := make(FileList, 0)
 	for k, f := range scanner.cache.Files {
 		if scanner.Conf.OutOnce {
 			if f.queued || f.Done {
@@ -460,7 +461,7 @@ func (scanner *Scanner) SetQueued(path string) {
 }
 
 // Scan does a directory scan and returns a sorted list of found paths.
-func (scanner *Scanner) Scan() (ScanFileList, bool) {
+func (scanner *Scanner) Scan() (FileList, bool) {
 	_, err := os.Lstat(filepath.Join(scanner.cache.ScanDir, DisabledName))
 	if err == nil {
 		return nil, false // Found .disabled, don't scan.

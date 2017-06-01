@@ -12,8 +12,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"code.arm.gov/dataflow/sts/conf"
+	"code.arm.gov/dataflow/sts/in"
 	"code.arm.gov/dataflow/sts/logging"
-	"code.arm.gov/dataflow/sts/sts"
+	"code.arm.gov/dataflow/sts/out"
+	"code.arm.gov/dataflow/sts/util"
 )
 
 const modeSend = "out"
@@ -52,9 +55,9 @@ type app struct {
 	mode     string
 	root     string
 	confPath string
-	conf     *sts.Conf
-	in       *sts.AppIn
-	out      []*sts.AppOut
+	conf     *conf.Conf
+	in       *in.AppIn
+	out      []*out.AppOut
 	inStop   chan<- bool
 	inDone   <-chan bool
 	outStop  map[chan<- bool]<-chan bool
@@ -105,7 +108,7 @@ func newApp() *app {
 			panic(err.Error())
 		}
 	}
-	conf, err := sts.NewConf(a.confPath)
+	conf, err := conf.NewConf(a.confPath)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to parse configuration:\n%s", err.Error()))
 	}
@@ -159,8 +162,8 @@ func (a *app) startIn() bool {
 	logging.Init(map[string]string{
 		logging.In:  a.conf.In.Dirs.LogsIn,
 		logging.Msg: a.conf.In.Dirs.LogsMsg,
-	}, sts.InitPath(a.root, a.conf.In.Dirs.Logs, true), a.debug)
-	a.in = &sts.AppIn{
+	}, util.InitPath(a.root, a.conf.In.Dirs.Logs, true), a.debug)
+	a.in = &in.AppIn{
 		Root:    a.root,
 		RawConf: a.conf.In,
 	}
@@ -195,10 +198,10 @@ func (a *app) startOut(once bool) bool {
 	logging.Init(map[string]string{
 		logging.Out: a.conf.Out.Dirs.LogsOut,
 		logging.Msg: a.conf.Out.Dirs.LogsMsg,
-	}, sts.InitPath(a.root, a.conf.Out.Dirs.Logs, true), a.debug)
+	}, util.InitPath(a.root, a.conf.Out.Dirs.Logs, true), a.debug)
 	a.outStop = make(map[chan<- bool]<-chan bool)
 	for _, source := range a.conf.Out.Sources {
-		out := &sts.AppOut{
+		out := &out.AppOut{
 			Root:    a.root,
 			DirConf: a.conf.Out.Dirs,
 			RawConf: source,

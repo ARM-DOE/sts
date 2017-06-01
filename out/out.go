@@ -1,4 +1,4 @@
-package sts
+package out
 
 import (
 	"bytes"
@@ -11,27 +11,35 @@ import (
 	"sync"
 	"time"
 
-	"code.arm.gov/dataflow/sts/fileutils"
-	"code.arm.gov/dataflow/sts/httputils"
+	"code.arm.gov/dataflow/sts"
+	"code.arm.gov/dataflow/sts/companion"
+	"code.arm.gov/dataflow/sts/conf"
+	"code.arm.gov/dataflow/sts/fileutil"
+	"code.arm.gov/dataflow/sts/httputil"
 	"code.arm.gov/dataflow/sts/logging"
+	"code.arm.gov/dataflow/sts/poll"
+	"code.arm.gov/dataflow/sts/scan"
+	"code.arm.gov/dataflow/sts/send"
+	"code.arm.gov/dataflow/sts/sort"
+	"code.arm.gov/dataflow/sts/util"
 )
 
 // AppOut is the struct container for the outgoing portion of the STS app.
 type AppOut struct {
 	Root     string
-	DirConf  *OutDirs
-	RawConf  *OutSource
-	conf     *SenderConf
+	DirConf  *conf.OutDirs
+	RawConf  *conf.OutSource
+	conf     *send.SenderConf
 	once     bool
-	scanChan chan []ScanFile
-	sortChan map[string]chan SortFile
-	loopChan chan []SendFile
-	pollChan chan []SendFile
-	doneChan []chan []DoneFile
-	Scanner  *Scanner
-	Sorter   *Sorter
-	Sender   *Sender
-	Poller   *Poller
+	scanChan chan []sts.ScanFile
+	sortChan map[string]chan sts.SortFile
+	loopChan chan []sts.SendFile
+	pollChan chan []sts.SendFile
+	doneChan []chan []sts.DoneFile
+	Scanner  *scan.Scanner
+	Sorter   *sort.Sorter
+	Sender   *send.Sender
+	Poller   *poll.Poller
 }
 
 func (a *AppOut) setDefaults() {
@@ -74,7 +82,7 @@ func (a *AppOut) setDefaults() {
 }
 
 func (a *AppOut) initConf() {
-	a.conf = &SenderConf{
+	a.conf = &send.SenderConf{
 		Threads:      a.RawConf.Threads,
 		Compression:  a.RawConf.Compression,
 		SourceName:   a.RawConf.Name,
@@ -99,7 +107,7 @@ func (a *AppOut) initConf() {
 	}
 	if a.RawConf.Target.TLSCertPath != "" {
 		var err error
-		certPath := InitPath(a.Root, a.RawConf.Target.TLSCertPath, false)
+		certPath := util.InitPath(a.Root, a.RawConf.Target.TLSCertPath, false)
 		if a.conf.TLS, err = httputils.GetTLSConf("", "", certPath); err != nil {
 			panic(err)
 		}
@@ -108,26 +116,26 @@ func (a *AppOut) initConf() {
 }
 
 func (a *AppOut) initComponents() (err error) {
-	a.scanChan = make(chan []ScanFile, 1) // One batch at a time.
-	a.sortChan = map[string]chan SortFile{
-		MethodHTTP: make(chan SortFile, a.RawConf.Threads*2),
+	a.scanChan = make(chan []sts.ScanFile, 1) // One batch at a time.
+	a.sortChan = map[string]chan sts.SortFile{
+		conf.MethodHTTP: make(chan sts.SortFile, a.RawConf.Threads*2),
 	}
-	a.loopChan = make(chan []SendFile, a.RawConf.Threads*2)
-	a.pollChan = make(chan []SendFile, a.RawConf.Threads*2)
-	a.doneChan = []chan []DoneFile{
-		make(chan []DoneFile, a.RawConf.Threads*2),
-		make(chan []DoneFile, a.RawConf.Threads*2),
+	a.loopChan = make(chan []sts.SendFile, a.RawConf.Threads*2)
+	a.pollChan = make(chan []sts.SendFile, a.RawConf.Threads*2)
+	a.doneChan = []chan []sts.DoneFile{
+		make(chan []sts.DoneFile, a.RawConf.Threads*2),
+		make(chan []sts.DoneFile, a.RawConf.Threads*2),
 	}
 
 	var outDir string
 	if a.RawConf.OutDir != "" {
-		outDir = InitPath(a.Root, a.RawConf.OutDir, true)
+		outDir = util.InitPath(a.Root, a.RawConf.OutDir, true)
 	} else {
-		outDir = InitPath(a.Root, filepath.Join(a.DirConf.Out, a.RawConf.Target.Name), true)
+		outDir = util.InitPath(a.Root, filepath.Join(a.DirConf.Out, a.RawConf.Target.Name), true)
 	}
-	cacheDir := InitPath(a.Root, a.DirConf.Cache, true)
+	cacheDir := util.InitPath(a.Root, a.DirConf.Cache, true)
 
-	scanConf := ScannerConf{
+	scanConf := scan.ScannerConf{
 		ScanDir:        outDir,
 		CacheDir:       cacheDir,
 		CacheAge:       a.RawConf.CacheAge,
@@ -142,13 +150,13 @@ func (a *AppOut) initComponents() (err error) {
 		ZeroError:      true,
 	}
 
-	if a.Scanner, err = NewScanner(&scanConf); err != nil {
+	if a.Scanner, err = scan.NewScanner(&scanConf); err != nil {
 		return
 	}
-	var tags []*Tag
+	var tags []*conf.Tag
 	for _, tag := range a.RawConf.Tags {
 		switch tag.Method {
-		case MethodHTTP:
+		case conf.MethodHTTP:
 			tags = append(tags, tag)
 		default:
 			// Ignore unknown methods.
@@ -158,15 +166,15 @@ func (a *AppOut) initComponents() (err error) {
 		}
 	}
 
-	a.Sorter = NewSorter(tags, a.RawConf.GroupBy)
-	if a.Sender, err = NewSender(a.conf); err != nil {
+	a.Sorter = sort.NewSorter(tags, a.RawConf.GroupBy)
+	if a.Sender, err = send.NewSender(a.conf); err != nil {
 		return
 	}
-	a.Poller = NewPoller(a.conf)
+	a.Poller = poll.NewPoller(a.conf)
 	return
 }
 
-func (a *AppOut) getPartials() ([]*Companion, error) {
+func (a *AppOut) getPartials() ([]*companion.Companion, error) {
 	var err error
 	var client *http.Client
 	var req *http.Request
@@ -190,7 +198,7 @@ func (a *AppOut) getPartials() ([]*Companion, error) {
 		return nil, err
 	}
 	defer reader.Close()
-	partials := []*Companion{}
+	partials := []*companion.Companion{}
 	jsonDecoder := json.NewDecoder(reader)
 	err = jsonDecoder.Decode(&partials)
 	if err != nil {
@@ -199,17 +207,17 @@ func (a *AppOut) getPartials() ([]*Companion, error) {
 	return partials, nil
 }
 
-func (a *AppOut) getRecoverable() (send []ScanFile, poll []PollFile, err error) {
+func (a *AppOut) getRecoverable() (send []sts.ScanFile, poll []sts.PollFile, err error) {
 	files := a.Scanner.GetScanFiles()
 	partials, err := a.getPartials()
 	if err != nil {
 		return nil, nil, err
 	}
-	pmap := make(map[string]*Companion)
+	pmap := make(map[string]*companion.Companion)
 	for _, cmp := range partials {
 		pmap[cmp.Path] = cmp
 	}
-	fmap := make(map[string]ScanFile)
+	fmap := make(map[string]sts.ScanFile)
 	for _, file := range files {
 		changed, err := file.Reset()
 		if err != nil {
@@ -288,19 +296,19 @@ func (a *AppOut) Recover() error {
 		// be put away after some of these that haven't been partially sent yet.
 		none = append(none, wait...)
 		for _, f := range append(none, fail...) {
-			send = append(send, f.GetOrigFile().(ScanFile))
+			send = append(send, f.GetOrigFile().(sts.ScanFile))
 		}
 		if len(done) > 0 {
 			// The scanner may not process the "done" list before sending files out
 			// so we need to mark them as already queued.
-			var d []DoneFile
+			var d []sts.DoneFile
 			for _, f := range done {
-				logging.Debug("RECOVER Found Already Done:", f.(DoneFile).GetRelPath())
-				a.Scanner.SetQueued(f.(DoneFile).GetPath()) // So they don't get added again.
-				d = append(d, f.(DoneFile))
+				logging.Debug("RECOVER Found Already Done:", f.(sts.DoneFile).GetRelPath())
+				a.Scanner.SetQueued(f.(sts.DoneFile).GetPath()) // So they don't get added again.
+				d = append(d, f.(sts.DoneFile))
 				if !logging.FindSent(f.GetRelPath(), f.GetStarted(), time.Now(), a.conf.TargetName) {
 					// Log that it was sent if crashed between being sent and being logged.
-					logging.Sent(f.GetRelPath(), "", f.GetOrigFile().(ScanFile).GetSize(), 0, a.conf.TargetName)
+					logging.Sent(f.GetRelPath(), "", f.GetOrigFile().(sts.ScanFile).GetSize(), 0, a.conf.TargetName)
 				}
 			}
 			for _, dc := range a.doneChan {
@@ -328,7 +336,7 @@ func (a *AppOut) Start(stop <-chan bool) <-chan bool {
 	wg.Add(4) // One for each component.
 
 	// Need to make a separate array for the write-only references to the done channels sent to the poller.
-	var dc []chan<- []DoneFile
+	var dc []chan<- []sts.DoneFile
 	for _, c := range a.doneChan {
 		dc = append(dc, c)
 	}
@@ -336,9 +344,9 @@ func (a *AppOut) Start(stop <-chan bool) <-chan bool {
 	pollStop := make(chan bool)
 
 	// Start the poller.
-	go func(poller *Poller, in <-chan []SendFile, fail chan<- []SendFile, stop <-chan bool, out ...chan<- []DoneFile) {
+	go func(poller *poll.Poller, in <-chan []sts.SendFile, fail chan<- []sts.SendFile, stop <-chan bool, out ...chan<- []sts.DoneFile) {
 		defer wg.Done()
-		poller.Start(&PollerChan{
+		poller.Start(&poll.PollerChan{
 			In:   in,
 			Fail: fail,
 			Done: out,
@@ -347,18 +355,18 @@ func (a *AppOut) Start(stop <-chan bool) <-chan bool {
 	}(a.Poller, a.pollChan, a.loopChan, pollStop, dc...)
 
 	// Start the sender.
-	go func(sender *Sender, in <-chan SortFile, loop <-chan []SendFile, close chan<- bool, out ...chan<- []SendFile) {
+	go func(sender *send.Sender, in <-chan sts.SortFile, loop <-chan []sts.SendFile, close chan<- bool, out ...chan<- []sts.SendFile) {
 		defer wg.Done()
-		sender.Start(&SenderChan{
+		sender.Start(&send.SenderChan{
 			In:    in,
 			Retry: loop,
 			Done:  out,
 			Close: close,
 		})
-	}(a.Sender, a.sortChan[MethodHTTP], a.loopChan, pollStop, a.pollChan)
+	}(a.Sender, a.sortChan[conf.MethodHTTP], a.loopChan, pollStop, a.pollChan)
 
 	// Start the sorter.
-	go func(sorter *Sorter, in <-chan []ScanFile, out map[string]chan SortFile, done <-chan []DoneFile) {
+	go func(sorter *sort.Sorter, in <-chan []sts.ScanFile, out map[string]chan sts.SortFile, done <-chan []sts.DoneFile) {
 		defer wg.Done()
 		sorter.Start(in, out, done)
 	}(a.Sorter, a.scanChan, a.sortChan, a.doneChan[0])
@@ -368,7 +376,7 @@ func (a *AppOut) Start(stop <-chan bool) <-chan bool {
 	if stop != nil {
 		scanStop = make(chan bool)
 	}
-	go func(scanner *Scanner, out chan<- []ScanFile, done <-chan []DoneFile, stop <-chan bool) {
+	go func(scanner *scan.Scanner, out chan<- []sts.ScanFile, done <-chan []sts.DoneFile, stop <-chan bool) {
 		defer wg.Done()
 		scanner.Start(out, done, stop)
 	}(a.Scanner, a.scanChan, a.doneChan[1], scanStop)
@@ -393,7 +401,7 @@ func (a *AppOut) Start(stop <-chan bool) <-chan bool {
 
 // askFile needs to implement PollFile and DoneFile
 type askFile struct {
-	file    ScanFile
+	file    sts.ScanFile
 	start   time.Time
 	success bool
 }
@@ -420,7 +428,7 @@ func (f *askFile) GetOrigFile() interface{} {
 
 // partialFile implements RecoverFile
 type partialFile struct {
-	file  ScanFile
+	file  sts.ScanFile
 	prev  string
 	hash  string
 	alloc [][2]int64

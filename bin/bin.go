@@ -1,4 +1,4 @@
-package sts
+package bin
 
 import (
 	"crypto/md5"
@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/logging"
 )
 
@@ -20,14 +21,14 @@ const BinFluff = 0.1
 
 // Part is the struct for managing the parts of an outgoing "bin".
 type Part struct {
-	File SendFile // The file for which this part applies
-	Beg  int64    // Beginning byte in the part
-	End  int64    // Ending byte in the part
-	Hash string   // MD5 of the data in the part file from Beg:End
+	File sts.SendFile // The file for which this part applies
+	Beg  int64        // Beginning byte in the part
+	End  int64        // Ending byte in the part
+	Hash string       // MD5 of the data in the part file from Beg:End
 }
 
 // NewPart creates a new Part reference including the hash if necessary.
-func NewPart(file SendFile, beg, end int64) (p *Part, err error) {
+func NewPart(file sts.SendFile, beg, end int64) (p *Part, err error) {
 	p = &Part{}
 	p.File = file
 	p.Beg = beg
@@ -97,7 +98,7 @@ func (bin *Bin) IsFull() bool {
 }
 
 // Add adds what it can of the input SendFile to the bin.  Returns false if no bytes were added.
-func (bin *Bin) Add(file SendFile) (added bool, err error) {
+func (bin *Bin) Add(file sts.SendFile) (added bool, err error) {
 	beg, end := file.GetNextAlloc()
 	end = int64(math.Min(float64(end), float64(beg+bin.BytesLeft)+float64(bin.Bytes)*BinFluff))
 	bytes := int64(end - beg)
@@ -119,9 +120,9 @@ func (bin *Bin) Add(file SendFile) (added bool, err error) {
 
 // Validate loops over the bin parts and extracts (removes) any changed or otherwise problem files
 // and returns them (after setting them to canceled).
-func (bin *Bin) Validate() []SendFile {
+func (bin *Bin) Validate() []sts.SendFile {
 	var pass []*Part
-	var fail []SendFile
+	var fail []sts.SendFile
 	b := int64(0)
 	for _, p := range bin.Parts {
 		if p.File.GetCancel() { // If another part of this file was already canceled.
@@ -174,8 +175,8 @@ type PartMeta struct {
 	Hash     string `json:"h"`
 }
 
-// BinEncoder is the struct that manages writing a bin.
-type BinEncoder struct {
+// Encoder is the struct that manages writing a bin.
+type Encoder struct {
 	bin          *Bin
 	binPart      *Part       // The instance of the Part currently being operated on from Bin.Parts
 	partIndex    int         // The index of the next Part from bin.Parts
@@ -186,12 +187,12 @@ type BinEncoder struct {
 	Meta         []*PartMeta // The encoded metadata for this bin to be included in the payload.
 }
 
-// NewBinEncoder returns a new BinWriter instance.
-func NewBinEncoder(bin *Bin) *BinEncoder {
+// NewEncoder returns a new BinWriter instance.
+func NewEncoder(bin *Bin) *Encoder {
 	if len(bin.Parts) < 1 {
 		return nil
 	}
-	b := &BinEncoder{}
+	b := &Encoder{}
 	b.bin = bin
 	b.Meta = make([]*PartMeta, len(b.bin.Parts))
 	for i := 0; i < len(b.bin.Parts); i++ {
@@ -209,7 +210,7 @@ func NewBinEncoder(bin *Bin) *BinEncoder {
 	return b
 }
 
-func (b *BinEncoder) startNextPart() error {
+func (b *Encoder) startNextPart() error {
 	if b.fh != nil {
 		b.fh.Close()
 	}
@@ -235,7 +236,7 @@ func (b *BinEncoder) startNextPart() error {
 }
 
 // Read reads the next bit of bytes from the current file part.
-func (b *BinEncoder) Read(p []byte) (n int, err error) {
+func (b *Encoder) Read(p []byte) (n int, err error) {
 	if b.fh == nil {
 		b.startNextPart()
 	}
@@ -306,19 +307,19 @@ func (pr *PartDecoder) Read(out []byte) (n int, err error) {
 	return
 }
 
-// BinDecoder is responsible for parsing "bin" requests on the receiving end.
-type BinDecoder struct {
+// Decoder is responsible for parsing "bin" requests on the receiving end.
+type Decoder struct {
 	r    io.Reader
 	meta []*PartMeta
 	prev *PartDecoder
 	pi   int
 }
 
-// NewBinDecoder returns a new instance of BinWriter.
+// NewDecoder returns a new instance of BinWriter.
 // It expects the number of bytes devoted to the metadata array and the path delimeter
 // string as inputs.
-func NewBinDecoder(r io.Reader, n int, s string) (br *BinDecoder, err error) {
-	br = &BinDecoder{}
+func NewDecoder(r io.Reader, n int, s string) (br *Decoder, err error) {
+	br = &Decoder{}
 	br.r = r
 	br.pi = 0
 	pr, pw := io.Pipe()
@@ -337,7 +338,7 @@ func NewBinDecoder(r io.Reader, n int, s string) (br *BinDecoder, err error) {
 }
 
 // Next gets the next PartDecoder for this BinDecoder.
-func (b *BinDecoder) Next() (p *PartDecoder, eof bool) {
+func (b *Decoder) Next() (p *PartDecoder, eof bool) {
 	if b.pi == len(b.meta) {
 		eof = true
 		return

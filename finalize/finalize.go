@@ -1,4 +1,4 @@
-package sts
+package finalize
 
 import (
 	"fmt"
@@ -7,8 +7,12 @@ import (
 	"sync"
 	"time"
 
-	"code.arm.gov/dataflow/sts/fileutils"
+	"code.arm.gov/dataflow/sts"
+	"code.arm.gov/dataflow/sts/companion"
+	"code.arm.gov/dataflow/sts/fileutil"
 	"code.arm.gov/dataflow/sts/logging"
+	"code.arm.gov/dataflow/sts/poll"
+	"code.arm.gov/dataflow/sts/server"
 )
 
 // CacheAge is how long a finalized file is kept in memory.
@@ -26,7 +30,7 @@ const LogSearch = time.Duration(30 * 24 * time.Hour)
 
 // Finalizer manages files that need to be validated against companions.
 type Finalizer struct {
-	Conf      *ReceiverConf
+	Conf      *server.ReceiverConf
 	last      time.Time
 	poll      map[string]int
 	pollLock  sync.RWMutex
@@ -38,15 +42,15 @@ type Finalizer struct {
 }
 
 type finalFile struct {
-	file    ScanFile
-	comp    *Companion
+	file    sts.ScanFile
+	comp    *companion.Companion
 	hash    string
 	time    time.Time
 	success bool
 }
 
 // NewFinalizer returns a new Finalizer instance.
-func NewFinalizer(conf *ReceiverConf) *Finalizer {
+func NewFinalizer(conf *server.ReceiverConf) *Finalizer {
 	f := &Finalizer{}
 	f.Conf = conf
 	f.poll = make(map[string]int)
@@ -56,7 +60,7 @@ func NewFinalizer(conf *ReceiverConf) *Finalizer {
 }
 
 // Start starts the finalizer daemon that listens on the provided channel.
-func (f *Finalizer) Start(inChan chan []ScanFile) {
+func (f *Finalizer) Start(inChan chan []sts.ScanFile) {
 	f.validChan = make(chan *finalFile, cap(inChan))
 	for {
 		select {
@@ -110,7 +114,7 @@ func (f *Finalizer) GetFileStatus(source, relPath string, sent time.Time) int {
 	success, found := f.fromCache(path)
 	if success {
 		f.removePoll(path)
-		return ConfirmPassed
+		return poll.ConfirmPassed
 	}
 	if !found {
 		wf := f.getWaiting(path)
@@ -121,18 +125,18 @@ func (f *Finalizer) GetFileStatus(source, relPath string, sent time.Time) int {
 				}(wf, f.validChan)
 			}
 			f.incrementPollCount(path)
-			return ConfirmWaiting
+			return poll.ConfirmWaiting
 		}
 		if logging.FindReceived(relPath, sent, time.Now(), source) {
 			f.removePoll(path)
-			return ConfirmPassed
+			return poll.ConfirmPassed
 		}
-		return ConfirmNone
+		return poll.ConfirmNone
 	}
-	return ConfirmFailed
+	return poll.ConfirmFailed
 }
 
-func (f *Finalizer) validate(file ScanFile, out chan<- *finalFile) {
+func (f *Finalizer) validate(file sts.ScanFile, out chan<- *finalFile) {
 	var err error
 
 	// Make sure it exists.
@@ -145,10 +149,10 @@ func (f *Finalizer) validate(file ScanFile, out chan<- *finalFile) {
 	ff := &finalFile{file: file}
 
 	// Read companion metadata.
-	if _, ok := file.(RecvFile); ok {
-		ff.comp = file.(RecvFile).GetCompanion()
+	if _, ok := file.(sts.RecvFile); ok {
+		ff.comp = file.(sts.RecvFile).GetCompanion().(*companion.Companion)
 	} else {
-		if ff.comp, err = ReadCompanion(file.GetPath(false)); err != nil {
+		if ff.comp, err = companion.ReadCompanion(file.GetPath(false)); err != nil {
 			os.Remove(file.GetPath(false))
 			logging.Error(fmt.Sprintf("Missing/invalid companion (%s): %s", err.Error(), file.GetRelPath()))
 			return
@@ -189,7 +193,7 @@ func (f *Finalizer) finalize(ff *finalFile) (done bool, err error) {
 				f.toWait(stagedPrevFile, ff)
 				return
 			}
-			if _, err = os.Stat(stagedPrevFile + PartExt); !os.IsNotExist(err) {
+			if _, err = os.Stat(stagedPrevFile + server.PartExt); !os.IsNotExist(err) {
 				logging.Debug("FINAL Previous File in Progress:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
 				f.toWait(stagedPrevFile, ff)
 				err = nil

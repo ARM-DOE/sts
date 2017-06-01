@@ -1,4 +1,4 @@
-package sts
+package util
 
 import (
 	"os"

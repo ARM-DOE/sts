@@ -1,4 +1,4 @@
-package sts
+package poll
 
 import (
 	"compress/gzip"
@@ -10,8 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"code.arm.gov/dataflow/sts/httputils"
+	"code.arm.gov/dataflow/sts"
+	"code.arm.gov/dataflow/sts/httputil"
 	"code.arm.gov/dataflow/sts/logging"
+	"code.arm.gov/dataflow/sts/send"
 )
 
 // ConfirmNone is the indicator that a file has not been confirmed.
@@ -33,15 +35,15 @@ const ConfirmWaiting = 3
 type Poller struct {
 	Files  map[string]*pollFile
 	client *http.Client
-	conf   *SenderConf
+	conf   *send.SenderConf
 }
 
 // PollerChan is the struct used to house the channels in support of flow
 // through the poller.
 type PollerChan struct {
-	In   <-chan []SendFile
-	Fail chan<- []SendFile
-	Done []chan<- []DoneFile
+	In   <-chan []sts.SendFile
+	Fail chan<- []sts.SendFile
+	Done []chan<- []sts.DoneFile
 
 	// Need a separate stop indicator rather than the closing of the "in" channel
 	// because of the looping nature of this component.
@@ -50,7 +52,7 @@ type PollerChan struct {
 
 // Implements PollFile and DoneFile interfaces
 type pollFile struct {
-	file  SendFile
+	file  sts.SendFile
 	time  time.Time
 	nPoll int
 }
@@ -76,7 +78,7 @@ func (f *pollFile) GetOrigFile() interface{} {
 }
 
 // NewPoller creates a new Poller instance with all default variables instantiated.
-func NewPoller(conf *SenderConf) *Poller {
+func NewPoller(conf *send.SenderConf) *Poller {
 	p := &Poller{}
 	p.conf = conf
 	p.Files = make(map[string]*pollFile)
@@ -92,9 +94,9 @@ func NewPoller(conf *SenderConf) *Poller {
 func (poller *Poller) Start(ch *PollerChan) {
 	var t time.Time
 	var err error
-	var poll []PollFile
-	fail := []SendFile{}
-	done := make([][]DoneFile, len(ch.Done))
+	var poll []sts.PollFile
+	fail := []sts.SendFile{}
+	done := make([][]sts.DoneFile, len(ch.Done))
 	pause := time.Millisecond * 100
 	for {
 		select {
@@ -131,7 +133,7 @@ func (poller *Poller) Start(ch *PollerChan) {
 				logging.Debug("POLL Failed:", len(fail))
 				select {
 				case ch.Fail <- fail:
-					fail = []SendFile{}
+					fail = []sts.SendFile{}
 				default:
 					break
 				}
@@ -140,7 +142,7 @@ func (poller *Poller) Start(ch *PollerChan) {
 				if len(done[i]) > 0 {
 					select {
 					case dc <- done[i]:
-						done[i] = []DoneFile{}
+						done[i] = []sts.DoneFile{}
 					default:
 						break
 					}
@@ -174,14 +176,14 @@ func (poller *Poller) Start(ch *PollerChan) {
 		if len(poller.Files) < 1 {
 			continue
 		}
-		var n []PollFile
-		var f []PollFile
-		var d []PollFile
+		var n []sts.PollFile
+		var f []sts.PollFile
+		var d []sts.PollFile
 		f, poll = poller.buildList()
 		for _, ff := range f {
-			fail = append(fail, ff.GetOrigFile().(SendFile))
+			fail = append(fail, ff.GetOrigFile().(sts.SendFile))
 			// Cancel files that have exceeded maximum poll attempts.
-			ff.GetOrigFile().(SendFile).SetCancel(true)
+			ff.GetOrigFile().(sts.SendFile).SetCancel(true)
 		}
 		if len(poll) < 1 {
 			continue
@@ -203,13 +205,13 @@ func (poller *Poller) Start(ch *PollerChan) {
 			poller.Files[pf.GetRelPath()].nPoll++
 		}
 		for _, ff := range f {
-			fail = append(fail, ff.GetOrigFile().(SendFile))
-			poller.removeFile(ff.(PollFile))
+			fail = append(fail, ff.GetOrigFile().(sts.SendFile))
+			poller.removeFile(ff.(sts.PollFile))
 		}
-		var df []DoneFile
+		var df []sts.DoneFile
 		for _, dd := range d {
-			df = append(df, dd.(DoneFile))
-			poller.removeFile(dd.(PollFile))
+			df = append(df, dd.(sts.DoneFile))
+			poller.removeFile(dd.(sts.PollFile))
 		}
 		for i := range done {
 			done[i] = append(done[i], df...)
@@ -218,7 +220,7 @@ func (poller *Poller) Start(ch *PollerChan) {
 	}
 }
 
-func (poller *Poller) addFile(file SendFile) {
+func (poller *Poller) addFile(file sts.SendFile) {
 	_, exists := poller.Files[file.GetRelPath()]
 	if !exists {
 		logging.Debug("POLL Added:", file.GetRelPath())
@@ -227,11 +229,11 @@ func (poller *Poller) addFile(file SendFile) {
 	}
 }
 
-func (poller *Poller) removeFile(file PollFile) {
+func (poller *Poller) removeFile(file sts.PollFile) {
 	delete(poller.Files, file.GetRelPath())
 }
 
-func (poller *Poller) buildList() (fail []PollFile, poll []PollFile) {
+func (poller *Poller) buildList() (fail []sts.PollFile, poll []sts.PollFile) {
 	for _, pf := range poller.Files {
 		if poller.conf.PollAttempts > 0 && pf.nPoll > poller.conf.PollAttempts {
 			logging.Debug("POLL Rejected:", pf.file.GetRelPath())
@@ -248,11 +250,14 @@ func (poller *Poller) buildList() (fail []PollFile, poll []PollFile) {
 }
 
 // Poll attempts to confirm whether files have been properly received on target.
-func (poller *Poller) Poll(files []PollFile) (none []PollFile, fail []PollFile, pass []PollFile, wait []PollFile, err error) {
-	fmap := make(map[string]PollFile)
-	var cf []*ConfirmFile
+func (poller *Poller) Poll(files []sts.PollFile) (none []sts.PollFile, fail []sts.PollFile, pass []sts.PollFile, wait []sts.PollFile, err error) {
+	fmap := make(map[string]sts.PollFile)
+	var cf []*sts.ConfirmFile
 	for _, f := range files {
-		cf = append(cf, &ConfirmFile{f.GetRelPath(), f.GetStarted().Unix()})
+		cf = append(cf, &sts.ConfirmFile{
+			RelPath: f.GetRelPath(),
+			Started: f.GetStarted().Unix(),
+		})
 		fmap[f.GetRelPath()] = f
 		logging.Debug("POLLing:", f.GetRelPath())
 	}

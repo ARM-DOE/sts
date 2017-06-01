@@ -2,6 +2,11 @@ package sts
 
 import "time"
 
+// FinalStatusService is the interface for determining a file's final status.
+type FinalStatusService interface {
+	GetFileStatus(source, relPath string, sent time.Time) int
+}
+
 // ScanFile is the interface for a file as found on disk.
 type ScanFile interface {
 	GetPath(bool) string
@@ -66,10 +71,18 @@ type RecoverFile interface {
 	Stat() (bool, error)
 }
 
+// Companion is the interface to a companion file
+type Companion interface {
+	AddPart(partHash string, beg int64, end int64)
+	Write() error
+	Delete() error
+	IsComplete() bool
+}
+
 // RecvFile is the interface for a received file
 type RecvFile interface {
 	ScanFile
-	GetCompanion() *Companion
+	GetCompanion() Companion
 }
 
 // PollFile is the interface for a file as needed for polling.

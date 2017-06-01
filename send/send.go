@@ -1,4 +1,4 @@
-package sts
+package send
 
 import (
 	"bytes"
@@ -13,14 +13,16 @@ import (
 	"sync"
 	"time"
 
-	"code.arm.gov/dataflow/sts/fileutils"
-	"code.arm.gov/dataflow/sts/httputils"
+	"code.arm.gov/dataflow/sts"
+	"code.arm.gov/dataflow/sts/bin"
+	"code.arm.gov/dataflow/sts/fileutil"
+	"code.arm.gov/dataflow/sts/httputil"
 	"code.arm.gov/dataflow/sts/logging"
 	"github.com/alecthomas/units"
 )
 
 type sendFile struct {
-	file       SortFile
+	file       sts.SortFile
 	hash       string
 	prevName   string
 	started    time.Time
@@ -31,11 +33,11 @@ type sendFile struct {
 	lock       sync.RWMutex
 }
 
-func newSendFile(f SortFile) (file *sendFile, err error) {
+func newSendFile(f sts.SortFile) (file *sendFile, err error) {
 	file = &sendFile{}
 	file.file = f
-	if _, ok := f.GetOrigFile().(RecoverFile); ok {
-		file.hash = f.GetOrigFile().(RecoverFile).GetHash()
+	if _, ok := f.GetOrigFile().(sts.RecoverFile); ok {
+		file.hash = f.GetOrigFile().(sts.RecoverFile).GetHash()
 	} else {
 		file.hash, err = fileutils.FileMD5(f.GetPath(true))
 	}
@@ -113,8 +115,8 @@ func (f *sendFile) GetCompleted() time.Time {
 func (f *sendFile) GetNextAlloc() (int64, int64) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
-	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
-		return f.file.GetOrigFile().(RecoverFile).GetNextAlloc()
+	if _, ok := f.file.GetOrigFile().(sts.RecoverFile); ok {
+		return f.file.GetOrigFile().(sts.RecoverFile).GetNextAlloc()
 	}
 	return f.bytesAlloc, f.file.GetSize()
 }
@@ -122,8 +124,8 @@ func (f *sendFile) GetNextAlloc() (int64, int64) {
 func (f *sendFile) GetBytesAlloc() int64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
-	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
-		return f.file.GetOrigFile().(RecoverFile).GetBytesAlloc()
+	if _, ok := f.file.GetOrigFile().(sts.RecoverFile); ok {
+		return f.file.GetOrigFile().(sts.RecoverFile).GetBytesAlloc()
 	}
 	return f.bytesAlloc
 }
@@ -131,8 +133,8 @@ func (f *sendFile) GetBytesAlloc() int64 {
 func (f *sendFile) AddAlloc(bytes int64) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
-	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
-		f.file.GetOrigFile().(RecoverFile).AddAlloc(bytes)
+	if _, ok := f.file.GetOrigFile().(sts.RecoverFile); ok {
+		f.file.GetOrigFile().(sts.RecoverFile).AddAlloc(bytes)
 		return
 	}
 	f.bytesAlloc += bytes
@@ -141,8 +143,8 @@ func (f *sendFile) AddAlloc(bytes int64) {
 func (f *sendFile) GetBytesSent() int64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
-	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
-		return f.file.GetOrigFile().(RecoverFile).GetBytesSent()
+	if _, ok := f.file.GetOrigFile().(sts.RecoverFile); ok {
+		return f.file.GetOrigFile().(sts.RecoverFile).GetBytesSent()
 	}
 	return f.bytesSent
 }
@@ -150,8 +152,8 @@ func (f *sendFile) GetBytesSent() int64 {
 func (f *sendFile) AddSent(bytes int64) bool {
 	f.lock.Lock()
 	defer f.lock.Unlock()
-	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
-		f.file.GetOrigFile().(RecoverFile).AddSent(bytes)
+	if _, ok := f.file.GetOrigFile().(sts.RecoverFile); ok {
+		f.file.GetOrigFile().(sts.RecoverFile).AddSent(bytes)
 	} else {
 		f.bytesSent += bytes
 	}
@@ -174,8 +176,8 @@ func (f *sendFile) IsSent() bool {
 }
 
 func (f *sendFile) isSent() bool {
-	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
-		return f.file.GetOrigFile().(RecoverFile).GetBytesSent() == f.file.GetSize()
+	if _, ok := f.file.GetOrigFile().(sts.RecoverFile); ok {
+		return f.file.GetOrigFile().(sts.RecoverFile).GetBytesSent() == f.file.GetSize()
 	}
 	return f.file.GetSize() == f.bytesSent
 }
@@ -183,8 +185,8 @@ func (f *sendFile) isSent() bool {
 func (f *sendFile) Stat() (bool, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
-	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
-		return f.file.GetOrigFile().(RecoverFile).Stat()
+	if _, ok := f.file.GetOrigFile().(sts.RecoverFile); ok {
+		return f.file.GetOrigFile().(sts.RecoverFile).Stat()
 	}
 	return f.file.GetOrigFile().Reset()
 }
@@ -193,7 +195,7 @@ func (f *sendFile) Reset() (changed bool, err error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	f.started = time.Time{}
-	if _, ok := f.file.GetOrigFile().(RecoverFile); ok {
+	if _, ok := f.file.GetOrigFile().(sts.RecoverFile); ok {
 		changed, err = f.file.GetOrigFile().Reset()
 		// Return because the RecoverFile recomputes MD5 itself.
 		return
@@ -253,13 +255,13 @@ func (sc *SenderConf) Protocol() string {
 // SenderChan is the struct used to house the channels in support of flow
 // through the sender.
 type SenderChan struct {
-	In       <-chan SortFile
-	Retry    <-chan []SendFile
-	Done     []chan<- []SendFile
+	In       <-chan sts.SortFile
+	Retry    <-chan []sts.SendFile
+	Done     []chan<- []sts.SendFile
 	Close    chan<- bool
-	sendFile chan SendFile
-	sendBin  chan *Bin
-	doneBin  chan *Bin
+	sendFile chan sts.SendFile
+	sendBin  chan *bin.Bin
+	doneBin  chan *bin.Bin
 }
 
 // Sender is the struct for managing STS send operations.
@@ -287,9 +289,9 @@ func NewSender(conf *SenderConf) (s *Sender, err error) {
 // Start controls the sending of files on the in channel and writing results to the out channels.
 func (sender *Sender) Start(ch *SenderChan) {
 	sender.ch = ch
-	sender.ch.sendFile = make(chan SendFile, sender.conf.Threads)
-	sender.ch.sendBin = make(chan *Bin, sender.conf.Threads*2)
-	sender.ch.doneBin = make(chan *Bin, sender.conf.Threads)
+	sender.ch.sendFile = make(chan sts.SendFile, sender.conf.Threads)
+	sender.ch.sendBin = make(chan *bin.Bin, sender.conf.Threads*2)
+	sender.ch.doneBin = make(chan *bin.Bin, sender.conf.Threads)
 	var wgWrap, wgBin, wgRebin, wgSend, wgDone sync.WaitGroup
 	nWrap, nBin, nRebin, nSend, nDone := 1, 1, 1, sender.conf.Threads, 1
 	start := func(s func(wg *sync.WaitGroup), wg *sync.WaitGroup, n int) {
@@ -370,7 +372,7 @@ func (sender *Sender) startWrap(wg *sync.WaitGroup) {
 				logging.Sent(sf.GetRelPath(), sf.GetHash(), sf.GetSize(), 0, sender.conf.TargetName)
 			}
 			for _, c := range sender.ch.Done {
-				c <- []SendFile{sf}
+				c <- []sts.SendFile{sf}
 			}
 			continue
 		}
@@ -380,8 +382,8 @@ func (sender *Sender) startWrap(wg *sync.WaitGroup) {
 
 func (sender *Sender) startBin(wg *sync.WaitGroup) {
 	defer wg.Done()
-	var b *Bin
-	var f SendFile
+	var b *bin.Bin
+	var f sts.SendFile
 	var ok bool
 	wait := time.Millisecond * 100
 	waited := time.Millisecond * 0
@@ -412,7 +414,7 @@ func (sender *Sender) startBin(wg *sync.WaitGroup) {
 			}
 		}
 		if b == nil {
-			b = NewBin(int64(sender.conf.BinSize)) // Start new bin.
+			b = bin.NewBin(int64(sender.conf.BinSize)) // Start new bin.
 		}
 		added, err := b.Add(f)
 		if err != nil {
@@ -437,7 +439,7 @@ func (sender *Sender) startRebin(wg *sync.WaitGroup) {
 		if !ok {
 			break
 		}
-		var cancel []SendFile
+		var cancel []sts.SendFile
 		for _, sf := range f {
 			logging.Debug("SEND Resend:", sf.GetRelPath())
 			// The poller will cancel a file if it exceeded its maximum allowed
@@ -498,7 +500,7 @@ func (sender *Sender) startDone(wg *sync.WaitGroup) {
 		if !ok || b == nil {
 			break
 		}
-		var done []SendFile
+		var done []sts.SendFile
 		for _, p := range b.Parts {
 			f := p.File
 			f.SetStarted(b.GetStarted())
@@ -530,7 +532,7 @@ func (sender *Sender) startDone(wg *sync.WaitGroup) {
 }
 
 // sendBin sends a bin in a loop to handle errors and keep trying.
-func (sender *Sender) sendBin(bin *Bin, gz *gzip.Writer) {
+func (sender *Sender) sendBin(bin *bin.Bin, gz *gzip.Writer) {
 	nerr := 0
 	for {
 		bin.SetStarted()
@@ -563,7 +565,7 @@ func (sender *Sender) sendBin(bin *Bin, gz *gzip.Writer) {
 }
 
 // done adds the slice of input files to each of the "done" channels.
-func (sender *Sender) done(f []SendFile) {
+func (sender *Sender) done(f []sts.SendFile) {
 	if len(f) == 0 {
 		return
 	}
@@ -574,8 +576,8 @@ func (sender *Sender) done(f []SendFile) {
 
 // httpBin sends the input bin via http using the sender configuration struct info.
 // Returns the number of successfully received parts and any error encountered.
-func (sender *Sender) httpBin(bin *Bin, gz *gzip.Writer) (n int, err error) {
-	br := NewBinEncoder(bin)
+func (sender *Sender) httpBin(b *bin.Bin, gz *gzip.Writer) (n int, err error) {
+	br := bin.NewEncoder(b)
 	jr, err := httputils.GetJSONReader(br.Meta, gzip.NoCompression)
 	if err != nil {
 		return
@@ -628,7 +630,7 @@ func (sender *Sender) httpBin(bin *Bin, gz *gzip.Writer) (n int, err error) {
 		err = fmt.Errorf("Bin failed with response code: %d", resp.StatusCode)
 		return
 	}
-	n = len(bin.Parts)
+	n = len(b.Parts)
 	return
 }
 

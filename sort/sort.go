@@ -1,21 +1,23 @@
-package sts
+package sort
 
 import (
 	"os"
 	"regexp"
 	"time"
 
+	"code.arm.gov/dataflow/sts"
+	"code.arm.gov/dataflow/sts/conf"
 	"code.arm.gov/dataflow/sts/logging"
 )
 
 type sortedGroup struct {
 	group string
-	conf  *Tag
+	conf  *conf.Tag
 	next  *sortedGroup
 	prev  *sortedGroup
 }
 
-func newSortedGroup(group string, conf *Tag) *sortedGroup {
+func newSortedGroup(group string, conf *conf.Tag) *sortedGroup {
 	t := &sortedGroup{}
 	t.group = group
 	t.conf = conf
@@ -60,20 +62,20 @@ func (t *sortedGroup) insertBefore(next *sortedGroup) {
 }
 
 type sortedFile struct {
-	file  ScanFile
+	file  sts.ScanFile
 	group *sortedGroup
-	next  SortFile
-	prev  SortFile
+	next  sts.SortFile
+	prev  sts.SortFile
 	dirty bool
 }
 
-func newSortedFile(foundFile ScanFile) *sortedFile {
+func newSortedFile(foundFile sts.ScanFile) *sortedFile {
 	file := &sortedFile{}
 	file.file = foundFile
 	return file
 }
 
-func (file *sortedFile) GetOrigFile() ScanFile {
+func (file *sortedFile) GetOrigFile() sts.ScanFile {
 	return file.file
 }
 
@@ -113,30 +115,30 @@ func (file *sortedFile) GetGroup() string {
 	return file.group.group
 }
 
-func (file *sortedFile) GetNext() SortFile {
+func (file *sortedFile) GetNext() sts.SortFile {
 	return file.next
 }
 
-func (file *sortedFile) GetPrev() SortFile {
+func (file *sortedFile) GetPrev() sts.SortFile {
 	return file.prev
 }
 
-func (file *sortedFile) GetPrevReq() SortFile {
-	if file.group.conf.Order != OrderNone {
+func (file *sortedFile) GetPrevReq() sts.SortFile {
+	if file.group.conf.Order != conf.OrderNone {
 		return file.GetPrev()
 	}
 	return nil
 }
 
-func (file *sortedFile) SetNext(next SortFile) {
+func (file *sortedFile) SetNext(next sts.SortFile) {
 	file.next = next
 }
 
-func (file *sortedFile) SetPrev(prev SortFile) {
+func (file *sortedFile) SetPrev(prev sts.SortFile) {
 	file.prev = prev
 }
 
-func (file *sortedFile) InsertAfter(prev SortFile) {
+func (file *sortedFile) InsertAfter(prev sts.SortFile) {
 	if file.GetPrev() != nil {
 		file.GetPrev().SetNext(file.GetNext())
 	}
@@ -151,7 +153,7 @@ func (file *sortedFile) InsertAfter(prev SortFile) {
 	}
 }
 
-func (file *sortedFile) InsertBefore(next SortFile) {
+func (file *sortedFile) InsertBefore(next sts.SortFile) {
 	if file.GetPrev() != nil {
 		file.GetPrev().SetNext(file.GetNext())
 	}
@@ -170,21 +172,21 @@ func (file *sortedFile) InsertBefore(next SortFile) {
 type Sorter struct {
 	rootPath string
 	groupBy  *regexp.Regexp          // the pattern that puts files into groups to avoid starvation
-	files    map[string]SortFile     // path -> file pointer (lookup)
-	next     map[string]SortFile     // group -> file pointer (next by group)
-	nextOut  SortFile                // the next file out the door
+	files    map[string]sts.SortFile // path -> file pointer (lookup)
+	next     map[string]sts.SortFile // group -> file pointer (next by group)
+	nextOut  sts.SortFile            // the next file out the door
 	group    *sortedGroup            // the first group by priority
 	groupMap map[string]*sortedGroup // group -> group conf (tag)
-	tagData  []*Tag                  // list of raw tag conf
-	tagDef   *Tag                    // default tag
+	tagData  []*conf.Tag             // list of raw tag conf
+	tagDef   *conf.Tag               // default tag
 }
 
 // NewSorter returns a new Sorter instance with input tag configuration.
-func NewSorter(tagData []*Tag, groupBy *regexp.Regexp) *Sorter {
+func NewSorter(tagData []*conf.Tag, groupBy *regexp.Regexp) *Sorter {
 	sorter := &Sorter{}
 	sorter.groupBy = groupBy
-	sorter.files = make(map[string]SortFile)
-	sorter.next = make(map[string]SortFile)
+	sorter.files = make(map[string]sts.SortFile)
+	sorter.next = make(map[string]sts.SortFile)
 	sorter.groupMap = make(map[string]*sortedGroup)
 	sorter.tagData = tagData
 	for _, tag := range tagData {
@@ -198,7 +200,7 @@ func NewSorter(tagData []*Tag, groupBy *regexp.Regexp) *Sorter {
 
 // Start starts the daemon that listens for files on inChan and doneChan and puts files on outChan
 // according to the output "method".
-func (sorter *Sorter) Start(inChan <-chan []ScanFile, outChan map[string]chan SortFile, doneChan <-chan []DoneFile) {
+func (sorter *Sorter) Start(inChan <-chan []sts.ScanFile, outChan map[string]chan sts.SortFile, doneChan <-chan []sts.DoneFile) {
 	for {
 		select {
 		case foundFiles, ok := <-inChan:
@@ -264,7 +266,7 @@ func (sorter *Sorter) Start(inChan <-chan []ScanFile, outChan map[string]chan So
 }
 
 // Add adds a new file to the list.
-func (sorter *Sorter) add(f ScanFile) {
+func (sorter *Sorter) add(f sts.ScanFile) {
 	var exists bool
 	_, exists = sorter.files[f.GetPath(false)]
 	if exists {
@@ -293,7 +295,7 @@ func (sorter *Sorter) getGroup(relPath string) string {
 	return ""
 }
 
-func (sorter *Sorter) getNext() SortFile {
+func (sorter *Sorter) getNext() sts.SortFile {
 	next := sorter.nextOut
 	if next == nil {
 		g := sorter.group
@@ -329,7 +331,7 @@ func (sorter *Sorter) getNext() SortFile {
 	return next
 }
 
-func (sorter *Sorter) clearNext(out SortFile) {
+func (sorter *Sorter) clearNext(out sts.SortFile) {
 	next := out.GetNext()
 	ngrp := out.GetGroup()
 	sorter.next[ngrp] = next
@@ -355,7 +357,7 @@ func (sorter *Sorter) delayGroup(g *sortedGroup) {
 	g.insertAfter(n)
 }
 
-func (sorter *Sorter) getGroupConf(g string) *Tag {
+func (sorter *Sorter) getGroupConf(g string) *conf.Tag {
 	conf := sorter.tagDef
 	for _, tag := range sorter.tagData {
 		if tag.Pattern == nil { // DEFAULT
@@ -391,7 +393,7 @@ func (sorter *Sorter) addGroup(grp *sortedGroup) {
 	}
 }
 
-func (sorter *Sorter) addFile(file SortFile) {
+func (sorter *Sorter) addFile(file sts.SortFile) {
 	grp := sorter.groupMap[file.GetGroup()]
 	f := sorter.next[grp.group]
 	if f == nil {
@@ -402,7 +404,7 @@ func (sorter *Sorter) addFile(file SortFile) {
 loop:
 	for f != nil {
 		switch grp.conf.Order {
-		case OrderFIFO:
+		case conf.OrderFIFO:
 			if file.GetTime() < f.GetTime() {
 				file.InsertBefore(f)
 				break loop
@@ -420,7 +422,7 @@ loop:
 				}
 			}
 			break
-		case OrderLIFO:
+		case conf.OrderLIFO:
 			if file.GetTime() > f.GetTime() {
 				logging.Debug("SORT LIFO:", file.GetTime(), "->", f.GetTime())
 				file.InsertBefore(f)
@@ -452,7 +454,7 @@ loop:
 }
 
 // Done will remove this file from the list and do any cleanup as specified by the tag.
-func (sorter *Sorter) done(file DoneFile) {
+func (sorter *Sorter) done(file sts.DoneFile) {
 	del := false
 	f, found := sorter.files[file.GetPath()]
 	if found {

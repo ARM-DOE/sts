@@ -1,10 +1,12 @@
-package sts
+package conf
 
 import (
 	"io/ioutil"
 	"path/filepath"
 	"regexp"
 	"time"
+
+	"code.arm.gov/dataflow/sts/util"
 
 	"github.com/alecthomas/units"
 	"gopkg.in/yaml.v2"
@@ -61,16 +63,16 @@ func (conf *OutConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 	for i := 0; i < len(conf.Sources); i++ {
 		if src != nil {
 			tgt = conf.Sources[i]
-			CopyStruct(tgt, src)
+			util.CopyStruct(tgt, src)
 			if src.Target != nil && tgt.Target != nil {
-				CopyStruct(tgt.Target, src.Target)
+				util.CopyStruct(tgt.Target, src.Target)
 			}
 		}
 		src = conf.Sources[i]
 		if len(src.Tags) > 1 {
 			tdef := src.Tags[0]
 			for j := 1; j < len(src.Tags); j++ {
-				CopyStruct(src.Tags[j], tdef)
+				util.CopyStruct(src.Tags[j], tdef)
 			}
 		}
 	}
@@ -245,6 +247,7 @@ type InDirs struct {
 	LogsMsg string `yaml:"logs-flow"`
 	Stage   string `yaml:"stage"`
 	Final   string `yaml:"final"`
+	Serve   string `yaml:"serve"`
 }
 
 // InServer is the struct for managing the incoming HTTP host.

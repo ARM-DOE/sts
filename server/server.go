@@ -1,4 +1,4 @@
-package sts
+package server
 
 import (
 	"compress/gzip"
@@ -15,8 +15,11 @@ import (
 	"sync"
 	"time"
 
-	"code.arm.gov/dataflow/sts/fileutils"
-	"code.arm.gov/dataflow/sts/httputils"
+	"code.arm.gov/dataflow/sts"
+	"code.arm.gov/dataflow/sts/bin"
+	"code.arm.gov/dataflow/sts/companion"
+	"code.arm.gov/dataflow/sts/fileutil"
+	"code.arm.gov/dataflow/sts/httputil"
 	"code.arm.gov/dataflow/sts/logging"
 )
 
@@ -29,7 +32,7 @@ type recvFile struct {
 	relPath string
 	size    int64
 	time    int64
-	comp    *Companion
+	comp    *companion.Companion
 }
 
 func (f *recvFile) GetPath(follow bool) string {
@@ -64,12 +67,13 @@ func (f *recvFile) Reset() (changed bool, err error) {
 	}
 	return
 }
-func (f *recvFile) GetCompanion() *Companion {
+func (f *recvFile) GetCompanion() *companion.Companion {
 	return f.comp
 }
 
 // ReceiverConf struct contains configuration parameters needed to run.
 type ReceiverConf struct {
+	ServeDir    string
 	StageDir    string
 	FinalDir    string
 	Port        int
@@ -108,14 +112,14 @@ type Receiver struct {
 	Conf      *ReceiverConf
 	lock      sync.Mutex
 	fileLocks map[string]*sync.Mutex
-	finalizer *Finalizer
-	outChan   chan<- []ScanFile
+	finalizer sts.FinalStatusService
+	outChan   chan<- []sts.ScanFile
 }
 
 // NewReceiver creates new receiver instance according to the input configuration.
 // A reference to a finalizer instance is necessary in order for the validation route
 // to be able to confirm files received.
-func NewReceiver(conf *ReceiverConf, f *Finalizer) *Receiver {
+func NewReceiver(conf *ReceiverConf, f sts.FinalStatusService) *Receiver {
 	r := &Receiver{}
 	r.Conf = conf
 	r.fileLocks = make(map[string]*sync.Mutex)
@@ -124,12 +128,13 @@ func NewReceiver(conf *ReceiverConf, f *Finalizer) *Receiver {
 }
 
 // Serve starts HTTP server.
-func (rcv *Receiver) Serve(out chan<- []ScanFile, stop <-chan bool) {
+func (rcv *Receiver) Serve(out chan<- []sts.ScanFile, stop <-chan bool) {
 	rcv.outChan = out
 
 	http.Handle("/data", rcv.handleValidate(http.HandlerFunc(rcv.routeData)))
 	http.Handle("/validate", rcv.handleValidate(http.HandlerFunc(rcv.routeValidate)))
 	http.Handle("/partials", rcv.handleValidate(http.HandlerFunc(rcv.routePartials)))
+	http.Handle("/static/", rcv.handleValidate(http.HandlerFunc(rcv.routeFile)))
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -163,21 +168,96 @@ func (rcv *Receiver) handleValidate(next http.Handler) http.Handler {
 	return http.HandlerFunc(fn)
 }
 
+func (rcv *Receiver) routeFile(w http.ResponseWriter, r *http.Request) {
+	source := r.Header.Get(httputils.HeaderSourceName)
+	if source == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	file := r.URL.Path[len("/static/"):]
+	root := filepath.Join(rcv.Conf.ServeDir, source)
+	path := filepath.Join(root, file)
+	fi, err := os.Stat(path)
+	switch r.Method {
+	case http.MethodGet:
+		var data interface{}
+		switch {
+		case os.IsNotExist(err):
+			w.WriteHeader(http.StatusNotFound)
+			return
+		case fi.IsDir():
+			var names []string
+			handleNode := func(path string, info os.FileInfo, err error) error {
+				if info == nil || err != nil {
+					return err
+				}
+				if info.IsDir() {
+					return nil
+				}
+				names = append(names, path[len(root)+1:])
+				return nil
+			}
+			if err = fileutils.Walk(path, handleNode, true); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			data = names
+			var respJSON []byte
+			respJSON, err = json.Marshal(data)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set(httputils.HeaderContentType, httputils.HeaderJSON)
+			if err = rcv.respond(w, http.StatusOK, respJSON); err != nil {
+				logging.Error(err.Error())
+			}
+		default:
+			var fp *os.File
+			fp, err = os.Open(path)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			defer fp.Close()
+			io.Copy(w, fp)
+		}
+	case http.MethodDelete:
+		switch {
+		case os.IsNotExist(err):
+			w.WriteHeader(http.StatusNotFound)
+			return
+		case fi.IsDir():
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		default:
+			err = os.Remove(path)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}
+	default:
+		w.WriteHeader(http.StatusBadRequest)
+	}
+}
+
 func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
 	source := r.Header.Get(httputils.HeaderSourceName)
 	if source == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	var partials []*Companion
+	var partials []*companion.Companion
 	root := filepath.Join(rcv.Conf.StageDir, source)
 	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if filepath.Ext(path) == CompExt {
-			base := strings.TrimSuffix(path, CompExt)
+		if filepath.Ext(path) == companion.CompExt {
+			base := strings.TrimSuffix(path, companion.CompExt)
 			lock := rcv.getLock(base)
 			lock.Lock()
-			if _, err := os.Stat(base + CompExt); !os.IsNotExist(err) { // Make sure it still exists.
-				cmp, err := ReadCompanion(base)
+			if _, err := os.Stat(base + companion.CompExt); !os.IsNotExist(err) { // Make sure it still exists.
+				cmp, err := companion.ReadCompanion(base)
 				if err == nil {
 					// Would be nice not to have to care about case but apparently on Mac it can be an issue.
 					relPath := strings.TrimPrefix(strings.ToLower(cmp.Path), strings.ToLower(root+string(os.PathSeparator)))
@@ -192,7 +272,7 @@ func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
 	})
 	respJSON, err := json.Marshal(partials)
 	if err != nil {
-		w.WriteHeader(500)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set(httputils.HeaderSep, string(os.PathSeparator))
@@ -205,7 +285,7 @@ func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
 func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
 	source := r.Header.Get(httputils.HeaderSourceName)
 	sep := r.Header.Get(httputils.HeaderSep)
-	files := []*ConfirmFile{}
+	files := []*sts.ConfirmFile{}
 	var br io.Reader
 	var err error
 	if br, err = httputils.GetReqReader(r); err != nil {
@@ -256,7 +336,7 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	br, err := NewBinDecoder(rr, mlen, sep)
+	br, err := bin.NewDecoder(rr, mlen, sep)
 	if source == "" || err != nil {
 		if err != nil {
 			logging.Error(err.Error())
@@ -264,7 +344,7 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusPartialContent) // respond with a 206
 		return
 	}
-	var parts []*PartDecoder
+	var parts []*bin.PartDecoder
 	for {
 		next, eof := br.Next()
 		if eof { // Reached end of multipart request
@@ -326,9 +406,9 @@ func (rcv *Receiver) initStage(path string, size int64) {
 	if !os.IsNotExist(err) && info.Size() == size {
 		return
 	}
-	if _, err = os.Stat(path + CompExt); !os.IsNotExist(err) {
-		logging.Debug("RECEIVE Removing Stale Companion:", path+CompExt)
-		os.Remove(path + CompExt)
+	if _, err = os.Stat(path + companion.CompExt); !os.IsNotExist(err) {
+		logging.Debug("RECEIVE Removing Stale Companion:", path+companion.CompExt)
+		os.Remove(path + companion.CompExt)
 	}
 	logging.Debug("RECEIVE Making Directory:", path, filepath.Dir(path))
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
@@ -345,7 +425,7 @@ func (rcv *Receiver) initStage(path string, size int64) {
 	fh.Truncate(size)
 }
 
-func (rcv *Receiver) writePart(pr *PartDecoder, source string) (err error) {
+func (rcv *Receiver) writePart(pr *bin.PartDecoder, source string) (err error) {
 	path := filepath.Join(rcv.Conf.StageDir, source, pr.Meta.Path)
 
 	rcv.initStage(path, pr.Meta.FileSize)
@@ -375,7 +455,7 @@ func (rcv *Receiver) writePart(pr *PartDecoder, source string) (err error) {
 	defer lock.Unlock()
 
 	// Update the companion file
-	cmp, err := NewCompanion(source, path, pr.Meta.PrevPath, pr.Meta.FileSize, pr.Meta.FileHash)
+	cmp, err := companion.NewCompanion(source, path, pr.Meta.PrevPath, pr.Meta.FileSize, pr.Meta.FileHash)
 	if err != nil {
 		return err
 	}
@@ -397,7 +477,7 @@ func (rcv *Receiver) writePart(pr *PartDecoder, source string) (err error) {
 		// up the response.
 		go func() {
 			// Add to the finalize channel
-			rcv.outChan <- []ScanFile{&recvFile{path: path, relPath: pr.Meta.Path, comp: cmp}}
+			rcv.outChan <- []sts.ScanFile{&recvFile{path: path, relPath: pr.Meta.Path, comp: cmp}}
 		}()
 	}
 	return nil
