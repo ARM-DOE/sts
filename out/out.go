@@ -517,7 +517,7 @@ func (p *partialFile) Reset() (changed bool, err error) {
 	p.sent = 0
 	changed, err = p.file.Reset()
 	if changed {
-		p.hash, err = fileutils.FileMD5(p.file.GetPath(true))
+		p.hash, err = fileutil.FileMD5(p.file.GetPath(true))
 	}
 	return
 }

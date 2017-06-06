@@ -84,7 +84,7 @@ func (q *scanCache) load(path string) (err error) {
 	if path == "" {
 		return nil
 	}
-	if err = fileutils.LoadJSON(path, q); err != nil && !os.IsNotExist(err) {
+	if err = fileutil.LoadJSON(path, q); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	err = nil
@@ -104,7 +104,7 @@ func (q *scanCache) cache(path string) (err error) {
 	if path == "" {
 		return nil
 	}
-	if err = fileutils.WriteJSON(path, q); err != nil {
+	if err = fileutil.WriteJSON(path, q); err != nil {
 		return
 	}
 	q.dirty = false
@@ -297,7 +297,7 @@ func NewScanner(conf *ScannerConf) (*Scanner, error) {
 	}
 
 	conf.AddIgnoreString(`\.DS_Store$`)
-	conf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutils.LockExt)))
+	conf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutil.LockExt)))
 	conf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(DisabledName)))
 	return scanner, nil
 }
@@ -468,7 +468,7 @@ func (scanner *Scanner) Scan() (FileList, bool) {
 	}
 	logging.Debug("SCAN Scanning...")
 	scanner.cache.scanTime = time.Now().Unix()
-	if err := fileutils.Walk(scanner.cache.ScanDir, scanner.handleNode, scanner.Conf.FollowSymlinks); err != nil {
+	if err := fileutil.Walk(scanner.cache.ScanDir, scanner.handleNode, scanner.Conf.FollowSymlinks); err != nil {
 		logging.Error(err.Error())
 	} else {
 		scanner.cache.LastTime = scanner.cache.scanTime -
@@ -551,5 +551,5 @@ func (scanner *Scanner) shouldIgnore(relPath string, isDir bool) bool {
 }
 
 func toCacheName(dir string) string {
-	return fmt.Sprintf("%s.json", fileutils.StringMD5(dir))
+	return fmt.Sprintf("%s.json", fileutil.StringMD5(dir))
 }

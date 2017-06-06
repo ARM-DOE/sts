@@ -38,7 +38,7 @@ func NewPart(file sts.SendFile, beg, end int64) (p *Part, err error) {
 	// if beg == 0 && end == file.GetSize() && file.GetHash() != "" {
 	// 	p.Hash = file.GetHash()
 	// } else {
-	// 	p.Hash, err = fileutils.PartialMD5(file.GetPath(true), beg, end)
+	// 	p.Hash, err = fileutil.PartialMD5(file.GetPath(true), beg, end)
 	// }
 	return
 }

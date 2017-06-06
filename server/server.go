@@ -197,7 +197,7 @@ func (rcv *Receiver) routeFile(w http.ResponseWriter, r *http.Request) {
 				names = append(names, path[len(root)+1:])
 				return nil
 			}
-			if err = fileutils.Walk(path, handleNode, true); err != nil {
+			if err = fileutil.Walk(path, handleNode, true); err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
@@ -443,8 +443,8 @@ func (rcv *Receiver) writePart(pr *bin.PartDecoder, source string) (err error) {
 	if err != nil {
 		return
 	}
-	if pr.Meta.Hash != "" && pr.Meta.Hash != fileutils.HashHex(pr.Hash) {
-		err = fmt.Errorf("Bad part of %s from bytes %d:%d (%s:%s)", pr.Meta.Path, pr.Meta.Beg, pr.Meta.End, pr.Meta.Hash, fileutils.HashHex(pr.Hash))
+	if pr.Meta.Hash != "" && pr.Meta.Hash != fileutil.HashHex(pr.Hash) {
+		err = fmt.Errorf("Bad part of %s from bytes %d:%d (%s:%s)", pr.Meta.Path, pr.Meta.Beg, pr.Meta.End, pr.Meta.Hash, fileutil.HashHex(pr.Hash))
 		return
 	}
 	logging.Debug("RECEIVE Part OK:", path, n)

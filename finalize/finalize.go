@@ -160,7 +160,7 @@ func (f *Finalizer) validate(file sts.ScanFile, out chan<- *finalFile) {
 	}
 
 	// Validate checksum.
-	if ff.hash, err = fileutils.FileMD5(file.GetPath(false)); err != nil {
+	if ff.hash, err = fileutil.FileMD5(file.GetPath(false)); err != nil {
 		ff.comp.Delete()
 		os.Remove(file.GetPath(false))
 		logging.Error(fmt.Sprintf("Failed to calculate MD5 of %s: %s", file.GetRelPath(), err.Error()))
@@ -236,11 +236,11 @@ func (f *Finalizer) finalize(ff *finalFile) (done bool, err error) {
 	// Move it.
 	finalPath := filepath.Join(f.Conf.FinalDir, ff.comp.SourceName, ff.file.GetRelPath())
 	os.MkdirAll(filepath.Dir(finalPath), os.ModePerm)
-	if err = os.Rename(ff.file.GetPath(false), finalPath+fileutils.LockExt); err != nil {
-		err = fmt.Errorf("Failed to move %s to %s: %s", ff.file.GetPath(false), finalPath+fileutils.LockExt, err.Error())
+	if err = os.Rename(ff.file.GetPath(false), finalPath+fileutil.LockExt); err != nil {
+		err = fmt.Errorf("Failed to move %s to %s: %s", ff.file.GetPath(false), finalPath+fileutil.LockExt, err.Error())
 		return
 	}
-	if err = os.Rename(finalPath+fileutils.LockExt, finalPath); err != nil {
+	if err = os.Rename(finalPath+fileutil.LockExt, finalPath); err != nil {
 		err = fmt.Errorf("Failed to unlock %s: %s", finalPath, err.Error())
 		return
 	}

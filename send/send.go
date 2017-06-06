@@ -39,7 +39,7 @@ func newSendFile(f sts.SortFile) (file *sendFile, err error) {
 	if _, ok := f.GetOrigFile().(sts.RecoverFile); ok {
 		file.hash = f.GetOrigFile().(sts.RecoverFile).GetHash()
 	} else {
-		file.hash, err = fileutils.FileMD5(f.GetPath(true))
+		file.hash, err = fileutil.FileMD5(f.GetPath(true))
 	}
 	return
 }
@@ -207,7 +207,7 @@ func (f *sendFile) Reset() (changed bool, err error) {
 		return
 	}
 	if changed {
-		f.hash, err = fileutils.FileMD5(f.GetPath(true))
+		f.hash, err = fileutil.FileMD5(f.GetPath(true))
 		if err != nil {
 			return
 		}

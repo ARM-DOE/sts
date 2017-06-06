@@ -242,7 +242,7 @@ func (logger *Logger) search(text string, start time.Time, stop time.Time) bool 
 	b := []byte(text)
 	for {
 		path := logger.getPath(start)
-		if fileutils.FindLine(path, b) != "" {
+		if fileutil.FindLine(path, b) != "" {
 			return true
 		}
 		if offset > 0 && start.After(stop) {

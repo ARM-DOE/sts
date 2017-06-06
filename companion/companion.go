@@ -61,7 +61,7 @@ func ReadCompanion(path string) (cmp *Companion, err error) {
 		return
 	}
 	cmp = &Companion{}
-	err = fileutils.LoadJSON(path, cmp)
+	err = fileutil.LoadJSON(path, cmp)
 	if err != nil {
 		return
 	}
@@ -85,7 +85,7 @@ func (cmp *Companion) AddPart(partHash string, beg int64, end int64) {
 }
 
 func (cmp *Companion) Write() error {
-	return fileutils.WriteJSON(cmp.Path+CompExt, cmp)
+	return fileutil.WriteJSON(cmp.Path+CompExt, cmp)
 }
 
 // Delete removes a given file "part" from the Companion.
