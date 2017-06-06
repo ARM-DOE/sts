@@ -25,7 +25,17 @@ const Msg = "messages"
 
 var gLogLock sync.RWMutex
 var gLoggers map[string]*Logger
+var defLogger GenericHandler
 var msgLogger *Logger
+
+// GenericHandler is for overriding default logging mechanism.
+type GenericHandler interface {
+	Debug(...interface{})
+	Info(...interface{})
+	Error(...interface{})
+	Sent(...interface{})
+	Received(...interface{})
+}
 
 // Init will create a logger for each input "mode".
 func Init(modes map[string]string, root string, debug bool) {
@@ -44,6 +54,12 @@ func Init(modes map[string]string, root string, debug bool) {
 		}
 	}
 	msgLogger = gLoggers[Msg] // For faster access.
+}
+
+// SetHandler is an Init() alternative that allows for outside handling of Debug
+// Info, and Error calls.
+func SetHandler(handler GenericHandler) {
+	defLogger = handler
 }
 
 // Done terminates logging for all created loggers.
@@ -81,6 +97,9 @@ func getLogger(mode string, prefix ...string) (*Logger, bool) {
 // Debug joins each item in params{} by a space, prepends a timestamp and the location of the message,
 // and writes the result to stdout and to the "messages" log file.
 func Debug(params ...interface{}) {
+	if defLogger != nil {
+		defLogger.Debug(params)
+	}
 	if msgLogger == nil || !msgLogger.debug {
 		return
 	}
@@ -93,8 +112,13 @@ func Debug(params ...interface{}) {
 // Info joins each item in params{} by a space, prepends a timestamp and the location of the message,
 // and writes the result to stdout and to the "messages" log file.
 func Info(params ...interface{}) {
+	if defLogger != nil {
+		defLogger.Info(params)
+	}
 	if msgLogger == nil {
-		fmt.Fprintln(os.Stdout, params...)
+		if defLogger == nil {
+			fmt.Fprintln(os.Stdout, params...)
+		}
 		return
 	}
 	_, file, line, _ := runtime.Caller(1) // Get file name and line number of the caller of this function
@@ -106,8 +130,13 @@ func Info(params ...interface{}) {
 // Error joins each item in params{} by a space, prepends a timestamp and the location of the error,
 // and writes the result to stderr and to the "messages" log file.
 func Error(params ...interface{}) {
+	if defLogger != nil {
+		defLogger.Error(params)
+	}
 	if msgLogger == nil {
-		fmt.Fprintln(os.Stderr, params...) // Prevent error message from being lost.
+		if defLogger == nil {
+			fmt.Fprintln(os.Stderr, params...) // Prevent error message from being lost.
+		}
 		return
 	}
 	_, file, line, _ := runtime.Caller(1) // Get file name and line number of the caller of this function
@@ -118,6 +147,9 @@ func Error(params ...interface{}) {
 
 // Sent writes a formatted string to the "outgoing_to" log file.
 func Sent(msg string, hash string, size int64, ms int64, prefix ...string) {
+	if defLogger != nil {
+		defLogger.Sent(msg, hash, size, ms, prefix)
+	}
 	logger, exists := getLogger(Out, prefix...)
 	if !exists {
 		return
@@ -135,6 +167,9 @@ func FindSent(text string, start time.Time, stop time.Time, prefix ...string) bo
 
 // Received writes a formatted string to the "incoming_from" log file.
 func Received(msg string, hash string, size int64, prefix ...string) {
+	if defLogger != nil {
+		defLogger.Received(msg, hash, size, prefix)
+	}
 	logger, exists := getLogger(In, prefix...)
 	if !exists {
 		return
