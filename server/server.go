@@ -140,8 +140,10 @@ func (rcv *Receiver) Serve(out chan<- []sts.ScanFile, stop <-chan bool) {
 	wg.Add(1)
 	go func(wg *sync.WaitGroup, port int, tlsConf *tls.Config) {
 		defer wg.Done()
-		addr := fmt.Sprintf(":%d", port)
-		err := httputils.ListenAndServe(addr, tlsConf, nil)
+		// Important to use localhost below because otherwise MacOS will prompt for
+		// allowing incoming network connections each time application is rebuilt
+		addr := fmt.Sprintf("localhost:%d", port)
+		err := httputil.ListenAndServe(addr, tlsConf, nil)
 		// According to:
 		// https://golang.org/pkg/net/http/#Server.Serve
 		// ...Serve() always returns a non-nil error.  I guess we'll ignore.
