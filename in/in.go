@@ -52,7 +52,7 @@ func (a *AppIn) initConf() {
 		certPath := util.InitPath(a.Root, a.RawConf.Server.TLSCertPath, false)
 		keyPath := util.InitPath(a.Root, a.RawConf.Server.TLSKeyPath, false)
 		var err error
-		if a.conf.TLS, err = httputils.GetTLSConf(certPath, keyPath, ""); err != nil {
+		if a.conf.TLS, err = httputil.GetTLSConf(certPath, keyPath, ""); err != nil {
 			panic(err)
 		}
 	}

@@ -108,7 +108,7 @@ func (a *AppOut) initConf() {
 	if a.RawConf.Target.TLSCertPath != "" {
 		var err error
 		certPath := util.InitPath(a.Root, a.RawConf.Target.TLSCertPath, false)
-		if a.conf.TLS, err = httputils.GetTLSConf("", "", certPath); err != nil {
+		if a.conf.TLS, err = httputil.GetTLSConf("", "", certPath); err != nil {
 			panic(err)
 		}
 	}
@@ -180,21 +180,21 @@ func (a *AppOut) getPartials() ([]*companion.Companion, error) {
 	var req *http.Request
 	var resp *http.Response
 	var reader io.ReadCloser
-	if client, err = httputils.GetClient(a.conf.TLS); err != nil {
+	if client, err = httputil.GetClient(a.conf.TLS); err != nil {
 		return nil, err
 	}
 	url := fmt.Sprintf("%s://%s/partials", a.conf.Protocol(), a.conf.TargetHost)
 	if req, err = http.NewRequest("GET", url, bytes.NewReader([]byte(""))); err != nil {
 		return nil, err
 	}
-	req.Header.Add(httputils.HeaderSourceName, a.conf.SourceName)
+	req.Header.Add(httputil.HeaderSourceName, a.conf.SourceName)
 	if a.conf.TargetKey != "" {
-		req.Header.Add(httputils.HeaderKey, a.conf.TargetKey)
+		req.Header.Add(httputil.HeaderKey, a.conf.TargetKey)
 	}
 	if resp, err = client.Do(req); err != nil {
 		return nil, err
 	}
-	if reader, err = httputils.GetRespReader(resp); err != nil {
+	if reader, err = httputil.GetRespReader(resp); err != nil {
 		return nil, err
 	}
 	defer reader.Close()

@@ -47,14 +47,14 @@ func request(method, url string, data io.Reader, respData ...interface{}) error 
 	var resp *http.Response
 	var reader io.ReadCloser
 
-	if client, err = httputils.GetClient(nil); err != nil {
+	if client, err = httputil.GetClient(nil); err != nil {
 		return err
 	}
 
 	if req, err = http.NewRequest(method, "http://localhost:1992"+url, data); err != nil {
 		return err
 	}
-	req.Header.Add(httputils.HeaderSourceName, "sender")
+	req.Header.Add(httputil.HeaderSourceName, "sender")
 
 	if resp, err = client.Do(req); err != nil {
 		return err
@@ -64,13 +64,13 @@ func request(method, url string, data io.Reader, respData ...interface{}) error 
 		return nil
 	}
 
-	if reader, err = httputils.GetRespReader(resp); err != nil {
+	if reader, err = httputil.GetRespReader(resp); err != nil {
 		return err
 	}
 	defer reader.Close()
 
-	switch resp.Header.Get(httputils.HeaderContentType) {
-	case httputils.HeaderJSON:
+	switch resp.Header.Get(httputil.HeaderContentType) {
+	case httputil.HeaderJSON:
 		jsonDecoder := json.NewDecoder(reader)
 		err = jsonDecoder.Decode(respData[0])
 		if err != nil {

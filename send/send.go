@@ -278,7 +278,7 @@ type Sender struct {
 func NewSender(conf *SenderConf) (s *Sender, err error) {
 	s = &Sender{}
 	s.conf = conf
-	if s.client, err = httputils.GetClient(conf.TLS); err != nil {
+	if s.client, err = httputil.GetClient(conf.TLS); err != nil {
 		return
 	}
 	s.client.Timeout = time.Second * time.Duration(conf.Timeout)
@@ -578,7 +578,7 @@ func (sender *Sender) done(f []sts.SendFile) {
 // Returns the number of successfully received parts and any error encountered.
 func (sender *Sender) httpBin(b *bin.Bin, gz *gzip.Writer) (n int, err error) {
 	br := bin.NewEncoder(b)
-	jr, err := httputils.GetJSONReader(br.Meta, gzip.NoCompression)
+	jr, err := httputil.GetJSONReader(br.Meta, gzip.NoCompression)
 	if err != nil {
 		return
 	}
@@ -608,11 +608,11 @@ func (sender *Sender) httpBin(b *bin.Bin, gz *gzip.Writer) (n int, err error) {
 	if err != nil {
 		return
 	}
-	req.Header.Add(httputils.HeaderSourceName, sender.conf.SourceName)
-	req.Header.Add(httputils.HeaderMetaLen, strconv.Itoa(len(meta)))
-	req.Header.Add(httputils.HeaderSep, string(os.PathSeparator))
+	req.Header.Add(httputil.HeaderSourceName, sender.conf.SourceName)
+	req.Header.Add(httputil.HeaderMetaLen, strconv.Itoa(len(meta)))
+	req.Header.Add(httputil.HeaderSep, string(os.PathSeparator))
 	if sender.conf.TargetKey != "" {
-		req.Header.Add(httputils.HeaderKey, sender.conf.TargetKey)
+		req.Header.Add(httputil.HeaderKey, sender.conf.TargetKey)
 	}
 	if gz != nil {
 		req.Header.Add("Content-Encoding", "gzip")
@@ -623,8 +623,8 @@ func (sender *Sender) httpBin(b *bin.Bin, gz *gzip.Writer) (n int, err error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusPartialContent {
-		n, _ = strconv.Atoi(resp.Header.Get(httputils.HeaderPartCount))
-		err = fmt.Errorf("Bin failed validation. Successful part(s): %s", resp.Header.Get(httputils.HeaderPartCount))
+		n, _ = strconv.Atoi(resp.Header.Get(httputil.HeaderPartCount))
+		err = fmt.Errorf("Bin failed validation. Successful part(s): %s", resp.Header.Get(httputil.HeaderPartCount))
 		return
 	} else if resp.StatusCode != http.StatusOK {
 		err = fmt.Errorf("Bin failed with response code: %d", resp.StatusCode)

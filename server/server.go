@@ -150,14 +150,14 @@ func (rcv *Receiver) Serve(out chan<- []sts.ScanFile, stop <-chan bool) {
 		}
 	}(&wg, rcv.Conf.Port, rcv.Conf.TLS)
 	<-stop
-	httputils.Close()
+	httputil.Close()
 	wg.Wait()
 }
 
 func (rcv *Receiver) handleValidate(next http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
-		source := r.Header.Get(httputils.HeaderSourceName)
-		key := r.Header.Get(httputils.HeaderKey)
+		source := r.Header.Get(httputil.HeaderSourceName)
+		key := r.Header.Get(httputil.HeaderKey)
 		if !rcv.Conf.isValid(source, key) {
 			logging.Error(fmt.Errorf("Unknown Source:Key => %s:%s", source, key))
 			w.WriteHeader(http.StatusForbidden)
@@ -169,7 +169,7 @@ func (rcv *Receiver) handleValidate(next http.Handler) http.Handler {
 }
 
 func (rcv *Receiver) routeFile(w http.ResponseWriter, r *http.Request) {
-	source := r.Header.Get(httputils.HeaderSourceName)
+	source := r.Header.Get(httputil.HeaderSourceName)
 	if source == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -208,7 +208,7 @@ func (rcv *Receiver) routeFile(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
-			w.Header().Set(httputils.HeaderContentType, httputils.HeaderJSON)
+			w.Header().Set(httputil.HeaderContentType, httputil.HeaderJSON)
 			if err = rcv.respond(w, http.StatusOK, respJSON); err != nil {
 				logging.Error(err.Error())
 			}
@@ -244,7 +244,7 @@ func (rcv *Receiver) routeFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
-	source := r.Header.Get(httputils.HeaderSourceName)
+	source := r.Header.Get(httputil.HeaderSourceName)
 	if source == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -275,20 +275,20 @@ func (rcv *Receiver) routePartials(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set(httputils.HeaderSep, string(os.PathSeparator))
-	w.Header().Set(httputils.HeaderContentType, httputils.HeaderJSON)
+	w.Header().Set(httputil.HeaderSep, string(os.PathSeparator))
+	w.Header().Set(httputil.HeaderContentType, httputil.HeaderJSON)
 	if err := rcv.respond(w, http.StatusOK, respJSON); err != nil {
 		logging.Error(err.Error())
 	}
 }
 
 func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
-	source := r.Header.Get(httputils.HeaderSourceName)
-	sep := r.Header.Get(httputils.HeaderSep)
+	source := r.Header.Get(httputil.HeaderSourceName)
+	sep := r.Header.Get(httputil.HeaderSep)
 	files := []*sts.ConfirmFile{}
 	var br io.Reader
 	var err error
-	if br, err = httputils.GetReqReader(r); err != nil {
+	if br, err = httputil.GetReqReader(r); err != nil {
 		logging.Error(err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -311,8 +311,8 @@ func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
 		respMap[f.RelPath] = rcv.finalizer.GetFileStatus(source, f.RelPath, time.Unix(f.Started, 0))
 	}
 	respJSON, _ := json.Marshal(respMap)
-	w.Header().Set(httputils.HeaderSep, string(os.PathSeparator))
-	w.Header().Set(httputils.HeaderContentType, httputils.HeaderJSON)
+	w.Header().Set(httputil.HeaderSep, string(os.PathSeparator))
+	w.Header().Set(httputil.HeaderContentType, httputil.HeaderJSON)
 	if err := rcv.respond(w, http.StatusOK, respJSON); err != nil {
 		logging.Error(err.Error())
 	}
@@ -321,11 +321,11 @@ func (rcv *Receiver) routeValidate(w http.ResponseWriter, r *http.Request) {
 func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 	var err error
 	defer r.Body.Close()
-	source := r.Header.Get(httputils.HeaderSourceName)
-	compressed := r.Header.Get(httputils.HeaderContentEncoding) == httputils.HeaderGzip
-	sep := r.Header.Get(httputils.HeaderSep)
+	source := r.Header.Get(httputil.HeaderSourceName)
+	compressed := r.Header.Get(httputil.HeaderContentEncoding) == httputil.HeaderGzip
+	sep := r.Header.Get(httputil.HeaderSep)
 	var mlen int
-	if mlen, err = strconv.Atoi(r.Header.Get(httputils.HeaderMetaLen)); err != nil {
+	if mlen, err = strconv.Atoi(r.Header.Get(httputil.HeaderMetaLen)); err != nil {
 		logging.Error(err.Error())
 		return
 	}
@@ -354,7 +354,7 @@ func (rcv *Receiver) routeData(w http.ResponseWriter, r *http.Request) {
 		err := rcv.writePart(next, source)
 		if err != nil {
 			logging.Error(err.Error())
-			w.Header().Add(httputils.HeaderPartCount, strconv.Itoa(len(parts)))
+			w.Header().Add(httputil.HeaderPartCount, strconv.Itoa(len(parts)))
 			w.WriteHeader(http.StatusPartialContent) // respond with a 206
 			break
 		}

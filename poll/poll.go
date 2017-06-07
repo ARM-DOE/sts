@@ -83,7 +83,7 @@ func NewPoller(conf *send.SenderConf) *Poller {
 	p.conf = conf
 	p.Files = make(map[string]*pollFile)
 	var err error
-	p.client, err = httputils.GetClient(conf.TLS)
+	p.client, err = httputil.GetClient(conf.TLS)
 	if err != nil {
 		logging.Error(err.Error())
 	}
@@ -262,19 +262,19 @@ func (poller *Poller) Poll(files []sts.PollFile) (none []sts.PollFile, fail []st
 		logging.Debug("POLLing:", f.GetRelPath())
 	}
 	url := fmt.Sprintf("%s://%s/validate", poller.conf.Protocol(), poller.conf.TargetHost)
-	r, err := httputils.GetJSONReader(cf, poller.conf.Compression)
+	r, err := httputil.GetJSONReader(cf, poller.conf.Compression)
 	if err != nil {
 		return
 	}
 	req, err := http.NewRequest("POST", url, r)
 	if poller.conf.Compression != gzip.NoCompression {
-		req.Header.Add(httputils.HeaderContentEncoding, httputils.HeaderGzip)
+		req.Header.Add(httputil.HeaderContentEncoding, httputil.HeaderGzip)
 	}
-	req.Header.Add(httputils.HeaderContentType, httputils.HeaderJSON)
-	req.Header.Add(httputils.HeaderSourceName, poller.conf.SourceName)
-	req.Header.Add(httputils.HeaderSep, string(os.PathSeparator))
+	req.Header.Add(httputil.HeaderContentType, httputil.HeaderJSON)
+	req.Header.Add(httputil.HeaderSourceName, poller.conf.SourceName)
+	req.Header.Add(httputil.HeaderSep, string(os.PathSeparator))
 	if poller.conf.TargetKey != "" {
-		req.Header.Add(httputils.HeaderKey, poller.conf.TargetKey)
+		req.Header.Add(httputil.HeaderKey, poller.conf.TargetKey)
 	}
 	if err != nil {
 		return
@@ -287,8 +287,8 @@ func (poller *Poller) Poll(files []sts.PollFile) (none []sts.PollFile, fail []st
 		err = fmt.Errorf("Poll request failed: %d", resp.StatusCode)
 		return
 	}
-	sep := resp.Header.Get(httputils.HeaderSep)
-	reader, err := httputils.GetRespReader(resp)
+	sep := resp.Header.Get(httputil.HeaderSep)
+	reader, err := httputil.GetRespReader(resp)
 	if err != nil {
 		return
 	}
