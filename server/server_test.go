@@ -116,6 +116,4 @@ func TestCRUD(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	stop <- true
-	close(stop)
 }
