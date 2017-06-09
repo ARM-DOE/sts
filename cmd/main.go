@@ -13,10 +13,10 @@ import (
 	"strings"
 
 	"code.arm.gov/dataflow/sts/conf"
+	"code.arm.gov/dataflow/sts/fileutil"
 	"code.arm.gov/dataflow/sts/in"
 	"code.arm.gov/dataflow/sts/logging"
 	"code.arm.gov/dataflow/sts/out"
-	"code.arm.gov/dataflow/sts/util"
 )
 
 const modeSend = "out"
@@ -159,10 +159,14 @@ func (a *app) startIn() bool {
 		}
 		panic("Missing required RECEIVER configuration")
 	}
+	logPath, err := fileutil.InitPath(a.root, a.conf.In.Dirs.Logs, true)
+	if err != nil {
+		panic(err)
+	}
 	logging.Init(map[string]string{
 		logging.In:  a.conf.In.Dirs.LogsIn,
 		logging.Msg: a.conf.In.Dirs.LogsMsg,
-	}, util.InitPath(a.root, a.conf.In.Dirs.Logs, true), a.debug)
+	}, logPath, a.debug)
 	a.in = &in.AppIn{
 		Root:    a.root,
 		RawConf: a.conf.In,
@@ -195,10 +199,14 @@ func (a *app) startOut(once bool) bool {
 		}
 		panic("Missing required SENDER configuration")
 	}
+	logPath, err := fileutil.InitPath(a.root, a.conf.Out.Dirs.Logs, true)
+	if err != nil {
+		panic(err)
+	}
 	logging.Init(map[string]string{
 		logging.Out: a.conf.Out.Dirs.LogsOut,
 		logging.Msg: a.conf.Out.Dirs.LogsMsg,
-	}, util.InitPath(a.root, a.conf.Out.Dirs.Logs, true), a.debug)
+	}, logPath, a.debug)
 	a.outStop = make(map[chan<- bool]<-chan bool)
 	for _, source := range a.conf.Out.Sources {
 		out := &out.AppOut{

@@ -21,7 +21,6 @@ import (
 	"code.arm.gov/dataflow/sts/scan"
 	"code.arm.gov/dataflow/sts/send"
 	"code.arm.gov/dataflow/sts/sort"
-	"code.arm.gov/dataflow/sts/util"
 )
 
 // AppOut is the struct container for the outgoing portion of the STS app.
@@ -107,7 +106,10 @@ func (a *AppOut) initConf() {
 	}
 	if a.RawConf.Target.TLSCertPath != "" {
 		var err error
-		certPath := util.InitPath(a.Root, a.RawConf.Target.TLSCertPath, false)
+		var certPath string
+		if certPath, err = fileutil.InitPath(a.Root, a.RawConf.Target.TLSCertPath, false); err != nil {
+			panic(err)
+		}
 		if a.conf.TLS, err = httputil.GetTLSConf("", "", certPath); err != nil {
 			panic(err)
 		}
@@ -129,11 +131,20 @@ func (a *AppOut) initComponents() (err error) {
 
 	var outDir string
 	if a.RawConf.OutDir != "" {
-		outDir = util.InitPath(a.Root, a.RawConf.OutDir, true)
+		outDir, err = fileutil.InitPath(a.Root, a.RawConf.OutDir, true)
+		if err != nil {
+			panic(err)
+		}
 	} else {
-		outDir = util.InitPath(a.Root, filepath.Join(a.DirConf.Out, a.RawConf.Target.Name), true)
+		outDir, err = fileutil.InitPath(a.Root, filepath.Join(a.DirConf.Out, a.RawConf.Target.Name), true)
+		if err != nil {
+			panic(err)
+		}
 	}
-	cacheDir := util.InitPath(a.Root, a.DirConf.Cache, true)
+	cacheDir, err := fileutil.InitPath(a.Root, a.DirConf.Cache, true)
+	if err != nil {
+		panic(err)
+	}
 
 	scanConf := scan.ScannerConf{
 		ScanDir:        outDir,

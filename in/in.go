@@ -11,12 +11,12 @@ import (
 	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/companion"
 	"code.arm.gov/dataflow/sts/conf"
+	"code.arm.gov/dataflow/sts/fileutil"
 	"code.arm.gov/dataflow/sts/finalize"
 	"code.arm.gov/dataflow/sts/httputil"
 	"code.arm.gov/dataflow/sts/logging"
 	"code.arm.gov/dataflow/sts/scan"
 	"code.arm.gov/dataflow/sts/server"
-	"code.arm.gov/dataflow/sts/util"
 )
 
 // AppIn is the struct container for the incoming portion of the STS app.
@@ -41,17 +41,32 @@ func (a *AppIn) initConf() {
 	if final == "" {
 		final = "final"
 	}
-	a.conf.StageDir = util.InitPath(a.Root, stage, true)
-	a.conf.FinalDir = util.InitPath(a.Root, final, true)
+	var err error
+	if a.conf.StageDir, err = fileutil.InitPath(a.Root, stage, true); err != nil {
+		panic(err)
+	}
+	if a.conf.FinalDir, err = fileutil.InitPath(a.Root, final, true); err != nil {
+		panic(err)
+	}
+	if a.RawConf.Dirs.Serve != "" {
+		if a.conf.ServeDir, err = fileutil.InitPath(a.Root, a.RawConf.Dirs.Serve, true); err != nil {
+			panic(err)
+		}
+	}
+	a.conf.Host = a.RawConf.Server.Host
 	a.conf.Port = a.RawConf.Server.Port
 	if a.conf.Port == 0 {
 		panic("Server port not specified")
 	}
 	a.conf.Compression = a.RawConf.Server.Compression
 	if a.RawConf.Server.TLSCertPath != "" && a.RawConf.Server.TLSKeyPath != "" {
-		certPath := util.InitPath(a.Root, a.RawConf.Server.TLSCertPath, false)
-		keyPath := util.InitPath(a.Root, a.RawConf.Server.TLSKeyPath, false)
-		var err error
+		var certPath, keyPath string
+		if certPath, err = fileutil.InitPath(a.Root, a.RawConf.Server.TLSCertPath, false); err != nil {
+			panic(err)
+		}
+		if keyPath, err = fileutil.InitPath(a.Root, a.RawConf.Server.TLSKeyPath, false); err != nil {
+			panic(err)
+		}
 		if a.conf.TLS, err = httputil.GetTLSConf(certPath, keyPath, ""); err != nil {
 			panic(err)
 		}

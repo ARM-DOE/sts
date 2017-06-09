@@ -19,6 +19,30 @@ const LockExt = ".lck"
 // BlockSize is the number of bytes read into memory.
 const BlockSize = 8192
 
+// InitPath will turn a relative path into absolute (based on root) and make sure it exists.
+func InitPath(root string, path string, isdir bool) (string, error) {
+	var err error
+	if !filepath.IsAbs(path) {
+		if root == "" {
+			return path, fmt.Errorf("Cannot use a relative path with an empty root: %s", path)
+		}
+		path, err = filepath.Abs(filepath.Join(root, path))
+		if err != nil {
+			return path, err
+		}
+	}
+	pdir := path
+	if !isdir {
+		pdir = filepath.Dir(pdir)
+	}
+	if _, err = os.Stat(pdir); os.IsNotExist(err) {
+		if err = os.MkdirAll(pdir, os.ModePerm); err != nil {
+			return path, err
+		}
+	}
+	return path, nil
+}
+
 // FindLine searches the given file for the provided byte array and returns that
 // line if found.
 func FindLine(path string, b []byte) string {

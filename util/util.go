@@ -1,33 +1,8 @@
 package util
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
-
-	"code.arm.gov/dataflow/sts/logging"
 )
-
-// InitPath will turn a relative path into absolute (based on root) and make sure it exists.
-func InitPath(root string, path string, isdir bool) string {
-	var err error
-	if !filepath.IsAbs(path) {
-		path, err = filepath.Abs(filepath.Join(root, path))
-		if err != nil {
-			logging.Error("Failed to initialize: ", path, err.Error())
-		}
-	}
-	pdir := path
-	if !isdir {
-		pdir = filepath.Dir(pdir)
-	}
-	_, err = os.Stat(pdir)
-	if os.IsNotExist(err) {
-		logging.Debug("UTIL Make Path:", pdir)
-		os.MkdirAll(pdir, os.ModePerm)
-	}
-	return path
-}
 
 // CopyStruct copies the properties of one struct to another.
 func CopyStruct(tgt interface{}, src interface{}) {
