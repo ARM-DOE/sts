@@ -252,6 +252,7 @@ type InDirs struct {
 
 // InServer is the struct for managing the incoming HTTP host.
 type InServer struct {
+	Host        string `yaml:"http-host"`
 	Port        int    `yaml:"http-port"`
 	TLSCertPath string `yaml:"http-tls-cert"`
 	TLSKeyPath  string `yaml:"http-tls-key"`

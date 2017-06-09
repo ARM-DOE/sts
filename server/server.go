@@ -76,6 +76,7 @@ type ReceiverConf struct {
 	ServeDir    string
 	StageDir    string
 	FinalDir    string
+	Host        string
 	Port        int
 	TLS         *tls.Config
 	Sources     []string
@@ -140,15 +141,10 @@ func (rcv *Receiver) Serve(out chan<- []sts.ScanFile, stop <-chan bool) {
 	wg.Add(1)
 	go func(wg *sync.WaitGroup, port int, tlsConf *tls.Config) {
 		defer wg.Done()
-		// Important to use localhost below because otherwise MacOS will prompt for
-		// allowing incoming network connections each time application is rebuilt
-		addr := fmt.Sprintf("localhost:%d", port)
+		addr := fmt.Sprintf("%s:%d", rcv.Conf.Host, port)
 		err := httputil.ListenAndServe(addr, tlsConf, nil)
-		// According to:
-		// https://golang.org/pkg/net/http/#Server.Serve
-		// ...Serve() always returns a non-nil error.  I guess we'll ignore.
-		if err != nil {
-			// panic(err)
+		if err != http.ErrServerClosed {
+			panic(err)
 		}
 	}(&wg, rcv.Conf.Port, rcv.Conf.TLS)
 	<-stop

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -59,6 +60,9 @@ func request(method, url string, data io.Reader, respData ...interface{}) error 
 	if resp, err = client.Do(req); err != nil {
 		return err
 	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s: %s", url, resp.Status)
+	}
 
 	if len(respData) == 0 {
 		return nil
@@ -89,6 +93,7 @@ func TestCRUD(t *testing.T) {
 
 	conf := &ReceiverConf{
 		ServeDir: filepath.Join(root, "serve"),
+		Host:     "localhost",
 		Port:     1992,
 		Sources:  []string{"sender"},
 	}
