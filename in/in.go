@@ -73,7 +73,7 @@ func (a *AppIn) initConf() {
 	}
 }
 
-func (a *AppIn) recover() {
+func (a *AppIn) recover() []sts.ScanFile {
 	scanConf := scan.ScannerConf{
 		ScanDir: a.conf.StageDir,
 		Nested:  1,
@@ -82,7 +82,7 @@ func (a *AppIn) recover() {
 	scanner, _ := scan.NewScanner(&scanConf) // Ignore error because we don't have a cache to read.
 	files, _ := scanner.Scan()
 	if len(files) == 0 {
-		return
+		return files
 	}
 	var out []sts.ScanFile
 	var rescan bool
@@ -139,9 +139,7 @@ func (a *AppIn) recover() {
 			out = append(out, f)
 		}
 	}
-	if len(out) > 0 {
-		a.finChan <- out
-	}
+	return out
 }
 
 // Start initializes and starts the receiver.
@@ -149,10 +147,9 @@ func (a *AppIn) Start(stop <-chan bool) <-chan bool {
 	a.initConf()
 
 	a.finChan = make(chan []sts.ScanFile, 10)
-
-	a.recover()
-
 	a.finalizer = finalize.NewFinalizer(a.conf)
+	a.finalizer.Batch(a.recover())
+
 	a.server = server.NewReceiver(a.conf, a.finalizer)
 
 	var wg sync.WaitGroup

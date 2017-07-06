@@ -66,20 +66,43 @@ func (f *Finalizer) Start(inChan chan []sts.ScanFile) {
 		select {
 		case files, ok := <-inChan:
 			if !ok {
-				return
+				inChan = nil
+				continue
 			}
 			for _, file := range files {
-				go f.validate(file, f.validChan)
+				go func(ch chan<- *finalFile) {
+					ff, err := f.validate(file)
+					if err != nil {
+						logging.Error(err.Error())
+						return
+					}
+					if ff != nil && ff.success {
+						ch <- ff
+					}
+				}(f.validChan)
 			}
 		case ff, ok := <-f.validChan:
 			if !ok {
+				// Shouldn't ever get here since there is not logic to close
+				// this channel
 				return
 			}
-			if _, found := f.fromCache(ff.file.GetPath(false)); found {
+			if success, _ := f.fromCache(ff.file.GetPath(false)); success {
 				// It's possible to get duplicates on the validChan since the
 				// externally visible GetFileStatus() can put files here that
 				// are also in the wait cache.  We just need to let the first
 				// one win and the cache is a good way to do that.
+				//
+				// Another way we can get here is if a single bin had many files
+				// and part way through the bin the connection goes down but
+				// meanwhile, some of the files in the bin completed and got
+				// put away.  Unfortunately, the sender doesn't know that and
+				// sends the bin again.  We need to clean up the redundant files
+				// in the stage area when this happens.
+				//
+				// We can ignore errors, I think.
+				os.Remove(ff.file.GetPath(false))
+				ff.comp.Delete()
 				continue
 			}
 			done, err := f.finalize(ff)
@@ -99,6 +122,42 @@ func (f *Finalizer) Start(inChan chan []sts.ScanFile) {
 					}
 				}
 			}
+		default:
+			if inChan == nil {
+				return
+			}
+			time.Sleep(100 * time.Millisecond) // To avoid thrashing
+		}
+	}
+}
+
+// Batch finalizes a single batch of files synchronously
+func (f *Finalizer) Batch(files []sts.ScanFile) {
+	var finalize func(file *finalFile)
+	finalize = func(file *finalFile) {
+		done, err := f.finalize(file)
+		if err != nil {
+			logging.Error(err.Error())
+			return
+		}
+		if done {
+			n := f.fromWait(file.file.GetPath(false))
+			if n != nil {
+				for _, wf := range n {
+					logging.Debug("FINAL Found Waiting:", wf.file.GetRelPath())
+					finalize(wf)
+				}
+			}
+		}
+	}
+	for _, file := range files {
+		ff, err := f.validate(file)
+		if err != nil {
+			logging.Error(err.Error())
+			continue
+		}
+		if ff != nil && ff.success {
+			finalize(ff)
 		}
 	}
 }
@@ -136,17 +195,16 @@ func (f *Finalizer) GetFileStatus(source, relPath string, sent time.Time) int {
 	return poll.ConfirmFailed
 }
 
-func (f *Finalizer) validate(file sts.ScanFile, out chan<- *finalFile) {
-	var err error
-
+func (f *Finalizer) validate(file sts.ScanFile) (ff *finalFile, err error) {
 	// Make sure it exists.
 	if _, err = os.Stat(file.GetPath(false)); err != nil {
+		err = nil
 		return
 	}
 
 	logging.Debug("FINAL Validating:", file.GetRelPath())
 
-	ff := &finalFile{file: file}
+	ff = &finalFile{file: file}
 
 	// Read companion metadata.
 	if _, ok := file.(sts.RecvFile); ok {
@@ -154,7 +212,7 @@ func (f *Finalizer) validate(file sts.ScanFile, out chan<- *finalFile) {
 	} else {
 		if ff.comp, err = companion.ReadCompanion(file.GetPath(false)); err != nil {
 			os.Remove(file.GetPath(false))
-			logging.Error(fmt.Sprintf("Missing/invalid companion (%s): %s", err.Error(), file.GetRelPath()))
+			err = fmt.Errorf("Missing/invalid companion (%s): %s", err.Error(), file.GetRelPath())
 			return
 		}
 	}
@@ -163,22 +221,20 @@ func (f *Finalizer) validate(file sts.ScanFile, out chan<- *finalFile) {
 	if ff.hash, err = fileutil.FileMD5(file.GetPath(false)); err != nil {
 		ff.comp.Delete()
 		os.Remove(file.GetPath(false))
-		logging.Error(fmt.Sprintf("Failed to calculate MD5 of %s: %s", file.GetRelPath(), err.Error()))
+		err = fmt.Errorf("Failed to calculate MD5 of %s: %s", file.GetRelPath(), err.Error())
 		return
 	}
 	if ff.hash != ff.comp.Hash {
 		f.toCache(ff)
 		// ff.comp.Delete()
 		// os.Remove(file.GetPath(false))
-		logging.Error(fmt.Sprintf("Failed validation: %s", file.GetPath(false)))
+		err = fmt.Errorf("Failed validation: %s", file.GetPath(false))
 		return
 	}
 
 	logging.Debug("FINAL Validated:", file.GetRelPath())
-
-	// Send to be finalized.
 	ff.success = true
-	out <- ff
+	return
 }
 
 func (f *Finalizer) finalize(ff *finalFile) (done bool, err error) {
