@@ -144,7 +144,7 @@ func (rcv *Receiver) Serve(out chan<- []sts.ScanFile, stop <-chan bool) {
 		addr := fmt.Sprintf("%s:%d", rcv.Conf.Host, port)
 		err := httputil.ListenAndServe(addr, tlsConf, nil)
 		if err != http.ErrServerClosed {
-			panic(err)
+			logging.Error(err.Error())
 		}
 	}(&wg, rcv.Conf.Port, rcv.Conf.TLS)
 	<-stop

@@ -215,8 +215,8 @@ func (s *Server) Serve(l net.Listener) error {
 // when the server should stop listening for new connection and finish
 // any open connections.
 func (s *Server) Close() error {
-	err := s.l.Close()
-	return err
+	// s.Shutdown() is more graceful than l.Close() (available as of Go 1.8)
+	return s.s.Shutdown(nil)
 }
 
 // gracefulListener implements the net.Listener interface. When accept
