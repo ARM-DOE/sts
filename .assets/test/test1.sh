@@ -10,8 +10,9 @@ mode="--mode=auto"
 cmd="$bin $debug $mode"
 
 echo "Cleaning last run..."
-rm -rf $STS_HOME/.sts
-rm -rf $STS_HOME/data*
+rm -rf $STS_HOME
+mkdir -p $STS_HOME/conf
+cp $basedir/test.yaml $STS_HOME/conf/sts.yaml
 
 echo "Staging test data..."
 mkdir -p $STS_HOME/data/out/stsin-1

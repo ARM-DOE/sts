@@ -9,6 +9,7 @@ IN: # Incoming configuration.
         final : data2/in    # Final location for incoming files; appends "source" name
         logs  : data2/log
     server: # Server configuration.
+        http-host     : localhost
         http-port     : 1992 # What port to listen on
         # http-tls-cert : ../../sts.server.crt # Server certificate
         # http-tls-key  : ../../sts.server.key # Server key

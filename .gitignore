@@ -1,7 +1,6 @@
 .DS_Store
 .assets/test/*.tgz
-.assets/test/run/data*
-.assets/test/run/.sts
+.assets/test/run
 *.crt
 *.key
 *.pem
