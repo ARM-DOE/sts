@@ -55,10 +55,12 @@ type SendFile interface {
 	Stat() (bool, error)
 }
 
-// RecoverFile is a partial duplicate of SendFile and will be the underlying file reference
-// for the sendFile wrapper and these are the functions that should be used to properly fill bins
-// with only those parts of the file that haven't already been received.
-// Also implements ScanFile in order to be inserted into the pipeline at the sorter.
+// RecoverFile is a partial duplicate of SendFile and will be the underlying
+// file reference for the sendFile wrapper and these are the functions that
+// should be used to properly fill bins with only those parts of the file that
+// haven't already been received.
+// Also implements ScanFile in order to be inserted into the pipeline at the
+// sorter.
 type RecoverFile interface {
 	ScanFile
 	GetHash() string
