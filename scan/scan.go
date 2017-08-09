@@ -470,16 +470,21 @@ func (scanner *Scanner) Scan() (FileList, bool) {
 	scanner.cache.scanTime = time.Now().Unix()
 	if err := fileutil.Walk(scanner.cache.ScanDir, scanner.handleNode, scanner.Conf.FollowSymlinks); err != nil {
 		logging.Error(err.Error())
-	} else {
-		scanner.cache.LastTime = scanner.cache.scanTime -
-			int64(scanner.Conf.MinAge.Seconds()) -
-			int64(scanner.Conf.CacheAge.Seconds())
+		return nil, false
 	}
+	scanner.cache.LastTime = scanner.cache.scanTime -
+		int64(scanner.Conf.MinAge.Seconds()) -
+		int64(scanner.Conf.CacheAge.Seconds())
 	return scanner.GetScanFiles(), true
 }
 
 func (scanner *Scanner) handleNode(path string, info os.FileInfo, err error) error {
 	if info == nil || err != nil {
+		// If a file just doesn't exist anymore, we probably don't need to stop
+		// the scan for that.
+		if os.IsNotExist(err) {
+			return nil
+		}
 		return err
 	}
 	nesting, relPath := scanner.cache.parsePath(path)
