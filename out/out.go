@@ -78,6 +78,19 @@ func (a *AppOut) setDefaults() {
 	if a.RawConf.GroupBy == nil || a.RawConf.GroupBy.String() == "" {
 		a.RawConf.GroupBy = regexp.MustCompile(`^([^\.]*)`) // Default is up to the first dot of the relative path.
 	}
+	var defaultTag *conf.Tag
+	for _, tag := range a.RawConf.Tags {
+		if tag.Pattern == nil {
+			defaultTag = tag
+			break
+		}
+	}
+	if defaultTag == nil {
+		// If no default tag exists, add one
+		a.RawConf.Tags = append(a.RawConf.Tags, &conf.Tag{
+			Method: conf.MethodHTTP,
+		})
+	}
 }
 
 func (a *AppOut) initConf() {
