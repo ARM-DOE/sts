@@ -273,6 +273,7 @@ func (f *Finalizer) finalize(ff *finalFile) (done bool, err error) {
 				// then release it anyway at the risk of getting data out of order.
 				// We can only do so much.
 				logging.Info("Done Waiting:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
+				f.doneWaiting(stagedPrevFile, ff)
 			}
 		} else if !success {
 			logging.Debug("FINAL Previous File Failed:", ff.file.GetRelPath(), "<-", ff.comp.PrevFile)
@@ -359,6 +360,27 @@ func (f *Finalizer) getWaiting(path string) *finalFile {
 		}
 	}
 	return nil
+}
+
+func (f *Finalizer) doneWaiting(prevPath string, next *finalFile) {
+	f.waitLock.Lock()
+	defer f.waitLock.Unlock()
+	fList, ok := f.wait[prevPath]
+	if !ok {
+		return
+	}
+	var rest []*finalFile
+	for _, ff := range fList {
+		if ff.file.GetPath(false) == next.file.GetPath(false) {
+			continue
+		}
+		rest = append(rest, ff)
+	}
+	if len(rest) > 0 {
+		f.wait[prevPath] = rest
+		return
+	}
+	delete(f.wait, prevPath)
 }
 
 func (f *Finalizer) fromWait(path string) []*finalFile {
