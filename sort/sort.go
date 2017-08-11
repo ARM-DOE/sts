@@ -1,7 +1,6 @@
 package sort
 
 import (
-	"os"
 	"regexp"
 	"time"
 
@@ -62,11 +61,12 @@ func (t *sortedGroup) insertBefore(next *sortedGroup) {
 }
 
 type sortedFile struct {
-	file  sts.ScanFile
-	group *sortedGroup
-	next  sts.SortFile
-	prev  sts.SortFile
-	dirty bool
+	file     sts.ScanFile
+	group    *sortedGroup
+	next     *sortedFile
+	prev     *sortedFile
+	dirty    bool
+	prevName string
 }
 
 func newSortedFile(foundFile sts.ScanFile) *sortedFile {
@@ -99,11 +99,15 @@ func (file *sortedFile) Reset() (bool, error) {
 	return file.file.Reset()
 }
 
-func (file *sortedFile) Invalidate() {
+func (file *sortedFile) GetPrevName() string {
+	return file.prevName
+}
+
+func (file *sortedFile) invalidate() {
 	file.dirty = true
 }
 
-func (file *sortedFile) Validate() (changed bool, err error) {
+func (file *sortedFile) validate() (changed bool, err error) {
 	if file.dirty {
 		changed, err = file.Reset()
 		file.dirty = false
@@ -111,60 +115,66 @@ func (file *sortedFile) Validate() (changed bool, err error) {
 	return
 }
 
-func (file *sortedFile) GetGroup() string {
+func (file *sortedFile) getGroup() string {
 	return file.group.group
 }
 
-func (file *sortedFile) GetNext() sts.SortFile {
+func (file *sortedFile) getNext() *sortedFile {
 	return file.next
 }
 
-func (file *sortedFile) GetPrev() sts.SortFile {
+func (file *sortedFile) getPrev() *sortedFile {
 	return file.prev
 }
 
-func (file *sortedFile) GetPrevReq() sts.SortFile {
-	if file.group.conf.Order != conf.OrderNone {
-		return file.GetPrev()
-	}
-	return nil
-}
-
-func (file *sortedFile) SetNext(next sts.SortFile) {
+func (file *sortedFile) setNext(next *sortedFile) {
 	file.next = next
 }
 
-func (file *sortedFile) SetPrev(prev sts.SortFile) {
+func (file *sortedFile) setPrev(prev *sortedFile) {
 	file.prev = prev
 }
 
-func (file *sortedFile) InsertAfter(prev sts.SortFile) {
-	if file.GetPrev() != nil {
-		file.GetPrev().SetNext(file.GetNext())
+func (file *sortedFile) insertAfter(prev *sortedFile) {
+	if file.getPrev() != nil {
+		file.getPrev().setNext(file.getNext())
 	}
-	if file.GetNext() != nil {
-		file.GetNext().SetPrev(file.GetPrev())
+	if file.getNext() != nil {
+		file.getNext().setPrev(file.getPrev())
 	}
-	file.SetNext(prev.GetNext())
-	file.SetPrev(prev)
-	prev.SetNext(file)
-	if file.GetNext() != nil {
-		file.GetNext().SetPrev(file)
+	file.setNext(prev.getNext())
+	file.setPrev(prev)
+	prev.setNext(file)
+	if file.getNext() != nil {
+		file.getNext().setPrev(file)
 	}
 }
 
-func (file *sortedFile) InsertBefore(next sts.SortFile) {
-	if file.GetPrev() != nil {
-		file.GetPrev().SetNext(file.GetNext())
+func (file *sortedFile) insertBefore(next *sortedFile) {
+	if file.getPrev() != nil {
+		file.getPrev().setNext(file.getNext())
 	}
-	if file.GetNext() != nil {
-		file.GetNext().SetPrev(file.GetPrev())
+	if file.getNext() != nil {
+		file.getNext().setPrev(file.getPrev())
 	}
-	file.SetNext(next)
-	file.SetPrev(next.GetPrev())
-	next.SetPrev(file)
-	if file.GetPrev() != nil {
-		file.GetPrev().SetNext(file)
+	file.setNext(next)
+	file.setPrev(next.getPrev())
+	next.setPrev(file)
+	if file.getPrev() != nil {
+		file.getPrev().setNext(file)
+	}
+}
+
+func (file *sortedFile) unlink() {
+	prev := file.getPrev()
+	next := file.getNext()
+	if prev != nil {
+		prev.setNext(next)
+		file.setPrev(nil)
+	}
+	if next != nil {
+		next.setPrev(prev)
+		file.setNext(nil)
 	}
 }
 
@@ -172,9 +182,8 @@ func (file *sortedFile) InsertBefore(next sts.SortFile) {
 type Sorter struct {
 	rootPath string
 	groupBy  *regexp.Regexp          // the pattern that puts files into groups to avoid starvation
-	files    map[string]sts.SortFile // path -> file pointer (lookup)
-	next     map[string]sts.SortFile // group -> file pointer (next by group)
-	nextOut  sts.SortFile            // the next file out the door
+	files    map[string]*sortedFile  // path -> file pointer (lookup)
+	head     map[string]*sortedFile  // group -> file pointer (first by group)
 	group    *sortedGroup            // the first group by priority
 	groupMap map[string]*sortedGroup // group -> group conf (tag)
 	tagData  []*conf.Tag             // list of raw tag conf
@@ -185,8 +194,8 @@ type Sorter struct {
 func NewSorter(tagData []*conf.Tag, groupBy *regexp.Regexp) *Sorter {
 	sorter := &Sorter{}
 	sorter.groupBy = groupBy
-	sorter.files = make(map[string]sts.SortFile)
-	sorter.next = make(map[string]sts.SortFile)
+	sorter.files = make(map[string]*sortedFile)
+	sorter.head = make(map[string]*sortedFile)
 	sorter.groupMap = make(map[string]*sortedGroup)
 	sorter.tagData = tagData
 	for _, tag := range tagData {
@@ -200,7 +209,8 @@ func NewSorter(tagData []*conf.Tag, groupBy *regexp.Regexp) *Sorter {
 
 // Start starts the daemon that listens for files on inChan and doneChan and puts files on outChan
 // according to the output "method".
-func (sorter *Sorter) Start(inChan <-chan []sts.ScanFile, outChan map[string]chan sts.SortFile, doneChan <-chan []sts.DoneFile) {
+func (sorter *Sorter) Start(inChan <-chan []sts.ScanFile, outChan map[string]chan sts.SortFile) {
+	var next *sortedFile
 	for {
 		select {
 		case foundFiles, ok := <-inChan:
@@ -209,21 +219,16 @@ func (sorter *Sorter) Start(inChan <-chan []sts.ScanFile, outChan map[string]cha
 				break
 			}
 			for _, foundFile := range foundFiles {
-				logging.Debug("SORT File In:", foundFile.GetRelPath())
+				// logging.Debug("SORT File In:", foundFile.GetRelPath())
 				sorter.add(foundFile)
 			}
-		case doneFiles, ok := <-doneChan:
-			if !ok {
-				return // doneChan closed; we can exit now.
-			}
-			for _, doneFile := range doneFiles {
-				logging.Debug("SORT File Done:", doneFile.GetRelPath())
-				sorter.done(doneFile)
-			}
+			next = nil
 		default:
-			next := sorter.getNext()
+			if next == nil {
+				next = sorter.getNext()
+			}
 			if next != nil {
-				grp := sorter.groupMap[next.GetGroup()]
+				grp := sorter.groupMap[next.getGroup()]
 				out, ok := outChan[grp.conf.Method]
 				if !ok {
 					break // This really shouldn't happen but need to put logic in to catch it anyway.
@@ -231,7 +236,7 @@ func (sorter *Sorter) Start(inChan <-chan []sts.ScanFile, outChan map[string]cha
 				// In case it was invalidated at some point, this will get the file stats current.
 				// A file can potentially sit in the sort queue for some time and so we want to make
 				// sure now that it's ready to be sent that its stats are accurate.
-				changed, err := next.Validate()
+				changed, err := next.validate()
 				if err != nil {
 					logging.Error("Failed to validate post-sort:", next.GetRelPath(), err.Error())
 					break
@@ -239,17 +244,29 @@ func (sorter *Sorter) Start(inChan <-chan []sts.ScanFile, outChan map[string]cha
 				if changed {
 					logging.Debug("SORT File Changed:", next.GetRelPath())
 				}
-				select { // We don't want to block if the send queue is full so we can keep accepting incoming files.
-				case out <- next:
-					prev := ""
-					if next.GetPrev() != nil {
-						prev = next.GetPrev().GetRelPath()
+				// Check if there is room on the queue before forcing this one out the door.
+				if len(out) < cap(out) {
+					// Remove from lists
+					if _, ok := sorter.files[next.GetPath(false)]; ok {
+						delete(sorter.files, next.GetPath(false))
 					}
-					logging.Debug("SORT File Out:", next.GetRelPath(), "<-", prev)
-					sorter.clearNext(next)
-					continue
-				default:
-					continue
+					// Set in stone this file's predessor
+					if grp.conf.Order != "" && next.getPrev() != nil {
+						next.prevName = next.getPrev().GetRelPath()
+					}
+					logging.Debug("SORT File Out:", next.GetRelPath(), "<-", next.prevName)
+					out <- next
+					// Update the chain
+					if sorter.head[grp.group] == next {
+						sorter.head[grp.group] = next.getNext()
+					}
+					if next.getPrev() != nil {
+						next.getPrev().unlink()
+					}
+					if next.getNext() == nil {
+						next.unlink()
+					}
+					next = nil
 				}
 			} else if inChan == nil && outChan != nil {
 				for _, ch := range outChan {
@@ -257,7 +274,7 @@ func (sorter *Sorter) Start(inChan <-chan []sts.ScanFile, outChan map[string]cha
 						close(ch) // Only close once there are no more in the queue.
 					}
 				}
-				outChan = nil
+				return
 			}
 			time.Sleep(100 * time.Millisecond) // To avoid thrashing.
 			break
@@ -272,15 +289,19 @@ func (sorter *Sorter) add(f sts.ScanFile) {
 	if exists {
 		return
 	}
-	file := newSortedFile(f)
-	group := sorter.getGroup(file.GetRelPath())
+	group := sorter.getGroup(f.GetRelPath())
 	sgrp, exists := sorter.groupMap[group]
 	if !exists {
 		conf := sorter.getGroupConf(group)
+		if conf == nil {
+			logging.Debug("SORT Ignore:", f.GetRelPath(), "(no matching tag configuration)")
+			return
+		}
 		sgrp = newSortedGroup(group, conf)
 		sorter.groupMap[group] = sgrp
 		sorter.addGroup(sgrp)
 	}
+	file := newSortedFile(f)
 	file.group = sgrp
 	sorter.addFile(file)
 	sorter.files[file.GetPath(false)] = file
@@ -289,53 +310,42 @@ func (sorter *Sorter) add(f sts.ScanFile) {
 func (sorter *Sorter) getGroup(relPath string) string {
 	m := sorter.groupBy.FindStringSubmatch(relPath)
 	if len(m) > 1 {
-		logging.Debug("SORT Group:", m[1])
 		return m[1]
 	}
 	return ""
 }
 
-func (sorter *Sorter) getNext() sts.SortFile {
-	next := sorter.nextOut
-	if next == nil {
-		g := sorter.group
-		for g != nil {
-			if sorter.next[g.group] != nil {
-				// Make this file next one out the door.
-				next = sorter.next[g.group]
-				// But first we need to make sure we shouldn't skip this one...
-				if g.conf.LastDelay > 0 && next.GetNext() == nil {
-					next.Reset() // This is to make sure we get the current mod time.
-					if time.Now().Sub(time.Unix(next.GetTime(), 0)) < g.conf.LastDelay {
-						// This is the last file in the group and it's not old
-						// enough to send yet.  And we need to "invalidate" it
-						// in order to get proper file stats when it finally is
-						// ready to be sent.  If we don't do this then if the file
-						// had been growing, we could easily have an incorrect
-						// size value for the file and it would eventually fail
-						// and have to be resent.
-						next.Invalidate()
-						next = nil
-						g = g.next
-						continue
-					}
-				}
-				// Push this tag to the last one of its priority to avoid starvation.
-				sorter.delayGroup(g)
-				break
-			}
+func (sorter *Sorter) getNext() *sortedFile {
+	g := sorter.group
+	var next *sortedFile
+	for g != nil {
+		next = sorter.head[g.group]
+		if next == nil {
 			g = g.next
+			continue
 		}
-		sorter.nextOut = next
+		// And then we need to make sure we shouldn't skip this one...
+		if g.conf.LastDelay > 0 && next.getNext() == nil {
+			next.Reset() // This is to make sure we get the current mod time.
+			if time.Now().Sub(time.Unix(next.GetTime(), 0)) < g.conf.LastDelay {
+				// This is the last file in the group and it's not old
+				// enough to send yet.  And we need to "invalidate" it
+				// in order to get proper file stats when it finally is
+				// ready to be sent.  If we don't do this then if the file
+				// had been growing, we could easily have an incorrect
+				// size value for the file and it would eventually fail
+				// and have to be resent.
+				next.invalidate()
+				next = nil
+				g = g.next
+				continue
+			}
+		}
+		// Push this tag to the last one of its priority to avoid starvation.
+		sorter.delayGroup(g)
+		break
 	}
 	return next
-}
-
-func (sorter *Sorter) clearNext(out sts.SortFile) {
-	next := out.GetNext()
-	ngrp := out.GetGroup()
-	sorter.next[ngrp] = next
-	sorter.nextOut = nil
 }
 
 func (sorter *Sorter) delayGroup(g *sortedGroup) {
@@ -393,11 +403,11 @@ func (sorter *Sorter) addGroup(grp *sortedGroup) {
 	}
 }
 
-func (sorter *Sorter) addFile(file sts.SortFile) {
-	grp := sorter.groupMap[file.GetGroup()]
-	f := sorter.next[grp.group]
+func (sorter *Sorter) addFile(file *sortedFile) {
+	grp := sorter.groupMap[file.getGroup()]
+	f := sorter.head[grp.group]
 	if f == nil {
-		sorter.next[grp.group] = file
+		sorter.head[grp.group] = file
 		return
 	}
 	n := 0
@@ -406,7 +416,8 @@ loop:
 		switch grp.conf.Order {
 		case conf.OrderFIFO:
 			if file.GetTime() < f.GetTime() {
-				file.InsertBefore(f)
+				logging.Debug("SORT FIFO:", file.GetRelPath(), "->", f.GetRelPath())
+				file.insertBefore(f)
 				break loop
 			}
 			if file.GetTime() == f.GetTime() {
@@ -417,63 +428,38 @@ loop:
 				// also doing an alpha sort in addition to mod time because mod times can match
 				// but names cannot.
 				if file.GetRelPath() < f.GetRelPath() {
-					file.InsertBefore(f)
+					logging.Debug("SORT FIFO (alpha):", file.GetRelPath(), "->", f.GetRelPath())
+					file.insertBefore(f)
 					break loop
 				}
 			}
 			break
 		case conf.OrderLIFO:
 			if file.GetTime() > f.GetTime() {
-				logging.Debug("SORT LIFO:", file.GetTime(), "->", f.GetTime())
-				file.InsertBefore(f)
+				logging.Debug("SORT LIFO:", file.GetRelPath(), "->", f.GetRelPath())
+				file.insertBefore(f)
 				break loop
 			}
 			if file.GetTime() == f.GetTime() {
 				// Same reasoning as above.
-				if file.GetRelPath() < f.GetRelPath() {
-					file.InsertBefore(f)
+				if file.GetRelPath() > f.GetRelPath() {
+					logging.Debug("SORT LIFO (alpha):", file.GetRelPath(), "->", f.GetRelPath())
+					file.insertBefore(f)
 					break loop
 				}
 			}
 			break
-		default: // No ordering
-			break loop
 		}
 		n++
-		if f.GetNext() == nil {
-			logging.Debug("SORT:", grp.conf.Order, f.GetTime(), "->", file.GetTime())
-			file.InsertAfter(f)
+		if f.getNext() == nil {
+			logging.Debug("SORT:", grp.conf.Order, f.GetRelPath(), "->", file.GetRelPath())
+			file.insertAfter(f)
 			break
 		}
-		f = f.GetNext()
+		f = f.getNext()
 	}
 	// If we inserted before the head file we need to update the pointer.
 	if n == 0 {
-		sorter.next[grp.group] = file
-	}
-}
-
-// Done will remove this file from the list and do any cleanup as specified by the tag.
-func (sorter *Sorter) done(file sts.DoneFile) {
-	del := false
-	f, found := sorter.files[file.GetPath()]
-	if found {
-		if f.GetPrev() != nil {
-			f.GetPrev().SetNext(nil)
-		}
-		if sorter.groupMap[f.GetGroup()].conf.Delete {
-			del = true
-		}
-		delete(sorter.files, file.GetPath())
-	} else {
-		grp := sorter.getGroupConf(sorter.getGroup(file.GetRelPath()))
-		del = grp.Delete
-	}
-	if del && file.GetSuccess() {
-		logging.Debug("SORT Delete:", file.GetPath())
-		err := os.Remove(file.GetPath())
-		if err != nil {
-			logging.Error("Failed to remove:", file.GetPath(), err.Error())
-		}
+		sorter.head[grp.group] = file
 	}
 }

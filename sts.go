@@ -20,17 +20,8 @@ type ScanFile interface {
 // Implements ScanFile.
 type SortFile interface {
 	ScanFile
-	Invalidate()
-	Validate() (bool, error)
 	GetOrigFile() ScanFile
-	GetGroup() string
-	GetNext() SortFile
-	GetPrev() SortFile
-	GetPrevReq() SortFile
-	SetNext(SortFile)
-	SetPrev(SortFile)
-	InsertAfter(SortFile)
-	InsertBefore(SortFile)
+	GetPrevName() string
 }
 
 // SendFile is the interface for a file as needed for sending.

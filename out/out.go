@@ -139,7 +139,6 @@ func (a *AppOut) initComponents() (err error) {
 	a.pollChan = make(chan []sts.SendFile, a.RawConf.Threads*2)
 	a.doneChan = []chan []sts.DoneFile{
 		make(chan []sts.DoneFile, a.RawConf.Threads*2),
-		make(chan []sts.DoneFile, a.RawConf.Threads*2),
 	}
 
 	var outDir string
@@ -170,6 +169,8 @@ func (a *AppOut) initComponents() (err error) {
 		Nested:         0,
 		Include:        a.RawConf.Include,
 		Ignore:         a.RawConf.Ignore,
+		Tags:           a.RawConf.Tags,
+		GroupBy:        a.RawConf.GroupBy,
 		FollowSymlinks: a.DirConf.OutFollow,
 		ZeroError:      true,
 	}
@@ -390,10 +391,10 @@ func (a *AppOut) Start(stop <-chan bool) <-chan bool {
 	}(a.Sender, a.sortChan[conf.MethodHTTP], a.loopChan, pollStop, a.pollChan)
 
 	// Start the sorter.
-	go func(sorter *sort.Sorter, in <-chan []sts.ScanFile, out map[string]chan sts.SortFile, done <-chan []sts.DoneFile) {
+	go func(sorter *sort.Sorter, in <-chan []sts.ScanFile, out map[string]chan sts.SortFile) {
 		defer wg.Done()
-		sorter.Start(in, out, done)
-	}(a.Sorter, a.scanChan, a.sortChan, a.doneChan[0])
+		sorter.Start(in, out)
+	}(a.Sorter, a.scanChan, a.sortChan)
 
 	// Start the scanner.
 	var scanStop chan bool
@@ -403,7 +404,7 @@ func (a *AppOut) Start(stop <-chan bool) <-chan bool {
 	go func(scanner *scan.Scanner, out chan<- []sts.ScanFile, done <-chan []sts.DoneFile, stop <-chan bool) {
 		defer wg.Done()
 		scanner.Start(out, done, stop)
-	}(a.Scanner, a.scanChan, a.doneChan[1], scanStop)
+	}(a.Scanner, a.scanChan, a.doneChan[0], scanStop)
 
 	// Ready.
 	logging.Debug(fmt.Sprintf("SENDER Ready: %s -> %s", a.conf.SourceName, a.conf.TargetName))

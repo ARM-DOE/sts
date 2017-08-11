@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"code.arm.gov/dataflow/sts"
+	"code.arm.gov/dataflow/sts/conf"
 	"code.arm.gov/dataflow/sts/fileutil"
 	"code.arm.gov/dataflow/sts/logging"
 )
@@ -262,8 +263,12 @@ type ScannerConf struct {
 	Nested         int
 	Include        []*regexp.Regexp
 	Ignore         []*regexp.Regexp
+	Tags           []*conf.Tag
+	GroupBy        *regexp.Regexp
 	FollowSymlinks bool
 	ZeroError      bool // Log error for zero-length files
+	selfCleanAll   bool
+	selfCleanSome  bool
 }
 
 // AddInclude adds a pattern to the list that is used for including files in the scan list.
@@ -279,6 +284,29 @@ func (c *ScannerConf) AddIgnore(pattern *regexp.Regexp) {
 // AddIgnoreString calls AddIgnore after compiling the provided string to a regular expression.
 func (c *ScannerConf) AddIgnoreString(pattern string) {
 	c.AddIgnore(regexp.MustCompile(pattern))
+}
+
+func (c *ScannerConf) getGroupByRelPath(relPath string) string {
+	m := c.GroupBy.FindStringSubmatch(relPath)
+	if len(m) > 1 {
+		return m[1]
+	}
+	return ""
+}
+
+func (c *ScannerConf) getTagByRelPath(relPath string) *conf.Tag {
+	grp := c.getGroupByRelPath(relPath)
+	var defTag *conf.Tag
+	for _, t := range c.Tags {
+		if t.Pattern == nil {
+			defTag = t
+			continue
+		}
+		if t.Pattern.MatchString(grp) {
+			return t
+		}
+	}
+	return defTag
 }
 
 // NewScanner returns a Scanner instance.
@@ -299,6 +327,12 @@ func NewScanner(conf *ScannerConf) (*Scanner, error) {
 	conf.AddIgnoreString(`\.DS_Store$`)
 	conf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutil.LockExt)))
 	conf.AddIgnoreString(fmt.Sprintf(`%s$`, regexp.QuoteMeta(DisabledName)))
+
+	conf.selfCleanAll = true
+	for _, t := range conf.Tags {
+		conf.selfCleanAll = conf.selfCleanAll && t.Delete
+		conf.selfCleanSome = conf.selfCleanSome || t.Delete
+	}
 	return scanner, nil
 }
 
@@ -377,10 +411,32 @@ func (scanner *Scanner) done(ch <-chan []sts.DoneFile) int {
 		if !ok {
 			return -1
 		}
+		var del bool
+		var tag *conf.Tag
+		var key string
+		var err error
 		for _, doneFile := range doneFiles {
 			if doneFile.GetSuccess() {
 				logging.Debug("SCAN File Done:", doneFile.GetRelPath())
 				scanner.cache.done(doneFile.GetPath())
+				del = scanner.Conf.selfCleanAll
+				if !del && scanner.Conf.selfCleanSome {
+					tag = scanner.Conf.getTagByRelPath(doneFile.GetRelPath())
+					del = tag != nil && tag.Delete
+				}
+				if del {
+					logging.Debug("SCAN File Delete:", doneFile.GetPath())
+					err = os.Remove(doneFile.GetPath())
+					if err != nil {
+						logging.Error("Failed to remove:", doneFile.GetPath(), err.Error())
+						continue
+					}
+					// Don't remove from the cache until the file is successfully
+					// removed.  Otherwise it will get picked up again and sent.
+					// Better for it to stay stale in the cache.
+					key = scanner.cache.toKey(scanner.cache.parsePath(doneFile.GetPath()))
+					scanner.cache.remove(key)
+				}
 				continue
 			}
 			if f, ok := scanner.cache.get(doneFile.GetPath()); ok {
@@ -516,23 +572,34 @@ func (scanner *Scanner) handleNode(path string, info os.FileInfo, err error) err
 		}
 		return nil
 	}
-	if !scanner.Conf.OutOnce {
-		scanner.cache.add(path, info)
-		return nil
-	}
-	key := scanner.cache.toKey(nesting, relPath)
-	// If this file is in the cache and hasn't changed, skip it.
-	if f, ok := scanner.cache.Files[key]; ok && fTime.Unix() == f.Time && info.Size() == f.Size {
-		return nil
-	}
-	// If this file has a mod time before the cache boundary time, skip it.
-	if fTime.Unix() < scanner.cache.LastTime {
-		return nil
+	switch {
+	case !scanner.Conf.OutOnce:
+		fallthrough
+	case scanner.Conf.selfCleanAll:
+		// Just break and add the file.
+		break
+	case scanner.Conf.selfCleanSome:
+		tag := scanner.Conf.getTagByRelPath(relPath)
+		if tag != nil && tag.Delete {
+			// This tag will be cleaned up so we can just add the file.
+			break
+		}
+		fallthrough
+	default:
+		key := scanner.cache.toKey(nesting, relPath)
+		// If this file is in the cache and hasn't changed, skip it.
+		if f, ok := scanner.cache.Files[key]; ok && fTime.Unix() == f.Time && info.Size() == f.Size {
+			return nil
+		}
+		// If this file has a mod time before the cache boundary time, skip it.
+		if fTime.Unix() < scanner.cache.LastTime {
+			return nil
+		}
 	}
 	logging.Debug("SCAN Found:", path)
 	if _, err = scanner.cache.add(path, info); err != nil {
 		logging.Error("Failed to add file to queue:", path, "->", err.Error())
-		return nil
+		return err
 	}
 	return nil
 }

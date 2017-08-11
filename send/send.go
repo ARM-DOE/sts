@@ -77,11 +77,7 @@ func (f *sendFile) GetHash() string {
 func (f *sendFile) GetPrevName() string {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
-	prev := f.file.GetPrevReq()
-	if prev != nil {
-		return prev.GetRelPath()
-	}
-	return ""
+	return f.file.GetPrevName()
 }
 
 func (f *sendFile) SetStarted(t time.Time) {
