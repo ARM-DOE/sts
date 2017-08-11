@@ -387,6 +387,7 @@ func (sender *Sender) startBin(wg *sync.WaitGroup) {
 	var f sts.SendFile
 	var ok bool
 	wait := time.Millisecond * 500
+	waitInterval := wait / 10
 	waited := time.Millisecond * 0
 	in := sender.ch.sendFile
 	for {
@@ -400,8 +401,8 @@ func (sender *Sender) startBin(wg *sync.WaitGroup) {
 				logging.Debug("SEND Binning Found:", f.GetRelPath())
 				waited = time.Millisecond * 0
 			default:
-				time.Sleep(wait / 10)
-				waited += wait
+				time.Sleep(waitInterval)
+				waited += waitInterval
 				if (in == nil || waited > wait) && b != nil && len(b.Parts) > 0 {
 					// Time to send the bin even if it's not full.
 					sender.ch.sendBin <- b
