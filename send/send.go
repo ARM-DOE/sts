@@ -289,7 +289,12 @@ func (sender *Sender) Start(ch *SenderChan) {
 	sender.ch.sendBin = make(chan *bin.Bin, sender.conf.Threads*2)
 	sender.ch.doneBin = make(chan *bin.Bin, sender.conf.Threads)
 	var wgWrap, wgBin, wgRebin, wgSend, wgDone sync.WaitGroup
-	nWrap, nBin, nRebin, nSend, nDone := 1, 1, 1, sender.conf.Threads, 1
+	nWrap, nBin, nRebin, nSend, nDone :=
+		sender.conf.Threads+1,
+		sender.conf.Threads+1,
+		1,
+		sender.conf.Threads,
+		1
 	start := func(s func(wg *sync.WaitGroup), wg *sync.WaitGroup, n int) {
 		wg.Add(n)
 		for i := 0; i < n; i++ {
