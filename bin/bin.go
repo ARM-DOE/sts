@@ -110,7 +110,7 @@ func (bin *Bin) Add(file sts.SendFile) (added bool, err error) {
 		}
 		bin.Parts = append(bin.Parts, p)
 		bin.BytesLeft -= bytes
-		logging.Debug("BIN Allocating:", file.GetRelPath(), beg, end)
+		// logging.Debug("BIN Allocating:", file.GetRelPath(), beg, end)
 		file.AddAlloc(bytes)
 		added = true
 		return
@@ -230,7 +230,7 @@ func (b *Encoder) startNextPart() error {
 	if err != nil {
 		return fmt.Errorf("Could not open file %s while writing bin: %s", b.binPart.File.GetPath(true), err.Error())
 	}
-	logging.Debug("BIN Next Part:", b.binPart.File.GetRelPath(), b.binPart.Beg)
+	// logging.Debug("BIN Next Part:", b.binPart.File.GetRelPath(), b.binPart.Beg)
 	b.fh.Seek(b.binPart.Beg, 0)
 	return nil
 }
@@ -264,7 +264,7 @@ func (b *Encoder) Read(p []byte) (n int, err error) {
 	}
 	bytesLeft -= int64(n)
 	b.partProgress += int64(n)
-	logging.Debug("BIN Bytes Read", n, b.binPart.File.GetRelPath(), bytesLeft)
+	// logging.Debug("BIN Bytes Read", n, b.binPart.File.GetRelPath(), bytesLeft)
 	if err == io.EOF || n == 0 || bytesLeft == 0 {
 		err = b.startNextPart()
 		b.eop = true
@@ -297,13 +297,13 @@ func (pr *PartDecoder) Read(out []byte) (n int, err error) {
 	}
 	pr.pos += n
 	if pr.pos == int(total) {
-		logging.Debug("BIN Part Done", pr.pos)
+		// logging.Debug("BIN Part Done", pr.pos)
 		return n, io.EOF
 	}
 	if pr.pos > int(total) {
 		logging.Error("BIN Part Overflow:", pr.pos-int(total))
 	}
-	logging.Debug("BIN Part Read", n, pr.pos, total, err)
+	// logging.Debug("BIN Part Read", n, pr.pos, total, err)
 	return
 }
 
