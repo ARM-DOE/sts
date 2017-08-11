@@ -386,7 +386,7 @@ func (sender *Sender) startBin(wg *sync.WaitGroup) {
 	var b *bin.Bin
 	var f sts.SendFile
 	var ok bool
-	wait := time.Millisecond * 100
+	wait := time.Millisecond * 500
 	waited := time.Millisecond * 0
 	in := sender.ch.sendFile
 	for {
