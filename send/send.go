@@ -483,11 +483,14 @@ func (sender *Sender) startSend(wg *sync.WaitGroup) {
 			return
 		}
 	}
+	var t time.Time
 	for {
+		t = time.Now()
 		b, ok := <-sender.ch.sendBin
 		if !ok || b == nil {
 			break
 		}
+		logging.Debug("SEND Idle:", time.Since(t))
 		for _, p := range b.Parts {
 			logging.Debug("SEND Bin Part:", &b, p.File.GetRelPath(), p.Beg, p.End)
 		}
