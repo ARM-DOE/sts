@@ -121,4 +121,5 @@ func TestCRUD(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	close(stop)
 }
