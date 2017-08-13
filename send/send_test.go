@@ -52,6 +52,7 @@ func (f *mockSortFile) GetOrigFile() sts.ScanFile {
 }
 
 type mockLogger struct {
+	test *testing.T
 }
 
 func (log *mockLogger) Debug(params ...interface{}) {
@@ -63,7 +64,7 @@ func (log *mockLogger) Info(params ...interface{}) {
 }
 
 func (log *mockLogger) Error(params ...interface{}) {
-	fmt.Println(params)
+	log.test.Error(params...)
 }
 
 func (log *mockLogger) Sent(params ...interface{}) {
@@ -107,11 +108,11 @@ func stageFiles(count int, bytes units.Base2Bytes) []string {
 }
 
 func TestGeneral(t *testing.T) {
-	logging.SetHandler(&mockLogger{})
+	logging.SetHandler(&mockLogger{test: t})
 
 	// Stage some files
 	tearDown()
-	files := stageFiles(7, units.MiB*10)
+	files := stageFiles(200, units.KiB*100)
 
 	// Start receiver
 	svrConf := &server.ReceiverConf{
@@ -127,13 +128,13 @@ func TestGeneral(t *testing.T) {
 
 	// Start sender
 	sndConf := &SenderConf{
-		Threads:     len(files),
-		Compression: 0,
+		Threads:     3,
+		Compression: 1,
 		SourceName:  sendName,
 		TargetName:  recvName,
 		TargetHost:  fmt.Sprintf("%s:%d", hostName, hostPort),
-		BinSize:     units.MiB * 1,
-		Timeout:     time.Second * 10,
+		BinSize:     units.MiB * 10,
+		Timeout:     time.Second * 2,
 	}
 	sender, err := NewSender(sndConf)
 	if err != nil {
@@ -150,6 +151,7 @@ func TestGeneral(t *testing.T) {
 		Close: chClose,
 	})
 
+	// Pass in the files
 	for _, f := range files {
 		info, err := os.Lstat(f)
 		if err != nil {
@@ -162,6 +164,7 @@ func TestGeneral(t *testing.T) {
 		}
 	}
 
+	// Wait for them to all send
 	var done []sts.SendFile
 	for {
 		done = append(done, <-chOut...)
