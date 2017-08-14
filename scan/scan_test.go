@@ -37,7 +37,7 @@ func (log *mockLogger) Sent(params ...interface{}) {
 func (log *mockLogger) Received(params ...interface{}) {
 }
 
-var root = "/var/tmp/sts"
+var root = "/var/tmp/sts-scan"
 var rootScan = filepath.Join(root, "out", "receiver")
 
 func tearDown() {
