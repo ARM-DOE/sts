@@ -290,8 +290,8 @@ func (sender *Sender) Start(ch *SenderChan) {
 	sender.ch.doneBin = make(chan *bin.Bin, sender.conf.Threads)
 	var wgWrap, wgBin, wgRebin, wgSend, wgDone sync.WaitGroup
 	nWrap, nBin, nRebin, nSend, nDone :=
-		sender.conf.Threads+1,
-		sender.conf.Threads+1,
+		1,
+		1,
 		1,
 		sender.conf.Threads,
 		1
