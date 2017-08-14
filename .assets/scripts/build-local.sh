@@ -19,6 +19,7 @@ if [ ! -f $GOROOT/$GOBUNDLE ]; then
 fi
 
 export GOROOT=$GOROOT/go
+export PATH=$GOROOT/bin:$PATH
 export GOPATH
 
 # Clean up previous build
