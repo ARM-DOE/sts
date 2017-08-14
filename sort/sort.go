@@ -267,6 +267,7 @@ func (sorter *Sorter) Start(inChan <-chan []sts.ScanFile, outChan map[string]cha
 						next.unlink()
 					}
 					next = nil
+					continue
 				}
 			} else if inChan == nil && outChan != nil {
 				for _, ch := range outChan {
@@ -356,7 +357,9 @@ func (sorter *Sorter) delayGroup(g *sortedGroup) {
 		n = n.next
 	}
 	if n == g {
-		return // We only have one group of this priority.
+		// Either we only have one group of this priority or this group is
+		// already the last one.  Either way, we don't need to do anything.
+		return
 	}
 	if g == sorter.group {
 		// Point to the next one if we're moving the first group.

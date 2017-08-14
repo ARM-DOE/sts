@@ -99,7 +99,7 @@ func TestGeneral(t *testing.T) {
 			Priority: 0,
 		},
 	}
-	n := 10
+	n := 5000
 	groupBy := regexp.MustCompile(`^([^\.]*)`)
 	sorter := NewSorter(tags, groupBy)
 	inChan := make(chan []sts.ScanFile)
@@ -167,7 +167,19 @@ func TestGeneral(t *testing.T) {
 			}
 		}
 	}
-	for _, f := range done {
+	for i, f := range done {
+		// g1 and g2 should alternate and g3 should be at the end if sorting is
+		// done correctly.
+		g := 1
+		if i >= len(done)-len(doneByGroup["g3"]) {
+			g = 3
+		} else if i%2 == 0 {
+			g = 2
+		}
+		if f.getGroup() != fmt.Sprintf("g%d", g) {
+			t.Error("File (", f.GetRelPath(), fmt.Sprintf(") should be g%d", g))
+		}
+		// A file should be unlinked right after being sent out
 		if f.getNext() != nil || f.getPrev() != nil {
 			t.Error("File (", f.GetRelPath(), ") should be unlinked")
 		}

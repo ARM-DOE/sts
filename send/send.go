@@ -289,6 +289,11 @@ func (sender *Sender) Start(ch *SenderChan) {
 	sender.ch.sendBin = make(chan *bin.Bin, sender.conf.Threads*2)
 	sender.ch.doneBin = make(chan *bin.Bin, sender.conf.Threads)
 	var wgWrap, wgBin, wgRebin, wgSend, wgDone sync.WaitGroup
+	// It's good to keep the wrapper count low so as to not move through the
+	// sort output channel too quickly--thus potentially having too many
+	// large, lower-priority files starving small, higher-priority ones.
+	// TODO: consider moving the hashing to the sorter so as to better manage
+	// priority.
 	nWrap, nBin, nRebin, nSend, nDone :=
 		1,
 		1,
