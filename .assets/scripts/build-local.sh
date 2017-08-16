@@ -1,21 +1,21 @@
 #!/bin/bash
 
-ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROJ=$ROOT/../../
+root="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+proj=$root/../../
 
-GOVERSION=1.8.3
-GOTARGET=`uname -s | awk '{print tolower($0)}'`
-GOBUNDLE=go${GOVERSION}.${GOTARGET}-amd64.tar.gz
-GOURL=https://storage.googleapis.com/golang/$GOBUNDLE
-GOROOT=$ROOT/.go
-GOPATH=$ROOT/.godev
+goversion=1.8.3
+gotarget=`uname -s | awk '{print tolower($0)}'`
+gobundle=go${goversion}.${gotarget}-amd64.tar.gz
+gourl=https://storage.googleapis.com/golang/$gobundle
+GOROOT=$root/.go
+GOPATH=$root/.godev
 
 # Download Go
-if [ ! -f $GOROOT/$GOBUNDLE ]; then
+if [ ! -f $GOROOT/$gobundle ]; then
     rm -rf $GOROOT
     mkdir -p $GOROOT
-    curl -o $GOROOT/$GOBUNDLE $GOURL
-    tar -C $GOROOT -xzf $GOROOT/$GOBUNDLE
+    curl -o $GOROOT/$gobundle $gourl
+    tar -C $GOROOT -xzf $GOROOT/$gobundle
 fi
 
 export GOROOT=$GOROOT/go
@@ -27,20 +27,19 @@ rm -rf $GOPATH
 mkdir -p $GOPATH
 
 # Download dependencies
-git clone https://github.com/alecthomas/units $GOPATH/src/github.com/alecthomas/units
-git clone https://github.com/davecgh/go-spew $GOPATH/src/github.com/davecgh/go-spew
-git clone https://github.com/go-yaml/yaml.git $GOPATH/src/gopkg.in/yaml.v2
-cd $GOPATH/src/gopkg.in/yaml.v2 ; git checkout v2; cd $ROOT
+go get -u github.com/alecthomas/units
+go get -u github.com/davecgh/go-spew
+go get -u gopkg.in/yaml.v2
 
 src=$GOPATH/src/code.arm.gov/dataflow
 mkdir -p $src
-ln -s $PROJ $src/sts
+ln -s $proj $src/sts
 
-$ROOT/build.sh
+$root/build.sh
 go test ../../...
 
 # Copy conf files
 mkdir -p $GOPATH/conf
-cp $ROOT/../dist.arm.yaml $GOPATH/conf/sts.yaml.example
-cp $ROOT/stsd.arm.dist $GOPATH/conf/stsd.dist
-cp $ROOT/stsd.service.arm.dist $GOPATH/conf/stsd.service.dist
+cp $root/../dist.arm.yaml $GOPATH/conf/sts.yaml.example
+cp $root/stsd.arm.dist $GOPATH/conf/stsd.dist
+cp $root/stsd.service.arm.dist $GOPATH/conf/stsd.service.dist
