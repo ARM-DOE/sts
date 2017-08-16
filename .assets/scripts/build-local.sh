@@ -35,8 +35,11 @@ src=$GOPATH/src/code.arm.gov/dataflow
 mkdir -p $src
 ln -s $proj $src/sts
 
+# Build
 $root/build.sh
-go test ../../...
+
+# Run all tests
+cd $root; go test ../../...
 
 # Copy conf files
 mkdir -p $GOPATH/conf
