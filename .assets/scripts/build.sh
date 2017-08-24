@@ -21,7 +21,7 @@ go install github.com/alecthomas/units
 go install github.com/davecgh/go-spew/spew
 
 date=`date -u '+%Y-%m-%d %H:%M:%S'`
-vers=$GIT_TAG  # Set by APR
+vers=$APR_VERSION
 if [ -z "$vers" ]; then
     vers=`git describe --tags 2>/dev/null`
     if [ -z "$vers" ]; then
