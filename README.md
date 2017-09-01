@@ -104,19 +104,39 @@ IN:
 
 ### Start-up
 
-If STS is configured to send, the first thing it will do is check the cache to see if any files are already in the queue from last run.  If so, a request is made to the target to find out what "partials" exist and corresponding companion metadata is returned.  From this, STS can determine which files are partially sent already and which ones need to be polled for validation.  Some of these might have already been fully received and some not at all.  STS will handle both of these cases to avoid duplicate transfers.
+If STS is configured to send, the first thing it will do is check the cache to
+see if any files are already in the queue from last run.  If so, a request is made
+to the target to find out what "partials" exist and corresponding companion metadata
+is returned.  From this, STS can determine which files are partially sent already
+and which ones need to be polled for validation.  Some of these might have already
+been fully received and some not at all.  STS will handle both of these cases to
+avoid duplicate transfers.
 
-Following the outgoing recovery logic, four components are started for managing the outgoing flow: **Watcher**, **Sorter**, **Sender**, and **Validator**.  A similar set of components will be started for any additionally configured source + target.  Each source + target has its own configuration block.  In send mode STS will also use a configurable number of threads used for making concurrent HTTP requests to the configured target.
+Following the outgoing recovery logic, four components are started for managing
+the outgoing flow: **Watcher**, **Sorter**, **Sender**, and **Validator**.  A
+similar set of components will be started for any additionally configured source +
+target.  Each source + target has its own configuration block.  In send mode STS
+will also use a configurable number of threads used for making concurrent HTTP
+requests to the configured target.
 
-If STS is configured to run as a receiver, three additional components are started: 1) **HTTP Server** for receiving files and validation requests and 2) a **Watcher** for scanning the stage directory, and 3) a **Finalizer** that takes files from the Watcher and validates them (hash match and in-order delivery) before moving them to the "final" directory.
+If STS is configured to run as a receiver, three additional components are started:
+1) **HTTP Server** for receiving files and validation requests and 2) a **Watcher**
+for scanning the stage directory, and 3) a **Finalizer** that takes files from the
+Watcher and validates them (hash match and in-order delivery) before moving them
+to the "final" directory.
 
 ### Logical Flow
 
-1. _Source_ **Watcher**: Files found in configured watch directory are cached in memory (and on disk) and passed to the **Sorter**.
+1. _Source_ **Watcher**: Files found in configured watch directory are cached in
+   memory (and on disk) and passed to the **Sorter**.
+  > If the program crashes unexpectedly, STS will use the queue cache to perform
+    a recovery procedure on next run that will pick up where it left off without
+    sending duplicate data.
 
-  > If the program crashes unexpectedly, STS will use the queue cache to perform a recovery procedure on next run that will pick up where it left off without sending duplicate data.
-
-1. _Source_ **Sorter**: Files received from **Watcher** are sorted in order of configured priority and/or in-order delivery.  **Sorter** passes files to the **Sender** such that groups of similar files (based on configurable pattern match) of the same priority are rotated in order to avoid starvation.
+1. _Source_ **Sorter**: Files received from **Watcher** are sorted in order of
+   configured priority and/or in-order delivery.  **Sorter** passes files to the
+   **Sender** such that groups of similar files (based on configurable pattern
+   match) of the same priority are rotated in order to avoid starvation.
 
 1. _Source_ **Sender**: Does these activities in parallel:
 
@@ -125,13 +145,26 @@ If STS is configured to run as a receiver, three additional components are start
   1. POST "bin" to target HTTP server, optionally compressing the payload
   1. Log successfully sent files and pass these to the **Validator**
 
-1. _Source_ **Validator**: Builds a batch of files to validate based on configurable time interval and makes a request to the target host to confirm files sent have been validated and finalized.  Files that fail validation are sent back to the **Sender**.  Files that pass validation are communicated to the **Watcher** (removes from queue) and **Sorter** (removes from list and does any cleanup action configured for its group).  After a configurable number of poll attempts do not yield success, files are passed back to the **Sender**.
+1. _Source_ **Validator**: Builds a batch of files to validate based on configurable
+   time interval and makes a request to the target host to confirm files sent have
+   been validated and finalized.  Files that fail validation are sent back to the
+   **Sender**.  Files that pass validation are communicated to the **Watcher**
+   (removes from queue and does any cleanup action configured for its group).
+   After a configurable number of poll attempts do not yield success, files are
+   passed back to the **Sender**.
 
-1. _Target_ **HTTP Server**: Receives POSTed "bin" from source host and writes data and companion metadata file to configured stage area.  Each file is given a ".part" extension to indicate the file is not yet complete.  Once the last part is written (mutex locks are used to avoid conflict by multiple threads) the file is renamed to remove the previously added ".part" extension.
+1. _Target_ **HTTP Server**: Receives POSTed "bin" from source host and writes
+   data and companion metadata file to configured stage area.  Each file is given
+   a ".part" extension to indicate the file is not yet complete.  Once the last
+   part is written (mutex locks are used to avoid conflict by multiple threads)
+   the file is renamed to remove the previously added ".part" extension.
 
-1. _Target_ **Watcher**: Scans stage area for completed files and sends them to the **Finalizer**.
+1. _Target_ **Watcher**: Scans stage area for completed files and sends them to
+   the **Finalizer**.
 
-1. _Target_ **Finalizer**: Makes sure each input file matches the MD5 hash as stored in the "companion" file.  Also makes sure that a file is only finalized following its predecessor (if one specified in the companion file).
+1. _Target_ **Finalizer**: Makes sure each input file matches the MD5 hash as stored
+   in the "companion" file.  Also makes sure that a file is only finalized following
+   its predecessor (if one specified in the companion file).
 
 
 ![Flowchart2](assets/flow.png?raw=true)
