@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"code.arm.gov/dataflow/sts"
@@ -152,10 +153,13 @@ type foundFile struct {
 	relPath string
 	Size    int64  `json:"size"`
 	Time    int64  `json:"mtime"`
+	Hash    string `json:"sig"`
 	Link    string `json:"p"`
 	Nesting string `json:"n"`
 	Done    bool   `json:"done"`
+	sent    int64
 	queued  bool
+	lock    sync.RWMutex
 }
 
 func (f *foundFile) GetPath(follow bool) string {
@@ -182,6 +186,22 @@ func (f *foundFile) GetSize() int64 {
 
 func (f *foundFile) GetTime() int64 {
 	return f.Time
+}
+
+func (f *foundFile) GetHash() string {
+	return f.Hash
+}
+
+func (f *foundFile) computeHash() (err error) {
+	f.Hash, err = fileutil.FileMD5(f.GetPath(true))
+	return
+}
+
+func (f *foundFile) AddSent(bytes int64) bool {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	f.sent += bytes
+	return f.sent == f.Size
 }
 
 func (f *foundFile) reset(info os.FileInfo) (changed bool, err error) {
@@ -220,13 +240,18 @@ func (f *foundFile) reset(info os.FileInfo) (changed bool, err error) {
 		f.Size = size
 		f.Time = time
 	}
-	if changed {
+	if changed || f.Hash == "" {
 		f.q.dirty = true
+		err = f.computeHash()
 	}
 	return
 }
 
 func (f *foundFile) Reset() (bool, error) {
+	// Reset can be called from components outside of this one so we need to
+	// make sure only one runs at a time.
+	f.lock.Lock()
+	defer f.lock.Unlock()
 	return f.reset(nil)
 }
 

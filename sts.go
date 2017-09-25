@@ -1,49 +1,79 @@
 package sts
 
-import "time"
+import (
+	"crypto/tls"
+	"time"
+
+	"github.com/alecthomas/units"
+)
+
+// SenderConf contains all parameters necessary for the sending daemon.
+type SendConf struct {
+	Threads      int
+	Compression  int
+	SourceName   string
+	TargetName   string
+	TargetHost   string
+	TargetKey    string
+	TLS          *tls.Config
+	BinSize      units.Base2Bytes
+	Timeout      time.Duration
+	StatInterval time.Duration
+	PollInterval time.Duration
+	PollDelay    time.Duration
+	PollAttempts int
+}
+
+// Protocol returns the protocl (http vs https) based on the configuration.
+func (sc *SendConf) Protocol() string {
+	if sc.TLS != nil {
+		return "https"
+	}
+	return "http"
+}
 
 // FinalStatusService is the interface for determining a file's final status.
 type FinalStatusService interface {
 	GetFileStatus(source, relPath string, sent time.Time) int
 }
 
-// ScanFile is the interface for a file as found on disk.
-type ScanFile interface {
+type File interface {
 	GetPath(bool) string
 	GetRelPath() string
 	GetSize() int64
 	GetTime() int64
-	Reset() (bool, error)
 }
 
-// SortFile is the interface for a file as needed for sorting.
-// Implements ScanFile.
-type SortFile interface {
-	ScanFile
-	GetOrigFile() ScanFile
-	GetPrevName() string
-}
-
-// SendFile is the interface for a file as needed for sending.
-// Implements ScanFile.
-type SendFile interface {
-	ScanFile
+type Sortable interface {
+	File
 	GetHash() string
+}
+
+type Sendable interface {
+	Sortable
 	GetPrevName() string
-	SetStarted(time.Time)
-	GetStarted() time.Time
-	SetCompleted(time.Time)
-	GetCompleted() time.Time
+	GetSlice() (int64, int64)
+}
+
+type Binnable interface {
+	Sendable
 	GetNextAlloc() (int64, int64)
-	GetBytesAlloc() int64
-	GetBytesSent() int64
 	AddAlloc(int64)
-	AddSent(int64) bool // Returns IsSent() to keep the transaction atomic
+}
+
+type Sent interface {
+	Sendable
 	TimeMs() int64
-	IsSent() bool
-	SetCancel(bool)
-	GetCancel() bool
-	Stat() (bool, error)
+}
+
+type Pollable interface {
+	GetRelPath() string
+	GetStarted() time.Time
+}
+
+type Polled interface {
+	GetRelPath()
+	IsDone() bool
 }
 
 // RecoverFile is a partial duplicate of SendFile and will be the underlying
@@ -53,15 +83,14 @@ type SendFile interface {
 // Also implements ScanFile in order to be inserted into the pipeline at the
 // sorter.
 type RecoverFile interface {
-	ScanFile
-	GetHash() string
+	File
 	GetNextAlloc() (int64, int64)
 	GetBytesAlloc() int64
 	GetBytesSent() int64
 	AddAlloc(int64)
 	AddSent(int64)
 	IsSent() bool
-	Stat() (bool, error)
+	// Stat() (bool, error)
 }
 
 // Companion is the interface to a companion file
@@ -74,7 +103,7 @@ type Companion interface {
 
 // RecvFile is the interface for a received file
 type RecvFile interface {
-	ScanFile
+	File
 	GetCompanion() Companion
 }
 

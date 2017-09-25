@@ -1,7 +1,9 @@
 package sort
 
 import (
+	"fmt"
 	"regexp"
+	"sync"
 	"time"
 
 	"code.arm.gov/dataflow/sts"
@@ -60,24 +62,113 @@ func (t *sortedGroup) insertBefore(next *sortedGroup) {
 	t.addBefore(next)
 }
 
+type fileShare struct {
+	orig  sts.ScanFile
+	alloc int64
+	sent  int64
+	lock  sync.RWMutex
+}
+
+func (s *fileShare) setNextAlloc() bool {
+	if rf, ok := s.orig.(sts.RecoverFile); ok {
+		beg, end := rf.GetNextAlloc()
+		if end-beg > file.chunkLength {
+			end = beg + file.chunkLength
+		}
+		rf.AddAlloc(end - beg)
+		return end >= file.GetSize()
+	}
+	file.chunkOffset += file.chunkLength
+	return file.chunkOffset+file.chunkLength >= file.GetSize()
+}
+
+func (file *sortedFile) IsLast() bool {
+	return !(file.chunkOffset+file.chunkLength < file.GetSize())
+}
+
+func (file *sortedFile) IsSent() bool {
+	file.lock.RLock()
+	defer file.lock.RUnlock()
+	if rf, ok := file.file.(sts.RecoverFile); ok {
+		return rf.IsSent()
+	}
+	return file.isSent()
+}
+
+func (file *sortedFile) isSent() bool {
+	return file.sent == file.GetSize()
+}
+
+func (file *sortedFile) AddSent(bytes int64) bool {
+	file.lock.Lock()
+	defer file.lock.Unlock()
+	if rf, ok := file.file.(sts.RecoverFile); ok {
+		rf.AddBytesSent(bytes)
+		return rf.IsSent()
+	}
+	file.sent += bytes
+	return file.isSent()
+}
+
+func (file *sortedFile) SetStarted(t time.Time) {
+	file.lock.Lock()
+	defer f.lock.Unlock()
+	if file.started.IsZero() || t.Before(file.started) {
+		file.started = t
+	}
+}
+
+func (file *sortedFile) GetStarted() time.Time {
+	file.lock.RLock()
+	defer file.lock.RUnlock()
+	return file.started
+}
+
+func (file *sortedFile) SetCompleted(t time.Time) {
+	file.lock.Lock()
+	defer file.lock.Unlock()
+	if t.After(f.completed) {
+		file.completed = t
+	}
+}
+
+func (file *sortedFile) GetCompleted() time.Time {
+	file.lock.RLock()
+	defer file.lock.RUnlock()
+	return file.completed
+}
+
+func (file *sortedFile) TimeMs() int64 {
+	file.lock.RLock()
+	defer file.lock.RUnlock()
+	if !file.completed.IsZero() && !file.started.IsZero() {
+		return int64(f.completed.Sub(f.started).Nanoseconds() / 1e6)
+	}
+	return -1
+}
+
 type sortedFile struct {
-	file     sts.ScanFile
-	group    *sortedGroup
-	next     *sortedFile
-	prev     *sortedFile
-	dirty    bool
-	prevName string
+	file        sts.ScanFile
+	group       *sortedGroup
+	next        *sortedFile
+	prev        *sortedFile
+	dirty       bool
+	prevName    string
+	chunkOffset int64
+	chunkLength int64
+	lock        sync.RWMutex
 }
 
 func newSortedFile(foundFile sts.ScanFile) *sortedFile {
 	file := &sortedFile{}
 	file.file = foundFile
+	file.chunkLength = foundFile.GetSize()
 	return file
 }
 
-func (file *sortedFile) GetOrigFile() sts.ScanFile {
-	return file.file
-}
+// func (file *sortedFile) GetOrigFile() sts.ScanFile {
+// 	return file.file
+// }
 
 func (file *sortedFile) GetPath(follow bool) string {
 	return file.file.GetPath(follow)
@@ -95,6 +186,10 @@ func (file *sortedFile) GetTime() int64 {
 	return file.file.GetTime()
 }
 
+func (file *sortedFile) GetHash() string {
+	return file.file.GetHash()
+}
+
 func (file *sortedFile) Reset() (bool, error) {
 	return file.file.Reset()
 }
@@ -109,7 +204,9 @@ func (file *sortedFile) invalidate() {
 
 func (file *sortedFile) validate() (changed bool, err error) {
 	if file.dirty {
-		changed, err = file.Reset()
+		if changed, err = file.Reset(); err != nil {
+			return
+		}
 		file.dirty = false
 	}
 	return
@@ -180,14 +277,15 @@ func (file *sortedFile) unlink() {
 
 // Sorter is responsible for sorting files based on tag configuration.
 type Sorter struct {
-	rootPath string
-	groupBy  *regexp.Regexp          // the pattern that puts files into groups to avoid starvation
-	files    map[string]*sortedFile  // path -> file pointer (lookup)
-	head     map[string]*sortedFile  // group -> file pointer (first by group)
-	group    *sortedGroup            // the first group by priority
-	groupMap map[string]*sortedGroup // group -> group conf (tag)
-	tagData  []*conf.Tag             // list of raw tag conf
-	tagDef   *conf.Tag               // default tag
+	rootPath  string
+	groupBy   *regexp.Regexp          // the pattern that puts files into groups to avoid starvation
+	files     map[string]*sortedFile  // path -> file pointer (lookup)
+	head      map[string]*sortedFile  // group -> file pointer (first by group)
+	group     *sortedGroup            // the first group by priority
+	groupMap  map[string]*sortedGroup // group -> group conf (tag)
+	tagData   []*conf.Tag             // list of raw tag conf
+	tagDef    *conf.Tag               // default tag
+	chunkSize int64                   // max size to send out to better honor priorities
 }
 
 // NewSorter returns a new Sorter instance with input tag configuration.
@@ -207,6 +305,11 @@ func NewSorter(tagData []*conf.Tag, groupBy *regexp.Regexp) *Sorter {
 	return sorter
 }
 
+// SetChunkSize sets the maximum byte count to be sent out at a time for a single file.
+func (sorter *Sorter) SetChunkSize(chunkSize int64) {
+	sorter.chunkSize = chunkSize
+}
+
 // Start starts the daemon that listens for files on inChan and doneChan and puts files on outChan
 // according to the output "method".
 func (sorter *Sorter) Start(inChan <-chan []sts.ScanFile, outChan map[string]chan sts.SortFile) {
@@ -219,6 +322,9 @@ func (sorter *Sorter) Start(inChan <-chan []sts.ScanFile, outChan map[string]cha
 				break
 			}
 			for _, foundFile := range foundFiles {
+				if rf, ok := foundFile.(sts.RecoverFile); ok && rf.IsSent() {
+					// TODO... Need to log and then clean up...
+				}
 				// logging.Debug("SORT File In:", foundFile.GetRelPath())
 				sorter.add(foundFile)
 			}
@@ -246,26 +352,7 @@ func (sorter *Sorter) Start(inChan <-chan []sts.ScanFile, outChan map[string]cha
 				}
 				// Check if there is room on the queue before forcing this one out the door.
 				if len(out) < cap(out) {
-					// Remove from lists
-					if _, ok := sorter.files[next.GetPath(false)]; ok {
-						delete(sorter.files, next.GetPath(false))
-					}
-					// Set in stone this file's predessor
-					if grp.conf.Order != "" && next.getPrev() != nil {
-						next.prevName = next.getPrev().GetRelPath()
-					}
-					logging.Debug("SORT File Out:", next.GetRelPath(), "<-", next.prevName)
-					out <- next
-					// Update the chain
-					if sorter.head[grp.group] == next {
-						sorter.head[grp.group] = next.getNext()
-					}
-					if next.getPrev() != nil {
-						next.getPrev().unlink()
-					}
-					if next.getNext() == nil {
-						next.unlink()
-					}
+					sorter.sendNext(grp, out, next)
 					next = nil
 					continue
 				}
@@ -277,7 +364,7 @@ func (sorter *Sorter) Start(inChan <-chan []sts.ScanFile, outChan map[string]cha
 				}
 				return
 			}
-			time.Sleep(100 * time.Millisecond) // To avoid thrashing.
+			time.Sleep(10 * time.Millisecond) // To avoid thrashing.
 			break
 		}
 	}
@@ -347,6 +434,52 @@ func (sorter *Sorter) getNext() *sortedFile {
 		break
 	}
 	return next
+}
+
+func (sorter *Sorter) sendNext(grp *sortedGroup, out chan sts.SortFile, next *sortedFile) {
+	prevName := ""
+	if grp.conf.Order != "" && next.getPrev() != nil {
+		prevName = next.getPrev().GetRelPath()
+	}
+	fileDone := next.IsLast()
+	if fileDone {
+		// Remove from lists
+		if _, ok := sorter.files[next.GetPath(false)]; ok {
+			delete(sorter.files, next.GetPath(false))
+		}
+	}
+	orig := next
+	if !fileDone {
+		// Make a new wrapper to keep the slice from changing for the sender.
+		next = newSortedFile(next.file)
+		next.group = orig.group
+		next.offset = orig.offset
+		next.length = orig.length
+		next.prevName = prevName
+		orig.offset += orig.length
+	}
+	next.prevName = prevName
+	logging.Debug(
+		fmt.Sprintf(
+			"SORT File Out: %s(%d:%d:%d) <- %s",
+			next.GetRelPath(),
+			next.offset,
+			next.length,
+			next.GetSize(),
+			next.prevName))
+	out <- next
+	if fileDone {
+		// Update the chain
+		if sorter.head[grp.group] == orig {
+			sorter.head[grp.group] = orig.getNext()
+		}
+		if orig.getPrev() != nil {
+			orig.getPrev().unlink()
+		}
+		if orig.getNext() == nil {
+			orig.unlink()
+		}
+	}
 }
 
 func (sorter *Sorter) delayGroup(g *sortedGroup) {

@@ -114,7 +114,7 @@ type Receiver struct {
 	lock      sync.Mutex
 	fileLocks map[string]*sync.Mutex
 	finalizer sts.FinalStatusService
-	outChan   chan<- []sts.ScanFile
+	outChan   chan<- []sts.File
 }
 
 // NewReceiver creates new receiver instance according to the input configuration.
@@ -129,7 +129,7 @@ func NewReceiver(conf *ReceiverConf, f sts.FinalStatusService) *Receiver {
 }
 
 // Serve starts HTTP server.
-func (rcv *Receiver) Serve(out chan<- []sts.ScanFile, stop <-chan bool) {
+func (rcv *Receiver) Serve(out chan<- []sts.File, stop <-chan bool) {
 	rcv.outChan = out
 
 	http.Handle("/data", rcv.handleValidate(http.HandlerFunc(rcv.routeData)))
@@ -475,7 +475,7 @@ func (rcv *Receiver) writePart(pr *bin.PartDecoder, source string) (err error) {
 		// up the response.
 		go func() {
 			// Add to the finalize channel
-			rcv.outChan <- []sts.ScanFile{&recvFile{path: path, relPath: pr.Meta.Path, comp: cmp}}
+			rcv.outChan <- []sts.File{&recvFile{path: path, relPath: pr.Meta.Path, comp: cmp}}
 		}()
 	}
 	return nil

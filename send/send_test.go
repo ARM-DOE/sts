@@ -13,42 +13,43 @@ import (
 	"github.com/alecthomas/units"
 
 	"code.arm.gov/dataflow/sts"
+	"code.arm.gov/dataflow/sts/fileutil"
 	"code.arm.gov/dataflow/sts/logging"
 	"code.arm.gov/dataflow/sts/server"
 )
 
-type mockSortFile struct {
+type mockSendable struct {
 	path string
 	size int64
 	time int64
 }
 
-func (f *mockSortFile) GetPath(follow bool) string {
+func (f *mockSendable) GetPath(follow bool) string {
 	return f.path
 }
 
-func (f *mockSortFile) GetRelPath() string {
+func (f *mockSendable) GetRelPath() string {
 	return f.path
 }
 
-func (f *mockSortFile) GetSize() int64 {
+func (f *mockSendable) GetSize() int64 {
 	return f.size
 }
 
-func (f *mockSortFile) GetTime() int64 {
+func (f *mockSendable) GetTime() int64 {
 	return f.time
 }
 
-func (f *mockSortFile) Reset() (bool, error) {
-	return false, nil
+func (f *mockSendable) GetHash() string {
+	return fileutil.StringMD5(f.path)
 }
 
-func (f *mockSortFile) GetPrevName() string {
+func (f *mockSendable) GetSlice() (int64, int64) {
+	return 0, f.GetSize()
+}
+
+func (f *mockSendable) GetPrevName() string {
 	return ""
-}
-
-func (f *mockSortFile) GetOrigFile() sts.ScanFile {
-	return f
 }
 
 type mockLogger struct {
@@ -127,7 +128,7 @@ func TestGeneral(t *testing.T) {
 	go server.Serve(nil, stop)
 
 	// Start sender
-	sndConf := &SenderConf{
+	sndConf := &sts.SendConf{
 		Threads:     3,
 		Compression: 1,
 		SourceName:  sendName,
@@ -136,20 +137,17 @@ func TestGeneral(t *testing.T) {
 		BinSize:     units.MiB * 10,
 		Timeout:     time.Second * 2,
 	}
-	sender, err := NewSender(sndConf)
+	http, err := NewHTTP(sndConf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	chIn := make(chan sts.SortFile, sndConf.Threads*2)
-	chOut := make(chan []sts.SendFile, sndConf.Threads*2)
-	chRetry := make(chan []sts.SendFile, sndConf.Threads*2)
-	chClose := make(chan bool)
-	go sender.Start(&SenderChan{
-		In:    chIn,
-		Retry: chRetry,
-		Done:  []chan<- []sts.SendFile{chOut},
-		Close: chClose,
-	})
+	sender, err := NewSender(sndConf, http.SendBin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chIn := make(chan sts.Sendable, sndConf.Threads*2)
+	chOut := make(chan []sts.Sent, sndConf.Threads*2)
+	go sender.Start(chIn, chOut)
 
 	// Pass in the files
 	for _, f := range files {
@@ -157,7 +155,7 @@ func TestGeneral(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		chIn <- &mockSortFile{
+		chIn <- &mockSendable{
 			path: f,
 			size: info.Size(),
 			time: info.ModTime().Unix(),
@@ -165,7 +163,7 @@ func TestGeneral(t *testing.T) {
 	}
 
 	// Wait for them to all send
-	var done []sts.SendFile
+	var done []sts.Sent
 	for {
 		done = append(done, <-chOut...)
 		if len(done) == len(files) {
@@ -176,10 +174,6 @@ func TestGeneral(t *testing.T) {
 	close(stop)
 	// Trigger the sender to shutdown
 	close(chIn)
-	// Wait for the close channel to close
-	<-chClose
-	// Close the retry channel
-	close(chRetry)
 	// Wait for the out channel to close
 	<-chOut
 }

@@ -21,14 +21,14 @@ const BinFluff = 0.1
 
 // Part is the struct for managing the parts of an outgoing "bin".
 type Part struct {
-	File sts.SendFile // The file for which this part applies
+	File sts.Binnable // The file for which this part applies
 	Beg  int64        // Beginning byte in the part
 	End  int64        // Ending byte in the part
-	Hash string       // MD5 of the data in the part file from Beg:End
+	// Hash string       // MD5 of the data in the part file from Beg:End
 }
 
 // NewPart creates a new Part reference including the hash if necessary.
-func NewPart(file sts.SendFile, beg, end int64) (p *Part, err error) {
+func NewPart(file sts.Binnable, beg, end int64) (p *Part) {
 	p = &Part{}
 	p.File = file
 	p.Beg = beg
@@ -98,20 +98,17 @@ func (bin *Bin) IsFull() bool {
 }
 
 // Add adds what it can of the input SendFile to the bin.  Returns false if no bytes were added.
-func (bin *Bin) Add(file sts.SendFile) (added bool, err error) {
-	beg, end := file.GetNextAlloc()
+func (bin *Bin) Add(chunk sts.Binnable) (added bool) {
+	beg, end := chunk.GetNextAlloc()
 	end = int64(math.Min(float64(end), float64(beg+bin.BytesLeft)+float64(bin.Bytes)*BinFluff))
 	bytes := int64(end - beg)
 	if bytes > 0 {
 		var p *Part
-		p, err = NewPart(file, beg, end)
-		if err != nil {
-			return
-		}
+		p = NewPart(chunk, beg, end)
 		bin.Parts = append(bin.Parts, p)
 		bin.BytesLeft -= bytes
 		// logging.Debug("BIN Allocating:", file.GetRelPath(), beg, end)
-		file.AddAlloc(bytes)
+		chunk.AddAlloc(bytes)
 		added = true
 		return
 	}
@@ -120,29 +117,29 @@ func (bin *Bin) Add(file sts.SendFile) (added bool, err error) {
 
 // Validate loops over the bin parts and extracts (removes) any changed or otherwise problem files
 // and returns them (after setting them to canceled).
-func (bin *Bin) Validate() []sts.SendFile {
-	var pass []*Part
-	var fail []sts.SendFile
-	b := int64(0)
-	for _, p := range bin.Parts {
-		if p.File.GetCancel() { // If another part of this file was already canceled.
-			fail = append(fail, p.File)
-			continue
-		}
-		changed, err := p.File.Stat()
-		if changed || err != nil {
-			p.File.SetCancel(true)
-			fail = append(fail, p.File)
-			continue
-		}
-		pass = append(pass, p)
-		b += p.End - p.Beg
-	}
-	bin.Parts = pass
-	bin.Bytes = b
-	bin.BytesLeft = 0
-	return fail
-}
+// func (bin *Bin) Validate() []sts.SendFile {
+// 	var pass []*Part
+// 	var fail []sts.SendFile
+// 	b := int64(0)
+// 	for _, p := range bin.Parts {
+// 		if p.File.GetCancel() { // If another part of this file was already canceled.
+// 			fail = append(fail, p.File)
+// 			continue
+// 		}
+// 		changed, err := p.File.Stat()
+// 		if changed || err != nil {
+// 			p.File.SetCancel(true)
+// 			fail = append(fail, p.File)
+// 			continue
+// 		}
+// 		pass = append(pass, p)
+// 		b += p.End - p.Beg
+// 	}
+// 	bin.Parts = pass
+// 	bin.Bytes = b
+// 	bin.BytesLeft = 0
+// 	return fail
+// }
 
 // Split splits a bin after n parts.
 // The new bin is from position "n" forward.
@@ -204,7 +201,7 @@ func NewEncoder(bin *Bin) *Encoder {
 			FileSize: part.File.GetSize(),
 			Beg:      part.Beg,
 			End:      part.End,
-			Hash:     part.Hash,
+			// Hash:     part.Hash,
 		}
 	}
 	return b
