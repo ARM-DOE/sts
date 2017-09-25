@@ -27,22 +27,30 @@ CMD="$BINDIR/$BIN $FLAGS -conf $CONFIG"
 KILLDELAY=50 # 5 seconds delay for process to shut down.
 
 start() {
-    echo -n "Starting STS: "
-    daemon --pidfile=$PIDFILE --user=$USER $CMD > /var/log/stsd.log 2>&1 &
+    echo -n "Starting ${BIN}: "
+    if [ -e $PIDFILE ]; then
+        pid=$(cat $PIDFILE)
+        echo -n -e "\e[31m$BIN already running as \e[33mPID $pid\e[31m! \e[39mExiting...\n"
+        return 1
+    fi
+    daemon --pidfile=$PIDFILE --user=$USER $CMD > /dev/null 2>&1 &
     RETVAL=$?
     sleep .1
-    pid=`ps -ef | egrep ":[0-9][0-9]\s+$BINDIR/$BIN" | awk '{print $2}'`
+    pid=`pidof ${BINDIR}/${BIN}`
     if [ -n "$pid" ]; then
         echo $pid > $PIDFILE
+    else
+        echo "$BIN failed to start"
+        return 1
     fi
     return $RETVAL
 }
 
 stop() {
-    echo -n "Shutting down STS: "
+    echo -n "$BIN shutting down: "
     pid=`cat "$PIDFILE" 2>/dev/null`
     if [ -n "$pid" ]; then
-        if [ "`ps -o comm= $pid`" = "$BIN" ]; then
+        if [ "`pidof ${BINDIR}/${BIN}`" = "$pid" ]; then
             # Ask process to terminate
             kill -TERM $pid
             while [ $KILLDELAY -gt 0 ] && [ "`ps -o comm= $pid`" = "$BIN" ]; do
@@ -53,15 +61,24 @@ stop() {
                 # Forcibly terminate process
                 kill -KILL $pid
             else
-                echo "Process terminated peacefully."
+                echo "$BIN terminated peacefully"
             fi
         else
-            echo "Process already died or crashed."
+            echo "$BIN already died or crashed"
         fi
     else
-        echo "Not running."
+        echo "$BIN not running"
     fi
     rm -f $PIDFILE
+}
+
+status() {
+    if [ -e $PIDFILE ]; then
+        pid=$(cat $PIDFILE)
+        echo -e "$BIN is currently running as \e[33mPID $PID\e[39m"
+        return 0
+    fi
+    echo "$BIN is not currently running"
 }
 
 case "$1" in
@@ -71,8 +88,9 @@ case "$1" in
     stop)
         stop
         ;;
-#    status)
-#        ;;
+    status)
+        status
+        ;;
     restart)
         stop
         start
@@ -80,7 +98,7 @@ case "$1" in
 #    reload)
 #        ;;
     *)
-        echo "Usage: stsd {start|stop|restart}"
+        echo "Usage: stsd {start|stop|restart|status}"
         exit 1
         ;;
 esac
