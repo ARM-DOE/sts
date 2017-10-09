@@ -53,13 +53,15 @@ type JSON struct {
 }
 
 // NewJSON initializes the cache
-func NewJSON(dir string, key string) (j *JSON, err error) {
+func NewJSON(dir, key string) (j *JSON, err error) {
 	if key == "" {
 		key = dir
 	}
 	name := fmt.Sprintf("%s.json", fileutil.StringMD5(key))
 	j = &JSON{
-		path: filepath.Join(dir, name),
+		Dir:   dir,
+		Files: make(map[string]*cacheFile),
+		path:  filepath.Join(dir, name),
 	}
 	if err = fileutil.LoadJSON(j.path, j); err != nil && !os.IsNotExist(err) {
 		return
@@ -75,12 +77,19 @@ func NewJSON(dir string, key string) (j *JSON, err error) {
 // Iterate iterates over the cache and calls provided callback on each file
 func (j *JSON) Iterate(f func(sts.Cached) bool) {
 	j.mutex.RLock()
-	defer j.mutex.RUnlock()
+	files := make([]*cacheFile, len(j.Files))
+	i := 0
 	for _, file := range j.Files {
+		files[i] = file
+		i++
+	}
+	j.mutex.RUnlock()
+	for _, file := range files {
 		if f(file) {
 			break
 		}
 	}
+
 }
 
 // Get returns the stored file with the specified key
