@@ -1,4 +1,4 @@
-package conf
+package main
 
 import (
 	"io/ioutil"
@@ -6,49 +6,36 @@ import (
 	"regexp"
 	"time"
 
-	"code.arm.gov/dataflow/sts/util"
+	"code.arm.gov/dataflow/sts/queue"
+	"code.arm.gov/dataflow/sts/reflectutil"
 
 	"github.com/alecthomas/units"
 	"gopkg.in/yaml.v2"
 )
 
 const (
-
-	// DefaultTag is the name of the "default" tag.
-	DefaultTag = "DEFAULT"
-
-	// OrderNone indicates order is not important for outgoing files.
-	OrderNone = "none"
-
-	// OrderFIFO indicates a first in, first out ordering for outgoing files.
-	OrderFIFO = "fifo"
-
-	// OrderLIFO indicates a last in, first out ordering for outgoing files.
-	OrderLIFO = "lifo"
-
-	// MethodHTTP indicates an HTTP outgoing method.
-	MethodHTTP = "http"
+	defaultTag = "DEFAULT"
+	methodHTTP = "http"
 )
 
-// Conf is the outermost struct for holding STS configuration.
-type Conf struct {
-	Out *OutConf `yaml:"OUT"`
-	In  *InConf  `yaml:"IN"`
+type conf struct {
+	Client *clientConf `yaml:"OUT"`
+	Server *serverConf `yaml:"IN"`
 }
 
-// OutConf is the struct for housing all outgoing configuration.
-type OutConf struct {
-	Dirs    *OutDirs
-	Sources []*OutSource
+// clientConf is the struct for housing all outgoing configuration.
+type clientConf struct {
+	Dirs    *clientDirs
+	Sources []*sourceConf
 }
 
-// UnmarshalYAML implements the Unmarshaler interface for handling custom member(s).
-// https://godoc.org/gopkg.in/yaml.v2
+// UnmarshalYAML implements the Unmarshaler interface for handling custom
+// member(s): https://godoc.org/gopkg.in/yaml.v2
 // This is where we implement the feature of propagating options.
-func (conf *OutConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
+func (conf *clientConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 	var aux struct {
-		Dirs    *OutDirs     `yaml:"dirs"`
-		Sources []*OutSource `yaml:"sources"`
+		Dirs    *clientDirs   `yaml:"dirs"`
+		Sources []*sourceConf `yaml:"sources"`
 	}
 	if err = unmarshal(&aux); err != nil {
 		return
@@ -58,29 +45,30 @@ func (conf *OutConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 	if len(conf.Sources) == 0 {
 		return
 	}
-	var src *OutSource
-	var tgt *OutSource
+	var src *sourceConf
+	var tgt *sourceConf
 	for i := 0; i < len(conf.Sources); i++ {
 		if src != nil {
 			tgt = conf.Sources[i]
-			util.CopyStruct(tgt, src)
+			reflectutil.CopyStruct(tgt, src)
 			if src.Target != nil && tgt.Target != nil {
-				util.CopyStruct(tgt.Target, src.Target)
+				reflectutil.CopyStruct(tgt.Target, src.Target)
 			}
 		}
 		src = conf.Sources[i]
 		if len(src.Tags) > 1 {
 			tdef := src.Tags[0]
 			for j := 1; j < len(src.Tags); j++ {
-				util.CopyStruct(src.Tags[j], tdef)
+				reflectutil.CopyStruct(src.Tags[j], tdef)
 			}
 		}
 	}
 	return
 }
 
-// OutDirs is the struct for managing the outgoing directory configuration items.
-type OutDirs struct {
+// clientDirs is the struct for managing the outgoing directory configuration
+// items.
+type clientDirs struct {
 	Out       string `yaml:"out"`
 	OutFollow bool   `yaml:"out-follow"`
 	Logs      string `yaml:"logs"`
@@ -89,8 +77,9 @@ type OutDirs struct {
 	Cache     string `yaml:"cache"`
 }
 
-// OutSource is the struct for managing the configuration of an outgoing source.
-type OutSource struct {
+// sourceConf is the struct for managing the configuration of an outgoing
+// client source.
+type sourceConf struct {
 	Name         string
 	OutDir       string
 	Threads      int
@@ -105,16 +94,16 @@ type OutSource struct {
 	PollDelay    time.Duration
 	PollInterval time.Duration
 	PollAttempts int
-	Target       *OutTarget
+	Target       *targetConf
 	GroupBy      *regexp.Regexp
 	Include      []*regexp.Regexp
 	Ignore       []*regexp.Regexp
-	Tags         []*Tag
+	Tags         []*tagConf
 }
 
 // UnmarshalYAML implements the Unmarshaler interface for handling custom member(s).
 // https://godoc.org/gopkg.in/yaml.v2
-func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
+func (ss *sourceConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 	var aux struct {
 		Name         string        `yaml:"name"`
 		OutDir       string        `yaml:"out-dir"`
@@ -130,11 +119,11 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 		PollDelay    time.Duration `yaml:"poll-delay"`
 		PollInterval time.Duration `yaml:"poll-interval"`
 		PollAttempts int           `yaml:"poll-attempts"`
-		Target       *OutTarget    `yaml:"target"`
+		Target       *targetConf   `yaml:"target"`
 		GroupBy      string        `yaml:"group-by"`
 		Include      []string      `yaml:"include"`
 		Ignore       []string      `yaml:"ignore"`
-		Tags         []*Tag        `yaml:"tags"`
+		Tags         []*tagConf    `yaml:"tags"`
 	}
 	if err = unmarshal(&aux); err != nil {
 		return
@@ -177,8 +166,9 @@ func (ss *OutSource) UnmarshalYAML(unmarshal func(interface{}) error) (err error
 	return
 }
 
-// Tag is the struct for managing configuration options for "tags" (groups) of files.
-type Tag struct {
+// tagConf is the struct for managing configuration options for "tags" (groups)
+// of files.
+type tagConf struct {
 	Pattern   *regexp.Regexp
 	Priority  int
 	Method    string
@@ -187,9 +177,9 @@ type Tag struct {
 	LastDelay time.Duration
 }
 
-// UnmarshalYAML implements the Unmarshaler interface for handling custom member(s).
-// https://godoc.org/gopkg.in/yaml.v2
-func (t *Tag) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
+// UnmarshalYAML implements the Unmarshaler interface for handling custom
+// member(s): https://godoc.org/gopkg.in/yaml.v2
+func (t *tagConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 	var aux struct {
 		Pattern   string        `yaml:"pattern"`
 		Priority  int           `yaml:"priority"`
@@ -201,20 +191,20 @@ func (t *Tag) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 	if err = unmarshal(&aux); err != nil {
 		return
 	}
-	if aux.Pattern != DefaultTag {
+	if aux.Pattern != defaultTag {
 		if t.Pattern, err = regexp.Compile(aux.Pattern); err != nil {
 			return
 		}
 	} else {
 		if aux.Order == "" {
-			aux.Order = OrderFIFO
+			aux.Order = queue.ByFIFO
 		}
 		if aux.Method == "" {
-			aux.Method = MethodHTTP
+			aux.Method = methodHTTP
 		}
 	}
 	if aux.Method == "" {
-		aux.Method = MethodHTTP
+		aux.Method = methodHTTP
 	}
 	t.Priority = aux.Priority
 	t.Method = aux.Method
@@ -224,24 +214,25 @@ func (t *Tag) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 	return
 }
 
-// OutTarget houses the configuration for the target host for a given source.
-type OutTarget struct {
+// targetConf houses the configuration for the target host for a given source
+type targetConf struct {
 	Name        string `yaml:"name"`
 	Key         string `yaml:"key"`
 	Host        string `yaml:"http-host"`
 	TLSCertPath string `yaml:"http-tls-cert"`
 }
 
-// InConf is the struct for housing all incoming configuration.
-type InConf struct {
-	Sources []string  `yaml:"sources"`
-	Keys    []string  `yaml:"keys"`
-	Dirs    *InDirs   `yaml:"dirs"`
-	Server  *InServer `yaml:"server"`
+// serverConf is the struct for housing all incoming configuration
+type serverConf struct {
+	Sources []string    `yaml:"sources"`
+	Keys    []string    `yaml:"keys"`
+	Dirs    *serverDirs `yaml:"dirs"`
+	Server  *httpServer `yaml:"server"`
 }
 
-// InDirs is the struct for managing the incoming directory configuration items.
-type InDirs struct {
+// serverDirs is the struct for managing the incoming directory configuration
+// items.
+type serverDirs struct {
 	Logs    string `yaml:"logs"`
 	LogsIn  string `yaml:"logs-in"`
 	LogsMsg string `yaml:"logs-flow"`
@@ -250,8 +241,8 @@ type InDirs struct {
 	Serve   string `yaml:"serve"`
 }
 
-// InServer is the struct for managing the incoming HTTP host.
-type InServer struct {
+// httpServer is the struct for managing the incoming HTTP host
+type httpServer struct {
 	Host        string `yaml:"http-host"`
 	Port        int    `yaml:"http-port"`
 	TLSCertPath string `yaml:"http-tls-cert"`
@@ -259,10 +250,10 @@ type InServer struct {
 	Compression int    `yaml:"compress"`
 }
 
-// NewConf returns a parsed Conf reference based on the provided conf file path.
-func NewConf(path string) (*Conf, error) {
+// newConf returns a parsed Conf reference based on the provided conf file path
+func newConf(path string) (*conf, error) {
 	var err error
-	conf := &Conf{}
+	conf := &conf{}
 	if !filepath.IsAbs(path) {
 		path, err = filepath.Abs(path)
 		if err != nil {

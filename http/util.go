@@ -1,4 +1,4 @@
-package httputil
+package http
 
 import (
 	"compress/gzip"
@@ -57,7 +57,7 @@ var gHostLock sync.RWMutex
 
 // DefaultServer is the default Server used by the functions in this
 // package. It's used as to simplify using the graceful server.
-var DefaultServer *Server
+var DefaultServer *GracefulServer
 
 // ListenAndServe listens on the TCP network address addr using the
 // DefaultServer. If the handler is nil, http.DefaultServeMux is used.
@@ -67,7 +67,7 @@ func ListenAndServe(addr string, tlsConf *tls.Config, handler http.Handler) erro
 		h = http.DefaultServeMux
 	}
 	if DefaultServer == nil {
-		DefaultServer = NewServer(&http.Server{Addr: addr, Handler: h}, tlsConf)
+		DefaultServer = NewGracefulServer(&http.Server{Addr: addr, Handler: h}, tlsConf)
 	}
 	return DefaultServer.ListenAndServe()
 }
@@ -157,16 +157,16 @@ func GetJSONReader(data interface{}, compression int) (r io.Reader, err error) {
 
 // Server is net/http compatible graceful server.
 // https://github.com/icub3d/graceful/blob/master/graceful.go
-type Server struct {
+type GracefulServer struct {
 	s       *http.Server
 	tlsConf *tls.Config
 	wg      sync.WaitGroup
 	l       net.Listener
 }
 
-// NewServer turns the given net/http server into a graceful server.
-func NewServer(srv *http.Server, tlsConf *tls.Config) *Server {
-	return &Server{
+// NewGracefulServer turns the given net/http server into a graceful server.
+func NewGracefulServer(srv *http.Server, tlsConf *tls.Config) *GracefulServer {
+	return &GracefulServer{
 		s:       srv,
 		tlsConf: tlsConf,
 	}
@@ -178,7 +178,7 @@ func NewServer(srv *http.Server, tlsConf *tls.Config) *Server {
 // will be allowed to finish. This will not return until all existing
 // connections have closed. Will use provided tls.Config for https
 // if applicable.
-func (s *Server) ListenAndServe() error {
+func (s *GracefulServer) ListenAndServe() error {
 	addr := s.s.Addr
 	if addr == "" {
 		if s.tlsConf != nil {
@@ -204,7 +204,7 @@ func (s *Server) ListenAndServe() error {
 }
 
 // Serve works like ListenAndServer but using the given listener.
-func (s *Server) Serve(l net.Listener) error {
+func (s *GracefulServer) Serve(l net.Listener) error {
 	s.l = l
 	err := s.s.Serve(&gracefulListener{s.l, s})
 	s.wg.Wait()
@@ -214,7 +214,7 @@ func (s *Server) Serve(l net.Listener) error {
 // Close gracefully shuts down the listener. This should be called
 // when the server should stop listening for new connection and finish
 // any open connections.
-func (s *Server) Close() error {
+func (s *GracefulServer) Close() error {
 	// s.Shutdown() is more graceful than l.Close() (available as of Go 1.8)
 	return s.s.Shutdown(nil)
 }
@@ -225,7 +225,7 @@ func (s *Server) Close() error {
 // will call Done() when it finished.
 type gracefulListener struct {
 	net.Listener
-	s *Server
+	s *GracefulServer
 }
 
 func (g *gracefulListener) Accept() (net.Conn, error) {
@@ -241,7 +241,7 @@ func (g *gracefulListener) Accept() (net.Conn, error) {
 // calls Done() on the servers waitgroup.
 type gracefulConn struct {
 	net.Conn
-	s    *Server
+	s    *GracefulServer
 	once sync.Once
 }
 

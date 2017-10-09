@@ -32,4 +32,4 @@ fi
 echo "-- Building Executable"
 go build -o $GOPATH/bin/sts $race \
     -ldflags="-X 'main.BuildTime=$date UTC' -X 'main.Version=$vers'" \
-    $GOPATH/src/code.arm.gov/dataflow/sts/cmd/main.go
+    $GOPATH/src/code.arm.gov/dataflow/sts/cmd/*.go

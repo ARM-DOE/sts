@@ -11,6 +11,8 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+
+	"code.arm.gov/dataflow/sts"
 )
 
 // LockExt is the file extension added to file names as contents are written.
@@ -109,8 +111,13 @@ func FileMD5(path string) (hash string, err error) {
 		return
 	}
 	defer fh.Close()
+	return ReadableMD5(fh)
+}
+
+// ReadableMD5 computes the MD5 on a sts.Readable instance
+func ReadableMD5(handle sts.Readable) (hash string, err error) {
 	h := md5.New()
-	if _, err = io.Copy(h, fh); err != nil {
+	if _, err = io.Copy(h, handle); err != nil {
 		return
 	}
 	hash = HashHex(h)
