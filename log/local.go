@@ -80,7 +80,7 @@ func (s *Send) WasSent(relPath string, after time.Time, before time.Time) bool {
 // Receive implements sts.ReceiveLogger
 type Receive struct {
 	rootDir string
-	lock    sync.Mutex
+	lock    *sync.Mutex
 	loggers map[string]*rollingFile
 	locks   map[string]*sync.RWMutex
 }
@@ -89,6 +89,9 @@ type Receive struct {
 func NewReceive(rootDir string) *Receive {
 	return &Receive{
 		rootDir: rootDir,
+		lock:    &sync.Mutex{},
+		loggers: make(map[string]*rollingFile),
+		locks:   make(map[string]*sync.RWMutex),
 	}
 }
 
@@ -107,7 +110,7 @@ func (r *Receive) bySource(source string) (logger *rollingFile, lock *sync.RWMut
 	return
 }
 
-// Received logs a file after it's been sent
+// Received logs a file after it's been fully received
 func (r *Receive) Received(source string, file sts.Received) {
 	logger, lock := r.bySource(source)
 	lock.Lock()
@@ -249,9 +252,7 @@ func (rf *rollingFile) close() {
 	}
 }
 
-// search will look for a given text pattern in the log history.
-// If "start" is nonzero it will search from start to current.
-// If "start" is zero it will search from current back nDays.
+// search will look for a given text pattern in the log history
 func (rf *rollingFile) search(text string, start time.Time, stop time.Time) bool {
 	if start.IsZero() {
 		start = time.Now()

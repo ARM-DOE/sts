@@ -259,7 +259,11 @@ func (broker *Broker) scan() []sts.Hashed {
 
 	// For looking up what is already in the cache
 	getter := func(key string) sts.File {
-		return cache.Get(key).(sts.File)
+		cached := cache.Get(key)
+		if cached != nil {
+			return cached.(sts.File)
+		}
+		return nil
 	}
 
 	// Perform the scan

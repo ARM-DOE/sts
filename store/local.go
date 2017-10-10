@@ -138,8 +138,10 @@ func (dir *Local) handleNode(path string, info os.FileInfo, err error) error {
 		return nil
 	}
 	cached := dir.cached(relPath)
-	if cached.GetTime() == fTime.Unix() && cached.GetSize() == info.Size() {
-		return nil
+	if cached != nil {
+		if cached.GetTime() == fTime.Unix() && cached.GetSize() == info.Size() {
+			return nil
+		}
 	}
 	var file *localFile
 	if file, err = newLocalFile(path, relPath, info); err != nil {

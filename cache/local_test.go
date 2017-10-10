@@ -30,7 +30,7 @@ func TestJSON(t *testing.T) {
 	var names []string
 	for i := 0; i < n; i++ {
 		names = append(names, fmt.Sprintf("%s-%d", fileName, i))
-		cache.Add(&mock.Hashed{
+		cache.Add(&mock.File{
 			Path: filePath,
 			Name: names[i],
 			Size: 1024 * int64(i),
@@ -57,7 +57,7 @@ func TestJSON(t *testing.T) {
 		go done(names[i])
 		go done(names[i])
 	}
-	replace := &mock.Hashed{
+	replace := &mock.File{
 		Path: filePath,
 		Name: names[0],
 		Size: 1024 * 2,

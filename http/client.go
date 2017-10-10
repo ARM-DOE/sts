@@ -66,14 +66,20 @@ type Client struct {
 	Timeout     time.Duration
 	TLS         *tls.Config
 
+	root   string
 	client *http.Client
 }
 
-func (h *Client) protocol() string {
-	if h.TLS != nil {
-		return "https://"
+func (h *Client) rootURL() string {
+	if h.root != "" {
+		return h.root
 	}
-	return "http://"
+	protocol := "http"
+	if h.TLS != nil {
+		protocol += "s"
+	}
+	h.root = fmt.Sprintf("%s://%s:%d", protocol, h.TargetHost, h.TargetPort)
+	return h.root
 }
 
 func (h *Client) init() error {
@@ -119,7 +125,7 @@ func (h *Client) Transmit(payload sts.Payload) (n int, err error) {
 		}
 		pw.Close()
 	}()
-	url := fmt.Sprintf("%s://%s/data", h.protocol(), h.TargetHost)
+	url := fmt.Sprintf("%s/data", h.rootURL())
 	req, err := http.NewRequest("PUT", url, pr)
 	if err != nil {
 		return
@@ -155,6 +161,9 @@ func (h *Client) Transmit(payload sts.Payload) (n int, err error) {
 // Validate is of type sts.Validate for confirming or denying validity of
 // transmitted files
 func (h *Client) Validate(sent []sts.Pollable) (polled []sts.Polled, err error) {
+	if err = h.init(); err != nil {
+		return
+	}
 	fmap := make(map[string]sts.Pollable)
 	var cf []*confirmable
 	for _, f := range sent {
@@ -165,7 +174,7 @@ func (h *Client) Validate(sent []sts.Pollable) (polled []sts.Polled, err error) 
 		fmap[f.GetName()] = f
 		log.Debug("POLLing:", f.GetName())
 	}
-	url := fmt.Sprintf("%s://%s/validate", h.protocol(), h.TargetHost)
+	url := fmt.Sprintf("%s/validate", h.rootURL())
 	r, err := GetJSONReader(cf, h.Compression)
 	if err != nil {
 		return
@@ -217,31 +226,33 @@ func (h *Client) Validate(sent []sts.Pollable) (polled []sts.Polled, err error) 
 	return
 }
 
-func (h *Client) Recover() ([]*sts.Partial, error) {
-	var err error
+func (h *Client) Recover() (partials []*sts.Partial, err error) {
+	if err = h.init(); err != nil {
+		return
+	}
 	var req *http.Request
 	var resp *http.Response
 	var reader io.ReadCloser
-	url := fmt.Sprintf("%s://%s/partials", h.protocol(), h.TargetHost)
+	url := fmt.Sprintf("%s/partials", h.rootURL())
 	if req, err = http.NewRequest("GET", url, bytes.NewReader([]byte(""))); err != nil {
-		return nil, err
+		return
 	}
 	req.Header.Add(HeaderSourceName, h.SourceName)
 	if h.TargetKey != "" {
 		req.Header.Add(HeaderKey, h.TargetKey)
 	}
 	if resp, err = h.client.Do(req); err != nil {
-		return nil, err
+		return
 	}
 	if reader, err = GetRespReader(resp); err != nil {
-		return nil, err
+		return
 	}
 	defer reader.Close()
-	partials := []*sts.Partial{}
+	partials = []*sts.Partial{}
 	jsonDecoder := json.NewDecoder(reader)
 	err = jsonDecoder.Decode(&partials)
 	if err != nil {
-		return nil, err
+		return
 	}
-	return partials, nil
+	return
 }

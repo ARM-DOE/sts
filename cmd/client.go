@@ -47,10 +47,10 @@ func (c *clientApp) setDefaults() (err error) {
 	c.host = c.conf.Target.Host
 	c.port = 1992
 	hostParts := strings.Split(c.host, ":")
-	if len(hostParts) == 2 {
+	if len(hostParts) > 1 {
 		c.host = hostParts[0]
-		if c.port, err = strconv.Atoi(string(c.host[1])); err != nil {
-			err = fmt.Errorf("Cannot parse port: %s", c.host)
+		if c.port, err = strconv.Atoi(hostParts[1]); err != nil {
+			err = fmt.Errorf("Cannot parse port: %s", c.conf.Target.Host)
 			return
 		}
 	}
