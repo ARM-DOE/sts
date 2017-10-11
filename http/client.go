@@ -226,6 +226,8 @@ func (h *Client) Validate(sent []sts.Pollable) (polled []sts.Polled, err error) 
 	return
 }
 
+// Recover is of type sts.Recoverer and is responsible for retrieving partial
+// files on the target
 func (h *Client) Recover() (partials []*sts.Partial, err error) {
 	if err = h.init(); err != nil {
 		return

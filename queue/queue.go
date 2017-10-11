@@ -2,6 +2,8 @@ package queue
 
 import (
 	"fmt"
+	"reflect"
+	"sync"
 	"time"
 
 	"code.arm.gov/dataflow/sts"
@@ -29,31 +31,33 @@ type link interface {
 func unlink(node link) {
 	prev := node.getPrev()
 	next := node.getNext()
-	if prev != nil {
+	if !reflect.ValueOf(prev).IsNil() {
 		prev.setNext(next)
 		node.setPrev(nil)
 	}
-	if next != nil {
+	if !reflect.ValueOf(next).IsNil() {
 		next.setPrev(prev)
 		node.setNext(nil)
 	}
 }
 
 func addAfter(node link, prev link) {
-	node.setNext(prev.getNext())
+	next := prev.getNext()
+	node.setNext(next)
 	node.setPrev(prev)
 	prev.setNext(node)
-	if node.getNext() != nil {
-		node.getNext().setPrev(node)
+	if !reflect.ValueOf(next).IsNil() {
+		next.setPrev(node)
 	}
 }
 
 func addBefore(node link, next link) {
+	prev := next.getPrev()
 	node.setNext(next)
-	node.setPrev(next.getPrev())
+	node.setPrev(prev)
 	next.setPrev(node)
-	if node.getPrev() != nil {
-		node.getPrev().setNext(node)
+	if !reflect.ValueOf(prev).IsNil() {
+		prev.setNext(node)
 	}
 }
 
@@ -88,15 +92,28 @@ func (f *sortedFile) getPrevName() string {
 		// Keep original intact
 		return r.GetPrev()
 	}
-	return f.prev.orig.GetRelPath()
+	if f.prev != nil {
+		return f.prev.orig.GetRelPath()
+	}
+	return ""
 }
 
 func (f *sortedFile) setNext(next link) {
-	f.next = next.(*sortedFile)
+	n, ok := next.(*sortedFile)
+	if n == nil || !ok {
+		f.next = nil
+		return
+	}
+	f.next = n
 }
 
 func (f *sortedFile) setPrev(prev link) {
-	f.prev = prev.(*sortedFile)
+	p, ok := prev.(*sortedFile)
+	if p == nil || !ok {
+		f.prev = nil
+		return
+	}
+	f.prev = p
 }
 
 func (f *sortedFile) unlink() {
@@ -162,11 +179,21 @@ func (g *sortedGroup) getPrev() link {
 }
 
 func (g *sortedGroup) setNext(next link) {
-	g.next = next.(*sortedGroup)
+	n, ok := next.(*sortedGroup)
+	if !ok {
+		g.next = nil
+		return
+	}
+	g.next = n
 }
 
 func (g *sortedGroup) setPrev(prev link) {
-	g.prev = prev.(*sortedGroup)
+	p, ok := prev.(*sortedGroup)
+	if !ok {
+		g.prev = nil
+		return
+	}
+	g.prev = p
 }
 
 func (g *sortedGroup) remove() {
@@ -244,6 +271,7 @@ type Tagged struct {
 	tags      []*Tag
 	tagger    sts.Translate
 	grouper   sts.Translate
+	mux       sync.Mutex
 }
 
 // NewTagged creates a new tagged file queue
@@ -259,8 +287,10 @@ func NewTagged(tags []*Tag, tagger sts.Translate, grouper sts.Translate) *Tagged
 	return q
 }
 
-// Add adds a slice of hashed files to the queue
-func (q *Tagged) Add(files []sts.Hashed) {
+// Push adds a slice of hashed files to the queue
+func (q *Tagged) Push(files []sts.Hashed) {
+	q.mux.Lock()
+	defer q.mux.Unlock()
 	for _, file := range files {
 		if orig, ok := q.byFile[file.GetRelPath()]; ok {
 			// If a file by this name is already here, let's start over
@@ -280,10 +310,12 @@ func (q *Tagged) Add(files []sts.Hashed) {
 				}
 			}
 			if group.conf == nil {
-				log.Debug(fmt.Sprintf("Q: No matching tag found: %s", file.GetRelPath()))
+				log.Info(fmt.Sprintf("Q: No matching tag found: %s",
+					file.GetRelPath()))
 				continue
 			}
 			q.addGroup(group)
+			q.byGroup[groupName] = group
 		}
 		fileWrapper := &sortedFile{
 			orig:  file,
@@ -293,8 +325,10 @@ func (q *Tagged) Add(files []sts.Hashed) {
 	}
 }
 
-// GetNext returns the next sendable chunk in the queue
-func (q *Tagged) GetNext() sts.Sendable {
+// Pop returns the next sendable chunk in the queue
+func (q *Tagged) Pop() sts.Sendable {
+	q.mux.Lock()
+	defer q.mux.Unlock()
 	g := q.headGroup
 	var next *sortedFile
 	for g != nil {
@@ -321,21 +355,16 @@ func (q *Tagged) GetNext() sts.Sendable {
 	offset, length := next.allocate(g.conf.ChunkSize)
 	chunk := &sendable{
 		orig:   next.orig,
-		prev:   next.prev.orig.GetRelPath(),
+		prev:   next.getPrevName(),
 		offset: offset,
 		length: length,
 	}
+	log.Debug("Q Out:", chunk.orig.GetRelPath(), "<-", chunk.prev)
 	if next.isAllocated() {
 		// File is fully allocated and can be removed from the queue
 		q.removeFile(next)
 	}
 	return chunk
-}
-
-// Queued returns whether or not the file is in the queue
-func (q *Tagged) Queued(relPath string) bool {
-	_, ok := q.byFile[relPath]
-	return ok
 }
 
 func (q *Tagged) delayGroup(group *sortedGroup) {
@@ -436,9 +465,12 @@ func (q *Tagged) removeFile(file *sortedFile) {
 		q.headFile[file.group.name] = file.next
 	}
 	if file.prev != nil {
+		// Unlink the previous file because now no one in the Q is dependent on
+		// it
 		file.prev.unlink()
 	}
-	if file.next != nil {
+	if file.next == nil {
+		// Only unlink this node if there's nothing dependent on it
 		file.unlink()
 	}
 	delete(q.byFile, file.orig.GetRelPath())

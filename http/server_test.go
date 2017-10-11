@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"testing"
 
-	"code.arm.gov/dataflow/sts/httputil"
 	"github.com/alecthomas/units"
 )
 
@@ -48,14 +47,14 @@ func request(method, url string, data io.Reader, respData ...interface{}) error 
 	var resp *http.Response
 	var reader io.ReadCloser
 
-	if client, err = httputil.GetClient(nil); err != nil {
+	if client, err = GetClient(nil); err != nil {
 		return err
 	}
 
 	if req, err = http.NewRequest(method, "http://localhost:1992"+url, data); err != nil {
 		return err
 	}
-	req.Header.Add(httputil.HeaderSourceName, "sender")
+	req.Header.Add(HeaderSourceName, "sender")
 
 	if resp, err = client.Do(req); err != nil {
 		return err
@@ -68,13 +67,13 @@ func request(method, url string, data io.Reader, respData ...interface{}) error 
 		return nil
 	}
 
-	if reader, err = httputil.GetRespReader(resp); err != nil {
+	if reader, err = GetRespReader(resp); err != nil {
 		return err
 	}
 	defer reader.Close()
 
-	switch resp.Header.Get(httputil.HeaderContentType) {
-	case httputil.HeaderJSON:
+	switch resp.Header.Get(HeaderContentType) {
+	case HeaderJSON:
 		jsonDecoder := json.NewDecoder(reader)
 		err = jsonDecoder.Decode(respData[0])
 		if err != nil {
@@ -91,15 +90,15 @@ func TestCRUD(t *testing.T) {
 	tearDown()
 	stageFiles(10, fsize)
 
-	conf := &ReceiverConf{
+	server := &Server{
 		ServeDir: filepath.Join(root, "serve"),
 		Host:     "localhost",
 		Port:     1992,
 		Sources:  []string{"sender"},
 	}
-	server := NewReceiver(conf, nil)
 	stop := make(chan bool)
-	go server.Serve(nil, stop)
+	done := make(chan bool)
+	go server.Serve(stop, done)
 
 	names := []string{}
 	if err := request(http.MethodGet, "/static", nil, &names); err != nil {
@@ -121,5 +120,6 @@ func TestCRUD(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	close(stop)
+	stop <- true
+	<-done
 }

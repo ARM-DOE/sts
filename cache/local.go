@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/fileutil"
@@ -45,6 +46,7 @@ func (f *cacheFile) IsDone() bool {
 
 // JSON implements sts.FileCache for making a local cache of file info
 type JSON struct {
+	Time  time.Time             `json:"time"`
 	Dir   string                `json:"dir"`
 	Files map[string]*cacheFile `json:"files"`
 	mutex sync.RWMutex
@@ -89,7 +91,12 @@ func (j *JSON) Iterate(f func(sts.Cached) bool) {
 			break
 		}
 	}
+}
 
+// Boundary returns the time reference used to determine what should be in the
+// cache
+func (j *JSON) Boundary() time.Time {
+	return j.Time
 }
 
 // Get returns the stored file with the specified key
@@ -137,10 +144,11 @@ func (j *JSON) Remove(key string) {
 }
 
 // Persist writes the in-memory cache to disk
-func (j *JSON) Persist() (err error) {
-	if !j.dirty {
+func (j *JSON) Persist(boundary time.Time) (err error) {
+	if j.Time.Equal(boundary) && !j.dirty {
 		return
 	}
+	j.Time = boundary
 	err = j.write()
 	return
 }

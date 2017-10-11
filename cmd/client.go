@@ -167,8 +167,7 @@ func (c *clientApp) init() (err error) {
 		group = m[1]
 		return
 	}
-	tagger := func(name string) (tag string) {
-		group := grouper(name)
+	tagger := func(group string) (tag string) {
 		for i, t := range c.conf.Tags {
 			if t.Pattern == nil {
 				continue
@@ -178,6 +177,11 @@ func (c *clientApp) init() (err error) {
 				return
 			}
 		}
+		return
+	}
+	nameToTag := func(name string) (tag string) {
+		group := grouper(name)
+		tag = tagger(group)
 		return
 	}
 	tags := make([]*client.FileTag, len(qtags))
@@ -206,7 +210,7 @@ func (c *clientApp) init() (err error) {
 			Transmitter:  httpClient.Transmit,
 			Validator:    httpClient.Validate,
 			Logger:       log.NewSend(c.logDir, c.conf.Target.Name),
-			Tagger:       tagger,
+			Tagger:       nameToTag,
 			CacheAge:     c.conf.CacheAge,
 			ScanDelay:    c.conf.ScanDelay,
 			Threads:      c.conf.Threads,

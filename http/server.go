@@ -18,6 +18,7 @@ import (
 	"code.arm.gov/dataflow/sts/log"
 )
 
+// Server responds to client HTTP requests
 type Server struct {
 	ServeDir    string
 	Host        string

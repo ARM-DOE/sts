@@ -13,35 +13,6 @@ import (
 	"code.arm.gov/dataflow/sts/fileutil"
 )
 
-var std *General
-
-// Init creates a single logger instance for general logging
-func Init(rootDir string, debug bool) {
-	if std != nil {
-		if std.logger.root != rootDir {
-			panic("Logger already initialized with a different path")
-		}
-		return
-	}
-	std = New(rootDir, debug)
-	std.calldepth = 2
-}
-
-// Debug logs debug messages
-func Debug(params ...interface{}) {
-	std.Debug(params...)
-}
-
-// Info logs general information
-func Info(params ...interface{}) {
-	std.Info(params...)
-}
-
-// Error logs ...errors
-func Error(params ...interface{}) {
-	std.Error(params...)
-}
-
 // Send implements sts.SendLogger
 type Send struct {
 	logger *rollingFile
@@ -141,7 +112,7 @@ type General struct {
 }
 
 // New creates a new General logging instance
-func New(rootDir string, debug bool) *General {
+func NewGeneral(rootDir string, debug bool) *General {
 	return &General{
 		logger:    newRollingFile(rootDir, "", log.Ldate|log.Ltime),
 		lock:      sync.Mutex{},

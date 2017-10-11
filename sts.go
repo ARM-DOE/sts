@@ -39,19 +39,19 @@ type FileSource interface {
 
 // FileCache is the interface for caching a collection of files
 type FileCache interface {
+	Boundary() time.Time
 	Iterate(func(Cached) bool)
 	Get(string) Cached
 	Add(Hashed)
 	Done(string)
 	Remove(string)
-	Persist() error
+	Persist(boundary time.Time) error
 }
 
 // FileQueue is the interface for getting files in the proper order
 type FileQueue interface {
-	Add([]Hashed)
-	GetNext() Sendable
-	Queued(string) bool
+	Push([]Hashed)
+	Pop() Sendable
 }
 
 // GateKeeper is the interface for managing the "putting away" of files

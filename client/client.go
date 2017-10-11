@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -234,10 +235,12 @@ func (broker *Broker) recover() (send []sts.Hashed, poll []sts.Pollable, err err
 func (broker *Broker) startScan(wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
+		log.Debug("Scanning ...")
 		found := broker.scan()
 		if len(found) > 0 {
 			broker.chScanned <- found
 		}
+		log.Debug("Scan complete. Found:", len(found))
 		select {
 		case <-broker.chStop:
 			close(broker.chScanned)
@@ -274,7 +277,7 @@ func (broker *Broker) scan() []sts.Hashed {
 	if len(files) == 0 {
 		return nil
 	}
-	age := scanTime.Add(-1 * broker.Conf.CacheAge)
+	age := cache.Boundary()
 
 	// Wrap the scanned file objects in type that can have hash added
 	wrapped := make([]sts.Hashed, len(files))
@@ -295,6 +298,7 @@ func (broker *Broker) scan() []sts.Hashed {
 			// mod times before the scan time minus the minimum age minus
 			// the cache age
 			if check && file.GetTime() < age.Unix() {
+				log.Debug("Skipping due to age:", file.GetRelPath())
 				continue
 			}
 		}
@@ -325,7 +329,7 @@ func (broker *Broker) scan() []sts.Hashed {
 	for _, file := range wrapped {
 		cache.Add(file)
 	}
-	if err = cache.Persist(); err != nil {
+	if err = cache.Persist(scanTime.Add(-1 * broker.Conf.CacheAge)); err != nil {
 		log.Error(err)
 		return nil
 	}
@@ -334,13 +338,12 @@ func (broker *Broker) scan() []sts.Hashed {
 
 func (broker *Broker) hash(scanned []sts.Hashed, batchSize int64) *sync.WaitGroup {
 	hashFiles := func(files []sts.Hashed, wg *sync.WaitGroup) {
-		wg.Add(1)
 		defer wg.Done()
-		log.Debug("HASHing %d files...", len(scanned))
+		log.Debug(fmt.Sprintf("HASHing %d files...", len(files)))
 		var err error
 		var fh sts.Readable
 		for _, file := range files {
-			log.Debug("HASHing %s ...", file.GetRelPath())
+			log.Debug(fmt.Sprintf("HASHing %s ...", file.GetRelPath()))
 			fh, err = broker.Conf.Store.GetOpener()(file)
 			if err != nil {
 				log.Error(err)
@@ -355,24 +358,26 @@ func (broker *Broker) hash(scanned []sts.Hashed, batchSize int64) *sync.WaitGrou
 		}
 	}
 	var size int64
-	var wg sync.WaitGroup
-	j := 0
-	count := 0
+	wg := sync.WaitGroup{}
 	wg.Add(1)
 	defer wg.Done()
+	j := 0
+	count := 1
 	for i, file := range scanned {
 		size += file.GetSize()
 		if size < batchSize {
 			count++
 			continue
 		}
+		wg.Add(1)
 		go hashFiles(scanned[j:j+count], &wg)
 		j = i + 1
-		count = 0
+		count = 1
 		size = 0
 	}
-	if count > 0 {
-		go hashFiles(scanned[j:j+count], &wg)
+	if j < len(scanned) {
+		wg.Add(1)
+		go hashFiles(scanned[j:len(scanned)], &wg)
 	}
 	return &wg
 }
@@ -382,25 +387,21 @@ func (broker *Broker) startQueue(wg *sync.WaitGroup) {
 	in := broker.chScanned
 	out := broker.chQueued
 	for {
-		select {
-		case batch, ok := <-in:
-			if !ok {
-				in = nil
+		log.Debug("Queue loop ...")
+		next := broker.Conf.Queue.Pop()
+		if next == nil {
+			if in == nil {
 				return
 			}
-			broker.Conf.Queue.Add(batch)
-		default:
-			next := broker.Conf.Queue.GetNext()
-			if next == nil {
-				if in == nil {
-					close(out)
-					return
-				}
-				time.Sleep(time.Millisecond * 500)
+			batch, ok := <-in
+			if !ok {
+				in = nil
 				continue
 			}
-			out <- next
+			broker.Conf.Queue.Push(batch)
+			continue
 		}
+		out <- next
 	}
 }
 
@@ -410,13 +411,24 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 	var sendable sts.Sendable
 	var current sts.Binnable
 	var ok bool
-	wait := time.Millisecond * 500
-	waitInterval := wait / 10
-	waited := time.Millisecond * 0
+	var timeout <-chan time.Time
+	block := make(chan time.Time)
+	wait := time.Second * 3
 	in := broker.chQueued
 	out := broker.chTransmit
 	for {
+		if in == nil && payload != nil && payload.GetSize() > 0 {
+			out <- payload
+			return
+		}
+		log.Debug("Bin loop ...")
 		if current == nil {
+			if payload == nil {
+				// Just block if we don't have anything waiting
+				timeout = block
+			} else {
+				timeout = time.After(wait)
+			}
 			select {
 			case sendable, ok = <-in:
 				if !ok {
@@ -430,21 +442,10 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 					tag:    tagName,
 					noPrev: tag == nil || tag.InOrder == false,
 				}
-			default:
-				if in == nil || waited > wait {
-					if payload != nil && len(payload.GetParts()) > 0 {
-						// Send what we have if we've either waited long enough
-						// for more or the input channel is closed and we're
-						// done
-						out <- payload
-						payload = nil
-					}
-				} else {
-					time.Sleep(waitInterval)
-					waited += waitInterval
-				}
-				if in == nil {
-					return
+			case <-timeout:
+				if payload != nil && payload.GetSize() > 0 {
+					out <- payload
+					payload = nil
 				}
 				continue
 			}
@@ -471,6 +472,7 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 	out := broker.chTransmitted
 	nErr := 0
 	for {
+		log.Debug("Send loop ...")
 		payload, ok := <-in
 		if !ok {
 			break
@@ -514,6 +516,7 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 	out := broker.chValidate
 	progress := make(map[string]*progressFile)
 	for {
+		log.Debug("Track loop ...")
 		payload, ok := <-in
 		if !ok {
 			break
@@ -554,6 +557,7 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 	var err error
 	var nErr int
 	for {
+		log.Debug("Validate loop ...")
 		if len(poll) == 0 {
 			// If there's nothing in our Q, just block until we get a file
 			sent, ok = <-in

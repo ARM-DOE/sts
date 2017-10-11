@@ -155,7 +155,7 @@ func GetJSONReader(data interface{}, compression int) (r io.Reader, err error) {
 	return rp, nil
 }
 
-// Server is net/http compatible graceful server.
+// GracefulServer is net/http compatible graceful server.
 // https://github.com/icub3d/graceful/blob/master/graceful.go
 type GracefulServer struct {
 	s       *http.Server
