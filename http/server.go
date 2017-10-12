@@ -221,7 +221,6 @@ func (s *Server) routeValidate(w http.ResponseWriter, r *http.Request) {
 		if sep != "" {
 			f.Name = filepath.Join(strings.Split(f.Name, sep)...)
 		}
-		log.Debug("SEARCH", source, f.Name)
 		respMap[f.Name] = s.GateKeeper.GetFileStatus(
 			source, f.GetName(), f.GetStarted())
 	}

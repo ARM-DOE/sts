@@ -107,9 +107,7 @@ func (c *clientApp) setDefaults() (err error) {
 	}
 	if defaultTag == nil {
 		// If no default tag exists, add one
-		c.conf.Tags = append(c.conf.Tags, &tagConf{
-			Method: methodHTTP,
-		})
+		c.conf.Tags = append(c.conf.Tags, &tagConf{})
 	}
 	return
 }
@@ -139,7 +137,7 @@ func (c *clientApp) init() (err error) {
 		Ignore:         c.conf.Ignore,
 		FollowSymlinks: c.dirOutFollow,
 	}
-	cache, err := cache.NewJSON(c.cachePath, "")
+	cache, err := cache.NewJSON(c.cachePath, c.outPath, "")
 	if err != nil {
 		return
 	}
@@ -214,6 +212,7 @@ func (c *clientApp) init() (err error) {
 			ScanDelay:    c.conf.ScanDelay,
 			Threads:      c.conf.Threads,
 			PayloadSize:  c.conf.BinSize,
+			StatPayload:  c.conf.StatPayload,
 			StatInterval: c.conf.StatInterval,
 			PollDelay:    c.conf.PollDelay,
 			PollInterval: c.conf.PollInterval,

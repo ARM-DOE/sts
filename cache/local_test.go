@@ -3,6 +3,7 @@ package cache
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -20,13 +21,14 @@ func tearDown() {
 func TestJSON(t *testing.T) {
 	tearDown()
 	os.MkdirAll(root, 0775)
-	cache, err := NewJSON(root, "")
+	rootPath := "/an/example/root"
+	cache, err := NewJSON(root, rootPath, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	n := 1000
-	filePath := "/an/example/root/plus/name"
 	fileName := "plus/name"
+	filePath := filepath.Join(rootPath, fileName)
 	var names []string
 	for i := 0; i < n; i++ {
 		names = append(names, fmt.Sprintf("%s-%d", fileName, i))
@@ -42,7 +44,7 @@ func TestJSON(t *testing.T) {
 	if err = cache.Persist(boundary); err != nil {
 		t.Fatal(err)
 	}
-	cache, err = NewJSON(root, "")
+	cache, err = NewJSON(root, rootPath, "")
 	if err != nil {
 		t.Fatal(err)
 	}

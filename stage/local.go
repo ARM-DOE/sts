@@ -296,6 +296,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 // -> sts.ConfirmWaiting: MD5 validation was successful but waiting on predecessor
 // -> sts.ConfirmNone: No knowledge of file
 func (s *Stage) GetFileStatus(source, relPath string, sent time.Time) int {
+	log.Debug("Checking sttaus:", source, relPath)
 	path := filepath.Join(s.rootDir, source, relPath)
 	success, found := s.fromCache(path)
 	if success {
@@ -419,7 +420,7 @@ func (s *Stage) finalizeChain(file *finalFile) {
 	if done {
 		waiting := s.fromWait(file.path)
 		for _, waitFile := range waiting {
-			log.Debug("STAGE Found Waiting:", waitFile.name)
+			log.Debug("Stage found waiting:", waitFile.name)
 			s.finalizeChain(waitFile)
 		}
 	}
@@ -636,7 +637,7 @@ func (s *Stage) toCache(file *finalFile) {
 	if len(s.cache)%cacheCnt == 0 {
 		for key, cacheFile := range s.cache {
 			if now.Sub(cacheFile.time) > cacheAge {
-				log.Debug("STAGE Clean Cache:", key)
+				log.Debug("Stage clean cache:", key)
 				delete(s.cache, key)
 			}
 		}

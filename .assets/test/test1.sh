@@ -37,7 +37,7 @@ tar -C $STS_HOME/data/out/stsin-1 -xzf $PWD/$basedir/clean.tgz
 echo "Running in background..."
 $cmd > /dev/null &
 
-sleep 1 # Wait for it do some stuff.
+sleep 0.2 # Wait for it do some stuff.
 
 echo "Simulating crash..."
 pkill $exe

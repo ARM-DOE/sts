@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"code.arm.gov/dataflow/sts"
-	"code.arm.gov/dataflow/sts/log"
 )
 
 type confirmable struct {
@@ -172,7 +171,6 @@ func (h *Client) Validate(sent []sts.Pollable) (polled []sts.Polled, err error) 
 			Started: f.GetStarted().Unix(),
 		})
 		fmap[f.GetName()] = f
-		log.Debug("Polling:", f.GetName())
 	}
 	url := fmt.Sprintf("%s/validate", h.rootURL())
 	r, err := GetJSONReader(cf, h.Compression)
@@ -216,7 +214,6 @@ func (h *Client) Validate(sent []sts.Pollable) (polled []sts.Polled, err error) 
 		if sep != "" {
 			path = filepath.Join(strings.Split(path, sep)...)
 		}
-		log.Debug("Poll result:", path, code)
 		orig := fmap[path]
 		polled = append(polled, &confirmed{
 			name: orig.GetName(),

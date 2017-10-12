@@ -49,6 +49,7 @@ OUT:
       max-age       : 12h   # How old a file can be before getting logged as "stale" (remains in the queue)
       scan-delay    : 30s   # How long to wait between scans of the outgoing directory
       timeout       : 1h    # The HTTP timeout for a single request
+      stat-payload  : true  # Whether or not to log each payload's throughput stats
       stat-interval : 5m    # How often to log throughput statistics
       poll-delay    : 5s    # How long to wait after file sent before final validation
       poll-interval : 1m    # How long to wait between polling requests
@@ -113,58 +114,54 @@ been fully received and some not at all.  STS will handle both of these cases to
 avoid duplicate transfers.
 
 Following the outgoing recovery logic, four components are started for managing
-the outgoing flow: **Watcher**, **Sorter**, **Sender**, and **Validator**.  A
+the outgoing flow: **Watcher**, **Queue**, **Sender**, and **Validator**.  A
 similar set of components will be started for any additionally configured source +
 target.  Each source + target has its own configuration block.  In send mode STS
 will also use a configurable number of threads used for making concurrent HTTP
 requests to the configured target.
 
-If STS is configured to run as a receiver, three additional components are started:
-1) **HTTP Server** for receiving files and validation requests and 2) a **Watcher**
-for scanning the stage directory, and 3) a **Finalizer** that takes files from the
-Watcher and validates them (hash match and in-order delivery) before moving them
-to the "final" directory.
+If STS is configured to run as a receiver, an **HTTP Server** is started and
+file reception is handed off to the **Stager** which handles file validation
+and moving to the "final" directory.
 
 ### Logical Flow
 
 1. _Source_ **Watcher**: Files found in configured watch directory are cached in
-   memory (and on disk) and passed to the **Sorter**.
+   memory (and on disk) after computing (in parallel) each file's MD5 and passed
+   to the **Queue**.
   > If the program crashes unexpectedly, STS will use the queue cache to perform
     a recovery procedure on next run that will pick up where it left off without
     sending duplicate data.
 
-1. _Source_ **Sorter**: Files received from **Watcher** are sorted in order of
-   configured priority and/or in-order delivery.  **Sorter** passes files to the
-   **Sender** such that groups of similar files (based on configurable pattern
-   match) of the same priority are rotated in order to avoid starvation.
+1. _Source_ **Queue**: Files received from **Watcher** are sorted in order of
+   configured priority and/or in-order delivery. It will output single file
+   chunks no larger than the configured payload (aka "bin") size and will
+   rotate between groups of similar files (based on configurable pattern
+   match) of the same priority in order to avoid starvation.
 
 1. _Source_ **Sender**: Does these activities in parallel:
 
-  1. Compute MD5 hash of each input file
   1. Construct "bin" until full (or until input file stream is stagnant for a second)
   1. POST "bin" to target HTTP server, optionally compressing the payload
   1. Log successfully sent files and pass these to the **Validator**
 
 1. _Source_ **Validator**: Builds a batch of files to validate based on configurable
    time interval and makes a request to the target host to confirm files sent have
-   been validated and finalized.  Files that fail validation are sent back to the
-   **Sender**.  Files that pass validation are communicated to the **Watcher**
-   (removes from queue and does any cleanup action configured for its group).
-   After a configurable number of poll attempts do not yield success, files are
-   passed back to the **Sender**.
+   been validated and finalized.  Files that fail validation are removed from the
+   cache such the **Watcher** will pick them up again. Files that pass validation
+   are removed if configured to do so. After a configurable number of poll attempts
+   do not yield success, files are treated the same as if they had failed
+   validation originally.
 
 1. _Target_ **HTTP Server**: Receives POSTed "bin" from source host and writes
-   data and companion metadata file to configured stage area.  Each file is given
-   a ".part" extension to indicate the file is not yet complete.  Once the last
-   part is written (mutex locks are used to avoid conflict by multiple threads)
-   the file is renamed to remove the previously added ".part" extension.
+   data and companion metadata file to configured **Stager**.
 
-1. _Target_ **Watcher**: Scans stage area for completed files and sends them to
-   the **Finalizer**.
-
-1. _Target_ **Finalizer**: Makes sure each input file matches the MD5 hash as stored
-   in the "companion" file.  Also makes sure that a file is only finalized following
-   its predecessor (if one specified in the companion file).
-
-
-![Flowchart2](assets/flow.png?raw=true)
+1. _Target_ **Stager**: As streams of file parts are received from the **HTTP
+    Server**, they are efficiently written to their file counterparts with
+    a ".part" extension to indicate the file is not yet complete.  Once the last
+    part is written (mutex locks are used to avoid conflict by multiple threads)
+    the file is renamed to remove the previously added ".part" extension and
+    its MD5 hash is computed to make sure it matches the one stored in the
+    "companion" file (.cmp extension). If the file matches AND its predecessor
+    (if there is one) has also been received, it is moved to the "final"
+    directory.

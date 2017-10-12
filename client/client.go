@@ -33,6 +33,7 @@ type Conf struct {
 	ScanDelay    time.Duration    // How long to wait between scans of the store (0 means only once and we're done)
 	Threads      int              // How many go routines for sending data
 	PayloadSize  units.Base2Bytes // How large a single transmission payload should be (before any compression by the transmitter)
+	StatPayload  bool             // Whether or not to record single-payload throughput stats
 	StatInterval time.Duration    // How long to wait between logging transmission rate statistics
 	PollDelay    time.Duration    // How long to wait before validating completed files after final transmission
 	PollInterval time.Duration    // How long to wait between between validation requests
@@ -54,6 +55,9 @@ type Broker struct {
 	tagMap    map[string]*FileTag
 	cleanAll  bool
 	cleanSome bool
+	statLock  sync.Mutex
+	statSince time.Time
+	bytesOut  int64
 
 	// Channels
 	chStop        chan bool
@@ -144,9 +148,18 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 }
 
 func (broker *Broker) recover() (send []sts.Hashed, poll []sts.Pollable, err error) {
-	partials, err := broker.Conf.Recoverer()
-	if err != nil {
-		return
+	var partials []*sts.Partial
+	nErr := 0
+	for {
+		partials, err = broker.Conf.Recoverer()
+		if err != nil {
+			log.Error("Recovery request failed:", err.Error())
+			nErr++
+			// Wait longer the more it fails
+			time.Sleep(time.Duration(nErr) * time.Second)
+			continue
+		}
+		break
 	}
 	lookup := make(map[string]*sts.Partial)
 	for _, p := range partials {
@@ -155,14 +168,19 @@ func (broker *Broker) recover() (send []sts.Hashed, poll []sts.Pollable, err err
 			log.Error("Stale companion on target host:", p.Name)
 		}
 	}
-	broker.Conf.Cache.Iterate(func(f sts.Cached) bool {
+	store := broker.Conf.Store
+	cache := broker.Conf.Cache
+	cache.Iterate(func(f sts.Cached) bool {
 		var file sts.File
-		file, err = broker.Conf.Store.Sync(f)
-		if err != nil {
-			log.Error("Failed to stat partially sent file:", f.GetPath(), err.Error())
+		file, err = store.Sync(f)
+		if store.IsNotExist(err) {
+			log.Info("File disappeared:", f.GetPath())
+			cache.Remove(f.GetRelPath())
 			return false
-		}
-		if file != nil {
+		} else if err != nil {
+			log.Error("Failed to stat cached file:", f.GetPath(), err.Error())
+			return false
+		} else if file != nil {
 			log.Debug("Ignore changed file:", f.GetPath())
 			return false
 		}
@@ -412,22 +430,40 @@ func (broker *Broker) startQueue(wg *sync.WaitGroup) {
 	defer log.Debug("Sorter done")
 	in := broker.chScanned
 	out := broker.chQueued
+	var wait <-chan time.Time
+	var block bool
 	for {
-		log.Debug("Queue loop ...")
-		next := broker.Conf.Queue.Pop()
-		if next == nil {
-			if in == nil {
-				return
+		if block {
+			wait = nil
+		} else {
+			// Make the wait time very small to keep from there being a bottle
+			// neck getting the file slices out of the Q
+			wait = time.After(time.Millisecond * 1)
+		}
+		select {
+		case batch, ok := <-in:
+			if batch != nil {
+				broker.Conf.Queue.Push(batch)
 			}
-			batch, ok := <-in
 			if !ok {
 				in = nil
+			}
+			block = false
+			break
+		case <-wait:
+			next := broker.Conf.Queue.Pop()
+			if next == nil {
+				if in == nil {
+					// If the Q is empty and the input channel is closed, then
+					// we're done
+					return
+				}
+				block = true
 				continue
 			}
-			broker.Conf.Queue.Push(batch)
-			continue
+			out <- next
+			break
 		}
-		out <- next
 	}
 }
 
@@ -439,8 +475,7 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 	var current sts.Binnable
 	var ok bool
 	var timeout <-chan time.Time
-	block := make(chan time.Time)
-	wait := time.Second * 3
+	wait := time.Second * 1
 	in := broker.chQueued
 	out := broker.chTransmit
 	for {
@@ -448,24 +483,26 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 			if payload == nil {
 				log.Debug("Bin blocking ...")
 				// Just block if we don't have anything waiting
-				timeout = block
+				timeout = nil
 			} else {
 				timeout = time.After(wait)
 			}
 			select {
 			case sendable, ok = <-in:
+				if sendable != nil {
+					tagName := broker.Conf.Tagger(sendable.GetRelPath())
+					tag := broker.tagMap[tagName]
+					current = &binnable{
+						orig:   sendable,
+						tag:    tagName,
+						noPrev: tag == nil || tag.InOrder == false,
+					}
+				}
 				if !ok {
 					if payload != nil && payload.GetSize() > 0 {
 						out <- payload
 					}
 					return
-				}
-				tagName := broker.Conf.Tagger(sendable.GetRelPath())
-				tag := broker.tagMap[tagName]
-				current = &binnable{
-					orig:   sendable,
-					tag:    tagName,
-					noPrev: tag == nil || tag.InOrder == false,
 				}
 			case <-timeout:
 				log.Debug("Bin waited")
@@ -538,7 +575,38 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 			// Wait longer the more it fails
 			time.Sleep(time.Duration(nErr) * time.Second)
 		}
+		broker.stat(payload)
 		out <- payload
+	}
+}
+
+func (broker *Broker) stat(payload sts.Payload) {
+	if broker.Conf.StatPayload {
+		s := payload.GetCompleted().Sub(payload.GetStarted()).Seconds()
+		mb := float64(payload.GetSize()) / float64(1024) / float64(1024)
+		log.Info(fmt.Sprintf(
+			"Throughput: %3d part(s), %10.2f MB, %6.2f sec, %6.2f MB/sec",
+			len(payload.GetParts()), mb, s, mb/s))
+	}
+	if broker.Conf.StatInterval == time.Duration(0) {
+		return
+	}
+	broker.statLock.Lock()
+	defer broker.statLock.Unlock()
+	if broker.statSince.IsZero() {
+		// Start the stats after the first payload
+		broker.statSince = time.Now()
+		return
+	}
+	broker.bytesOut += payload.GetSize()
+	d := time.Now().Sub(broker.statSince)
+	if d > broker.Conf.StatInterval {
+		s := d.Seconds()
+		mb := float64(broker.bytesOut) / float64(1024) / float64(1024)
+		log.Info(fmt.Sprintf(
+			"TOTAL Throughput: %.2fMB, %.2fs, %.2f MB/s", mb, s, mb/s))
+		broker.bytesOut = 0
+		broker.statSince = time.Now()
 	}
 }
 
@@ -567,10 +635,21 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 				}
 				pFile = progress[key]
 			}
-			_, n := binned.GetSlice()
+			offset, n := binned.GetSlice()
 			pFile.sent += n
 			if pFile.sent >= pFile.size {
-				pFile.completed = payload.GetCompleted()
+				if offset == 0 && n == binned.GetFileSize() {
+					// Compute the "completed" time based on how long the
+					// proportion of this complete file's size to that of the
+					// bin's.  This is to get a more accurate amount of time
+					// it took to send the file.
+					t := payload.GetCompleted().Sub(payload.GetStarted()).Nanoseconds()
+					r := float64(n) / float64(payload.GetSize())
+					d := time.Duration(float64(t) * r)
+					pFile.completed = pFile.started.Add(d)
+				} else {
+					pFile.completed = payload.GetCompleted()
+				}
 				broker.Conf.Logger.Sent(pFile)
 				go func(wg *sync.WaitGroup) {
 					defer wg.Done()
@@ -587,7 +666,6 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 	defer log.Debug("Validator done")
 	in := broker.chValidate
 	poll := make(map[string]*progressFile)
-	block := make(chan time.Time)
 	wait := broker.Conf.PollDelay
 	var timeout <-chan time.Time
 	var pollTime time.Time
@@ -598,14 +676,13 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 	var err error
 	var nErr int
 	for {
-		log.Debug("Validate loop ...")
 		if len(poll) == 0 {
 			if in == nil {
 				// We can safely return once our Q is empty
 				return
 			}
 			// If there's nothing in our Q, just block until we get a file
-			timeout = block
+			timeout = nil
 		} else {
 			timeout = time.After(wait)
 		}
@@ -631,13 +708,9 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 		}
 		// Build the list of pollable files
 		ready = nil
-		for k, f := range poll {
-			if broker.Conf.PollAttempts > 0 && f.polled > broker.Conf.PollAttempts {
-				broker.Conf.Cache.Remove(f.name)
-				delete(poll, k)
-				continue
-			}
-			if time.Now().Sub(f.completed) > broker.Conf.PollDelay {
+		for _, f := range poll {
+			if time.Now().Sub(f.completed) >= broker.Conf.PollDelay {
+				log.Debug("Polling:", f.GetName())
 				ready = append(ready, f)
 			}
 		}
@@ -661,6 +734,11 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 			switch {
 			case f.NotFound():
 				poll[f.GetName()].polled++
+				if poll[f.GetName()].polled == broker.Conf.PollAttempts {
+					log.Error("Exceeded maximum polling attempts:", f.GetName())
+					broker.finish(f)
+					delete(poll, f.GetName())
+				}
 				break
 			case f.Waiting():
 				// Nothing to do with "waiting" files. They should continue to
@@ -668,7 +746,7 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 				// receiving end
 				break
 			case f.Failed():
-				log.Error("File failed validation:", f.GetName())
+				log.Error("Failed validation:", f.GetName())
 				fallthrough
 			case f.Received():
 				broker.finish(f)
@@ -686,12 +764,11 @@ func (broker *Broker) finish(file sts.Polled) {
 		cached := broker.Conf.Cache.Get(file.GetName())
 		tagName := broker.Conf.Tagger(file.GetName())
 		tag := broker.tagMap[tagName]
-		log.Debug("Tag:", file.GetName(), tagName, tag.Delete)
 		if tag != nil && tag.Delete {
 			broker.Conf.Store.Remove(cached)
 		}
 		fallthrough
-	case file.Failed():
+	default:
 		broker.Conf.Cache.Remove(file.GetName())
 		break
 	}

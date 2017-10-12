@@ -32,9 +32,10 @@ type ReceiveLogger interface {
 // objects on the client (i.e. sending) side
 type FileSource interface {
 	Scan(func(string) File) ([]File, time.Time, error)
+	GetOpener() Open
 	Remove(File) error
 	Sync(File) (File, error)
-	GetOpener() Open
+	IsNotExist(error) bool
 }
 
 // FileCache is the interface for caching a collection of files

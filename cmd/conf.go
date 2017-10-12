@@ -15,7 +15,6 @@ import (
 
 const (
 	defaultTag = "DEFAULT"
-	methodHTTP = "http"
 )
 
 type conf struct {
@@ -90,6 +89,7 @@ type sourceConf struct {
 	Timeout      time.Duration
 	BinSize      units.Base2Bytes
 	Compression  int
+	StatPayload  bool
 	StatInterval time.Duration
 	PollDelay    time.Duration
 	PollInterval time.Duration
@@ -115,6 +115,7 @@ func (ss *sourceConf) UnmarshalYAML(unmarshal func(interface{}) error) (err erro
 		Timeout      time.Duration `yaml:"timeout"`
 		BinSize      string        `yaml:"bin-size"`
 		Compression  int           `yaml:"compress"`
+		StatPayload  bool          `yaml:"stat-payload"`
 		StatInterval time.Duration `yaml:"stat-interval"`
 		PollDelay    time.Duration `yaml:"poll-delay"`
 		PollInterval time.Duration `yaml:"poll-interval"`
@@ -142,6 +143,7 @@ func (ss *sourceConf) UnmarshalYAML(unmarshal func(interface{}) error) (err erro
 		}
 	}
 	ss.Compression = aux.Compression
+	ss.StatPayload = aux.StatPayload
 	ss.StatInterval = aux.StatInterval
 	ss.PollDelay = aux.PollDelay
 	ss.PollInterval = aux.PollInterval
@@ -199,12 +201,6 @@ func (t *tagConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 		if aux.Order == "" {
 			aux.Order = queue.ByFIFO
 		}
-		if aux.Method == "" {
-			aux.Method = methodHTTP
-		}
-	}
-	if aux.Method == "" {
-		aux.Method = methodHTTP
 	}
 	t.Priority = aux.Priority
 	t.Method = aux.Method

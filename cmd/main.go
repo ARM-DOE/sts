@@ -58,7 +58,7 @@ func getRoot() (root string) {
 
 type app struct {
 	debug      bool
-	once       bool
+	loop       bool
 	mode       string
 	root       string
 	confPath   string
@@ -97,7 +97,7 @@ func newApp() *app {
 	a := &app{
 		debug:    *debug,
 		mode:     strings.ToLower(*mode),
-		once:     !*loop,
+		loop:     *loop,
 		confPath: *confPath,
 		root:     getRoot(),
 	}
@@ -131,7 +131,7 @@ func (a *app) run() {
 	}
 	// Run until we get a signal to shutdown if running ONLY as a "receiver" or
 	// if configured to run as a sender in a loop.
-	if !a.once || (i && !o) {
+	if a.loop || (i && !o) {
 		// if !i {
 		// 	// Start a profiler server only if running solely "out" mode in a
 		// 	// loop.  We can use the "in" server otherwise.

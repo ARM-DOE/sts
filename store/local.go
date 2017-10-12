@@ -177,6 +177,12 @@ func (dir *Local) Sync(origFile sts.File) (newFile sts.File, err error) {
 	return
 }
 
+// IsNotExist returns whether or not an error returned by Sync or Open
+// indicates the file in question does not exist
+func (dir *Local) IsNotExist(err error) bool {
+	return os.IsNotExist(err)
+}
+
 // GetOpener returns an Open function for reading
 func (dir *Local) GetOpener() sts.Open {
 	return dir.Open

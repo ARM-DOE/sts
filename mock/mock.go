@@ -72,6 +72,11 @@ type Readable struct {
 // Close is a noop just so we can satisfy the interface
 func (Readable) Close() error { return nil }
 
+// MissingError is a simple wrapper around the standard error
+type MissingError struct {
+	error
+}
+
 // Store mocks sts.FileSource
 type Store struct {
 	files map[string]*File
@@ -138,6 +143,13 @@ func (s *Store) GetOpener() sts.Open {
 	return s.opener
 }
 
+// IsNotExist returns whether or not the provided error indicates a file is
+// missing
+func (s *Store) IsNotExist(err error) bool {
+	_, ok := err.(MissingError)
+	return ok
+}
+
 func (s *Store) opener(file sts.File) (sts.Readable, error) {
 	if f, ok := file.(*File); ok {
 		return Readable{bytes.NewReader(f.data)}, nil
@@ -145,7 +157,9 @@ func (s *Store) opener(file sts.File) (sts.Readable, error) {
 	if f, ok := s.files[file.GetRelPath()]; ok {
 		return Readable{bytes.NewReader(f.data)}, nil
 	}
-	return nil, fmt.Errorf("Unknown file: %s", file.GetPath())
+	return nil, MissingError{
+		fmt.Errorf("Unknown file: %s", file.GetPath()),
+	}
 }
 
 // Cache implements sts.FileCache

@@ -55,15 +55,15 @@ type JSON struct {
 }
 
 // NewJSON initializes the cache
-func NewJSON(dir, key string) (j *JSON, err error) {
+func NewJSON(cacheDir, fileRoot, key string) (j *JSON, err error) {
 	if key == "" {
-		key = dir
+		key = fileRoot
 	}
 	name := fmt.Sprintf("%s.json", fileutil.StringMD5(key))
 	j = &JSON{
-		Dir:   dir,
+		Dir:   fileRoot,
 		Files: make(map[string]*cacheFile),
-		path:  filepath.Join(dir, name),
+		path:  filepath.Join(cacheDir, name),
 	}
 	if err = fileutil.LoadJSON(j.path, j); err != nil && !os.IsNotExist(err) {
 		return
