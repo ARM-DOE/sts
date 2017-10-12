@@ -293,8 +293,10 @@ func (q *Tagged) Push(files []sts.Hashed) {
 	defer q.mux.Unlock()
 	for _, file := range files {
 		if orig, ok := q.byFile[file.GetRelPath()]; ok {
+			// TODO: add this to the test...
 			// If a file by this name is already here, let's start over
 			q.removeFile(orig)
+			orig.unlink()
 		}
 		groupName := q.grouper(file.GetRelPath())
 		group, exists := q.byGroup[groupName]
@@ -321,6 +323,7 @@ func (q *Tagged) Push(files []sts.Hashed) {
 			orig:  file,
 			group: group,
 		}
+		log.Debug("Q Add:", file.GetRelPath())
 		q.addFile(fileWrapper)
 	}
 }
@@ -361,8 +364,18 @@ func (q *Tagged) Pop() sts.Sendable {
 	}
 	log.Debug("Q Out:", chunk.orig.GetRelPath(), "<-", chunk.prev)
 	if next.isAllocated() {
+		log.Debug("Q Done:", next.orig.GetRelPath(), offset, length, next.orig.GetSize())
 		// File is fully allocated and can be removed from the queue
 		q.removeFile(next)
+		if next.prev != nil {
+			// Unlink the previous file because now no one in the Q is
+			// dependent on it
+			next.prev.unlink()
+		}
+		if next.next == nil {
+			// Only unlink this node if there's nothing dependent on it
+			next.unlink()
+		}
 	}
 	return chunk
 }
@@ -463,15 +476,6 @@ loop:
 func (q *Tagged) removeFile(file *sortedFile) {
 	if q.headFile[file.group.name] == file {
 		q.headFile[file.group.name] = file.next
-	}
-	if file.prev != nil {
-		// Unlink the previous file because now no one in the Q is dependent on
-		// it
-		file.prev.unlink()
-	}
-	if file.next == nil {
-		// Only unlink this node if there's nothing dependent on it
-		file.unlink()
 	}
 	delete(q.byFile, file.orig.GetRelPath())
 }

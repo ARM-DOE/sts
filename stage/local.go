@@ -40,8 +40,13 @@ func newCompanion(path string, file *sts.Partial) (cmp *sts.Partial, err error) 
 	if cmp, err = readCompanion(path); err != nil || cmp != nil {
 		return
 	}
-	*cmp = *file
-	cmp.Parts = nil
+	cmp = &sts.Partial{
+		Name:   file.Name,
+		Prev:   file.Prev,
+		Size:   file.Size,
+		Hash:   file.Hash,
+		Source: file.Source,
+	}
 	return
 }
 
@@ -53,6 +58,7 @@ func readCompanion(path string) (cmp *sts.Partial, err error) {
 	}
 	_, err = os.Stat(path)
 	if os.IsNotExist(err) {
+		err = nil
 		return
 	}
 	cmp = &sts.Partial{}
@@ -61,6 +67,10 @@ func readCompanion(path string) (cmp *sts.Partial, err error) {
 }
 
 func writeCompanion(path string, cmp *sts.Partial) error {
+	ext := filepath.Ext(path)
+	if ext != compExt {
+		path += compExt
+	}
 	return fileutil.WriteJSON(path, cmp)
 }
 
@@ -72,7 +82,7 @@ func addCompanionPart(cmp *sts.Partial, beg, end int64) {
 			continue
 		}
 		log.Debug(fmt.Sprintf(
-			"COMPANION Remove Conflict: %s => %d:%d (new) %d:%d (old)",
+			"Remove Companion Conflict: %s => %d:%d (new) %d:%d (old)",
 			cmp.Name, beg, end, part.Beg, part.End))
 		cmp.Parts[j-1], cmp.Parts[i] = cmp.Parts[i], cmp.Parts[j-1]
 		i--
@@ -194,16 +204,16 @@ func (s *Stage) initStageFile(path string, size int64) error {
 		return nil
 	}
 	if _, err = os.Stat(path + compExt); !os.IsNotExist(err) {
-		log.Debug("RECEIVE Removing Stale Companion:", path+compExt)
+		log.Debug("Removing Stale Companion:", path+compExt)
 		os.Remove(path + compExt)
 	}
-	log.Debug("RECEIVE Making Directory:", path, filepath.Dir(path))
+	log.Debug("Making Directory:", filepath.Dir(path))
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	if err != nil {
 		return err
 	}
 	fh, err := os.Create(path + partExt)
-	log.Debug(fmt.Sprintf("RECEIVE Creating Empty File: %s (%d B)", path, size))
+	log.Debug(fmt.Sprintf("Creating Empty File: %s (%d B)", path, size))
 	if err != nil {
 		return fmt.Errorf(
 			"Failed to create empty file at %s%s with size %d: %s",
@@ -268,7 +278,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 			err = fmt.Errorf("Failed to drop \"partial\" extension: %s", err.Error())
 			return
 		}
-		log.Debug("RECEIVE File Done:", path)
+		log.Debug("File transmitted:", path)
 		s.delWriteLock(path)
 		go func() {
 			s.process(file)
@@ -376,7 +386,7 @@ func (s *Stage) validate(file *finalFile) (err error) {
 		return
 	}
 
-	log.Debug("FINAL Validating:", file.name)
+	log.Debug("Validating:", file.name)
 
 	// Validate checksum.
 	var hash string
@@ -395,7 +405,7 @@ func (s *Stage) validate(file *finalFile) (err error) {
 		return
 	}
 
-	log.Debug("FINAL Validated:", file.name)
+	log.Debug("Validated:", file.name)
 	file.success = true
 	return
 }
@@ -425,14 +435,14 @@ func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 		if !found {
 			if s.isWaiting(stagedPrevFile) {
 				log.Debug(
-					"FINAL Previous File Waiting:",
+					"Previous file waiting:",
 					file.name, "<-", file.prev)
 				s.toWait(stagedPrevFile, file)
 				return
 			}
 			if _, err = os.Stat(stagedPrevFile + partExt); !os.IsNotExist(err) {
 				log.Debug(
-					"FINAL Previous File in Progress:",
+					"Previous file in progress:",
 					file.name, "<-", file.prev)
 				s.toWait(stagedPrevFile, file)
 				err = nil
@@ -440,14 +450,14 @@ func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 			}
 			if _, err = os.Stat(stagedPrevFile); !os.IsNotExist(err) {
 				log.Debug(
-					"FINAL Waiting for Previous File:",
+					"Waiting for previous file:",
 					file.name, "<-", file.prev)
 				s.toWait(stagedPrevFile, file)
 				err = nil
 				return
 			}
 			if !s.logger.WasReceived(file.source, file.prev, time.Now(), time.Now().Add(-logSearch)) {
-				log.Debug("FINAL Previous File Not Found in Log:",
+				log.Debug("Previous file not found in log:",
 					file.name, "<-", file.prev)
 				if count := s.getPollCount(file.path); count < waitPollCount {
 					s.toWait(stagedPrevFile, file)
@@ -462,13 +472,13 @@ func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 				s.doneWaiting(stagedPrevFile, file)
 			}
 		} else if !success {
-			log.Debug("FINAL Previous File Failed:", file.name, "<-", file.prev)
+			log.Debug("Previous file failed:", file.name, "<-", file.prev)
 			s.toWait(stagedPrevFile, file)
 			return
 		}
 	}
 
-	log.Debug("FINAL Finalizing", file.source, file.name)
+	log.Debug("Finalizing", file.source, file.name)
 
 	// Let's log it and update the cache before actually putting the file away
 	// in order to properly recover in case something happens between now and
@@ -501,7 +511,7 @@ func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 		return
 	}
 
-	log.Debug("FINAL Finalized", file.source, file.name)
+	log.Debug("Finalized", file.source, file.name)
 
 	done = true
 	return

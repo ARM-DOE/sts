@@ -16,10 +16,9 @@ import (
 const disabledName = ".disabled"
 
 type localFile struct {
-	path       string
-	relPath    string
-	linkedPath string
-	info       os.FileInfo
+	path    string
+	relPath string
+	info    os.FileInfo
 }
 
 func newLocalFile(path string, relPath string, info os.FileInfo) (f *localFile, err error) {
@@ -29,10 +28,11 @@ func newLocalFile(path string, relPath string, info os.FileInfo) (f *localFile, 
 		info:    info,
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		if f.linkedPath, err = os.Readlink(path); err != nil {
+		var linkedPath string
+		if linkedPath, err = os.Readlink(path); err != nil {
 			return
 		}
-		if f.info, err = os.Stat(f.linkedPath); err != nil {
+		if f.info, err = os.Stat(linkedPath); err != nil {
 			return
 		}
 		if f.info.IsDir() {
@@ -171,9 +171,6 @@ func (dir *Local) Sync(origFile sts.File) (newFile sts.File, err error) {
 		return
 	}
 	if file.GetSize() != origFile.GetSize() {
-		return
-	}
-	if file.linkedPath != origFile.(*localFile).linkedPath {
 		return
 	}
 	newFile = nil

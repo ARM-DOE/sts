@@ -3,9 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
+	"sync"
 
 	"code.arm.gov/dataflow/sts/fileutil"
+	"code.arm.gov/dataflow/sts/http"
 	"code.arm.gov/dataflow/sts/log"
+	"code.arm.gov/dataflow/sts/payload"
+	"code.arm.gov/dataflow/sts/stage"
 	// For profiling...
 	// "net/http"
 	// _ "net/http/pprof"
@@ -24,6 +28,17 @@ var (
 	Version = ""
 	// BuildTime is set based on -X option passed at build.
 	BuildTime = ""
+)
+
+const (
+	defLogs    = "logs"
+	defLogMsgs = "messages"
+	defLogOut  = "outgoing_to"
+	defLogIn   = "incoming_from"
+	defOut     = "outgoing_to"
+	defCache   = ".sts"
+	defStage   = "stage"
+	defFinal   = "incoming_from"
 )
 
 func main() {
@@ -48,7 +63,6 @@ type app struct {
 	root       string
 	confPath   string
 	conf       *conf
-	server     *serverApp
 	clients    []*clientApp
 	serverStop chan<- bool
 	serverDone <-chan bool
@@ -147,33 +161,92 @@ func (a *app) startServer() bool {
 		}
 		panic("Missing required SERVER configuration")
 	}
-	logPath, err := fileutil.InitPath(a.root, a.conf.Server.Dirs.Logs, true)
-	if err != nil {
+	conf := a.conf.Server
+	if conf.Server.Port == 0 {
+		panic("HTTP port not specified")
+	}
+	dirs := conf.Dirs
+	if dirs.Logs == "" {
+		dirs.Logs = defLogs
+	}
+	if dirs.LogsMsg == "" {
+		dirs.LogsMsg = defLogMsgs
+	}
+	if dirs.LogsIn == "" {
+		dirs.LogsIn = defLogIn
+	}
+	if dirs.Stage == "" {
+		dirs.Stage = defStage
+	}
+	if dirs.Final == "" {
+		dirs.Final = defFinal
+	}
+	dirPaths := map[string]string{
+		"log":   filepath.Join(dirs.Logs, dirs.LogsMsg),
+		"logIn": filepath.Join(dirs.Logs, dirs.LogsIn),
+		"stage": dirs.Stage,
+		"final": dirs.Final,
+		"serve": dirs.Serve,
+	}
+	var err error
+	for key, path := range dirPaths {
+		if path == "" {
+			continue
+		}
+		if dirPaths[key], err = fileutil.InitPath(a.root, path, true); err != nil {
+			panic(err)
+		}
+	}
+	log.Init(dirPaths["log"], a.debug)
+	stager := stage.New(
+		dirPaths["stage"],
+		dirPaths["final"],
+		log.NewReceive(dirPaths["logIn"]))
+	if err = stager.Recover(); err != nil {
 		panic(err)
 	}
-	log.Init(logPath, a.debug)
-	a.server = &serverApp{
-		root: a.root,
-		conf: a.conf.Server,
+	server := &http.Server{
+		ServeDir:       dirPaths["serve"],
+		Host:           conf.Server.Host,
+		Port:           conf.Server.Port,
+		Sources:        conf.Sources,
+		Keys:           conf.Keys,
+		Compression:    conf.Server.Compression,
+		DecoderFactory: payload.NewDecoder,
+		GateKeeper:     stager,
 	}
-	if err := a.server.init(); err != nil {
-		panic(err)
+	if conf.Server.TLSCertPath != "" && conf.Server.TLSKeyPath != "" {
+		var certPath, keyPath string
+		if certPath, err = fileutil.InitPath(
+			a.root, conf.Server.TLSCertPath, false); err != nil {
+			panic(err)
+		}
+		if keyPath, err = fileutil.InitPath(
+			a.root, conf.Server.TLSKeyPath, false); err != nil {
+			panic(err)
+		}
+		if server.TLS, err = http.GetTLSConf(certPath, keyPath, ""); err != nil {
+			panic(err)
+		}
 	}
 	stop := make(chan bool)
 	done := make(chan bool)
 	a.serverStop = stop
 	a.serverDone = done
-	go a.server.http.Serve(stop, done)
+	go server.Serve(stop, done)
 	return true
 }
 
 func (a *app) stopServer() {
+	log.Debug("Stopping server...")
 	if a.serverStop != nil {
 		a.serverStop <- true
 	}
+	log.Debug("Waiting for server to exit...")
 	if a.serverDone != nil {
 		<-a.serverDone
 	}
+	log.Debug("Server stopped...")
 }
 
 func (a *app) startClients() bool {
@@ -187,24 +260,49 @@ func (a *app) startClients() bool {
 		panic("Missing required CLIENT (aka SENDER) configuration")
 	}
 	var err error
-	logPath, err := fileutil.InitPath(a.root, a.conf.Client.Dirs.Logs, true)
+	dirs := a.conf.Client.Dirs
+	if dirs.Logs == "" {
+		dirs.Logs = defLogs
+	}
+	if dirs.LogsMsg == "" {
+		dirs.LogsMsg = defLogMsgs
+	}
+	if dirs.LogsOut == "" {
+		dirs.LogsOut = defLogOut
+	}
+	if dirs.Cache == "" {
+		dirs.Cache = defCache
+	}
+	if dirs.Out == "" {
+		dirs.Out = defOut
+	}
+	logMsgPath, err := fileutil.InitPath(
+		a.root, filepath.Join(dirs.Logs, dirs.LogsMsg), true)
 	if err != nil {
 		panic(err)
 	}
-	log.Init(logPath, a.debug)
+	log.Init(logMsgPath, a.debug)
+	logOutPath, err := fileutil.InitPath(
+		a.root, filepath.Join(dirs.Logs, dirs.LogsOut), true)
+	if err != nil {
+		panic(err)
+	}
 	a.clientStop = make(map[chan<- bool]<-chan bool)
 	watching := make(map[string]bool)
 	for _, source := range a.conf.Client.Sources {
 		c := &clientApp{
-			root: a.root,
-			dirs: a.conf.Client.Dirs,
-			conf: source,
+			root:         a.root,
+			conf:         source,
+			dirCache:     dirs.Cache,
+			dirOut:       dirs.Out,
+			dirOutFollow: dirs.OutFollow,
+			logPath:      logOutPath,
 		}
 		if err = c.init(); err != nil {
 			panic(err)
 		}
 		a.clients = append(a.clients, c)
-		watch := c.outDir
+		watch := c.outPath
 		if _, ok := watching[watch]; ok {
 			panic("Multiple sources configured to watch the same outgoing directory")
 		}
@@ -220,8 +318,19 @@ func (a *app) startClients() bool {
 }
 
 func (a *app) stopClients() {
-	for stop, done := range a.clientStop {
-		stop <- true
-		<-done
+	if len(a.clients) == 0 {
+		return
 	}
+	var wg sync.WaitGroup
+	wg.Add(len(a.clients))
+	for stop, done := range a.clientStop {
+		go func(stop chan<- bool, done <-chan bool, wg *sync.WaitGroup) {
+			defer wg.Done()
+			log.Debug("Stopping client...")
+			stop <- true
+			log.Debug("Waiting for client...")
+			<-done
+		}(stop, done, &wg)
+	}
+	wg.Wait()
 }

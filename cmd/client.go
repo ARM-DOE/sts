@@ -20,15 +20,18 @@ import (
 )
 
 type clientApp struct {
-	root   string
-	outDir string
-	dirs   *clientDirs
-	conf   *sourceConf
-	host   string
-	port   int
-	tls    *tls.Config
-	logDir string
-	broker *client.Broker
+	root         string
+	dirCache     string
+	dirOut       string
+	dirOutFollow bool
+	conf         *sourceConf
+	host         string
+	port         int
+	tls          *tls.Config
+	logPath      string
+	outPath      string
+	cachePath    string
+	broker       *client.Broker
 }
 
 func (c *clientApp) setDefaults() (err error) {
@@ -59,25 +62,13 @@ func (c *clientApp) setDefaults() (err error) {
 	}
 	if c.conf.Target.TLSCertPath != "" {
 		var certPath string
-		if certPath, err = fileutil.InitPath(c.root, c.conf.Target.TLSCertPath, false); err != nil {
+		if certPath, err = fileutil.InitPath(
+			c.root, c.conf.Target.TLSCertPath, false); err != nil {
 			return
 		}
 		if c.tls, err = http.GetTLSConf("", "", certPath); err != nil {
 			return
 		}
-	}
-	if c.dirs.Cache == "" {
-		c.dirs.Cache = ".sts"
-	}
-	if c.dirs.Logs == "" {
-		c.dirs.Logs = "logs"
-	}
-	if c.dirs.Out == "" {
-		c.dirs.Out = "out"
-	}
-	c.logDir = filepath.Join(c.dirs.Logs, c.dirs.LogsOut)
-	if c.logDir, err = fileutil.InitPath(c.root, c.logDir, true); err != nil {
-		return
 	}
 	if c.conf.BinSize == 0 {
 		c.conf.BinSize = 10 * 1024 * 1024 * 1024
@@ -104,7 +95,8 @@ func (c *clientApp) setDefaults() (err error) {
 		c.conf.ScanDelay = time.Second * 30
 	}
 	if c.conf.GroupBy == nil || c.conf.GroupBy.String() == "" {
-		c.conf.GroupBy = regexp.MustCompile(`^([^\.]*)`) // Default is up to the first dot of the relative path.
+		// Default is up to the first dot of the relative path.
+		c.conf.GroupBy = regexp.MustCompile(`^([^\.]*)`)
 	}
 	var defaultTag *tagConf
 	for _, tag := range c.conf.Tags {
@@ -126,22 +118,28 @@ func (c *clientApp) init() (err error) {
 	if err = c.setDefaults(); err != nil {
 		return
 	}
-	c.outDir = c.conf.OutDir
-	if c.outDir != "" {
-		if c.outDir, err = fileutil.InitPath(c.root, c.outDir, true); err != nil {
+	c.outPath = c.conf.OutDir
+	if c.outPath != "" {
+		if c.outPath, err = fileutil.InitPath(
+			c.root, c.outPath, true); err != nil {
 			return
 		}
-	} else if c.outDir, err = fileutil.InitPath(c.root, filepath.Join(c.dirs.Out, c.conf.Target.Name), true); err != nil {
+	} else if c.outPath, err = fileutil.InitPath(c.root,
+		filepath.Join(c.dirOut, c.conf.Target.Name), true); err != nil {
+		return
+	}
+	if c.cachePath, err = fileutil.InitPath(
+		c.root, c.dirCache, true); err != nil {
 		return
 	}
 	store := &store.Local{
-		Root:           c.outDir,
+		Root:           c.outPath,
 		MinAge:         c.conf.MinAge,
 		Include:        c.conf.Include,
 		Ignore:         c.conf.Ignore,
-		FollowSymlinks: c.dirs.OutFollow,
+		FollowSymlinks: c.dirOutFollow,
 	}
-	cache, err := cache.NewJSON(c.outDir, "")
+	cache, err := cache.NewJSON(c.cachePath, "")
 	if err != nil {
 		return
 	}
@@ -189,6 +187,7 @@ func (c *clientApp) init() (err error) {
 		tags[i] = &client.FileTag{
 			Name:    qtags[i].Name,
 			InOrder: c.conf.Tags[i].Order != "",
+			Delete:  c.conf.Tags[i].Delete,
 		}
 	}
 	httpClient := &http.Client{
@@ -209,7 +208,7 @@ func (c *clientApp) init() (err error) {
 			BuildPayload: payload.NewBin,
 			Transmitter:  httpClient.Transmit,
 			Validator:    httpClient.Validate,
-			Logger:       log.NewSend(c.logDir, c.conf.Target.Name),
+			Logger:       log.NewSend(c.logPath, c.conf.Target.Name),
 			Tagger:       nameToTag,
 			CacheAge:     c.conf.CacheAge,
 			ScanDelay:    c.conf.ScanDelay,

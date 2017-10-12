@@ -128,17 +128,19 @@ func (bin *Bin) setCompleted() {
 // IsFull is for determining whether or not a bin has reached its acceptable
 // capacity
 func (bin *Bin) IsFull() bool {
-	return math.Abs(float64(bin.capacity-bin.bytes)) < float64(bin.fluff) // At least 90% full is close enough.
+	space := bin.capacity - bin.bytes
+	return space < 0 || space < bin.fluff
 }
 
 // Add adds what it can of the input Binnable to the bin.  Returns false if no
 // bytes were added.
 func (bin *Bin) Add(chunk sts.Binnable) (added bool) {
 	beg, end := chunk.GetNextAlloc()
+	space := (bin.capacity + bin.fluff) - bin.bytes
 	end = int64(math.Min(
 		float64(end),
-		float64(beg+(bin.capacity-bin.bytes))+float64(bin.fluff)))
-	bytes := int64(end - beg)
+		float64(beg+space)))
+	bytes := end - beg
 	if bytes > 0 {
 		p := &part{
 			file: chunk,
@@ -151,6 +153,7 @@ func (bin *Bin) Add(chunk sts.Binnable) (added bool) {
 		added = true
 		return
 	}
+	log.Debug("Not binned:", chunk.GetRelPath(), beg, end, bin.capacity, bin.bytes, bin.fluff)
 	return
 }
 

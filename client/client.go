@@ -66,6 +66,7 @@ type Broker struct {
 
 // Start runs the client
 func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
+	defer log.Debug("Client done")
 	broker.tagMap = make(map[string]*FileTag)
 	broker.cleanAll = true
 	for _, tag := range broker.Conf.Tags {
@@ -86,35 +87,59 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 		log.Error("Recovery failed:", err.Error())
 		return
 	}
-
-	var wg sync.WaitGroup
-
-	go broker.startQueue(&wg)
-	go broker.startBin(&wg)
-	wg.Add(3)
-	for i := 0; i < broker.Conf.Threads; i++ {
-		go broker.startSend(&wg)
-		wg.Add(1)
-	}
-	go broker.startTrack(&wg)
-	go broker.startValidate(&wg)
-	wg.Add(2)
-
 	if len(send) > 0 {
-		broker.chScanned <- send
+		go func(ch chan<- []sts.Hashed, files []sts.Hashed) {
+			ch <- files
+		}(broker.chScanned, send)
 	}
 	if len(poll) > 0 {
 		for _, p := range poll {
-			broker.chValidate <- p
+			go func(ch chan<- sts.Pollable, f sts.Pollable) {
+				ch <- f
+			}(broker.chValidate, p)
 		}
 	}
 
-	go broker.startScan(&wg)
-	wg.Add(1)
+	start := func(s func(wg *sync.WaitGroup), wg *sync.WaitGroup, n int) {
+		wg.Add(n)
+		for i := 0; i < n; i++ {
+			go s(wg)
+		}
+	}
+
+	var wgScanned,
+		wgQueued,
+		wgTransmit,
+		wgTransmitted,
+		wgValidate,
+		wgValidated sync.WaitGroup
+
+	start(broker.startScan, &wgScanned, 1)
+	start(broker.startQueue, &wgQueued, 1)
+	start(broker.startBin, &wgTransmit, 1)
+	start(broker.startSend, &wgTransmitted, broker.Conf.Threads)
+	start(broker.startTrack, &wgValidate, 1)
+	start(broker.startValidate, &wgValidated, 1)
 
 	broker.chStop <- <-stop
 	close(broker.chStop)
-	wg.Wait()
+
+	wgScanned.Wait()
+	close(broker.chScanned)
+
+	wgQueued.Wait()
+	close(broker.chQueued)
+
+	wgTransmit.Wait()
+	close(broker.chTransmit)
+
+	wgTransmitted.Wait()
+	close(broker.chTransmitted)
+
+	wgValidate.Wait()
+	close(broker.chValidate)
+
+	wgValidated.Wait()
 	done <- true
 }
 
@@ -234,6 +259,7 @@ func (broker *Broker) recover() (send []sts.Hashed, poll []sts.Pollable, err err
 
 func (broker *Broker) startScan(wg *sync.WaitGroup) {
 	defer wg.Done()
+	defer log.Debug("Scanner done")
 	for {
 		log.Debug("Scanning ...")
 		found := broker.scan()
@@ -243,7 +269,6 @@ func (broker *Broker) startScan(wg *sync.WaitGroup) {
 		log.Debug("Scan complete. Found:", len(found))
 		select {
 		case <-broker.chStop:
-			close(broker.chScanned)
 			return
 		default:
 			break
@@ -384,6 +409,7 @@ func (broker *Broker) hash(scanned []sts.Hashed, batchSize int64) *sync.WaitGrou
 
 func (broker *Broker) startQueue(wg *sync.WaitGroup) {
 	defer wg.Done()
+	defer log.Debug("Sorter done")
 	in := broker.chScanned
 	out := broker.chQueued
 	for {
@@ -407,6 +433,7 @@ func (broker *Broker) startQueue(wg *sync.WaitGroup) {
 
 func (broker *Broker) startBin(wg *sync.WaitGroup) {
 	defer wg.Done()
+	defer log.Debug("Binner done")
 	var payload sts.Payload
 	var sendable sts.Sendable
 	var current sts.Binnable
@@ -417,13 +444,9 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 	in := broker.chQueued
 	out := broker.chTransmit
 	for {
-		if in == nil && payload != nil && payload.GetSize() > 0 {
-			out <- payload
-			return
-		}
-		log.Debug("Bin loop ...")
 		if current == nil {
 			if payload == nil {
+				log.Debug("Bin blocking ...")
 				// Just block if we don't have anything waiting
 				timeout = block
 			} else {
@@ -432,8 +455,10 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 			select {
 			case sendable, ok = <-in:
 				if !ok {
-					in = nil
-					continue
+					if payload != nil && payload.GetSize() > 0 {
+						out <- payload
+					}
+					return
 				}
 				tagName := broker.Conf.Tagger(sendable.GetRelPath())
 				tag := broker.tagMap[tagName]
@@ -443,6 +468,7 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 					noPrev: tag == nil || tag.InOrder == false,
 				}
 			case <-timeout:
+				log.Debug("Bin waited")
 				if payload != nil && payload.GetSize() > 0 {
 					out <- payload
 					payload = nil
@@ -455,6 +481,7 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 				int64(broker.Conf.PayloadSize),
 				broker.Conf.Store.GetOpener())
 		}
+		log.Debug("Payload:", current.GetRelPath(), payload.IsFull())
 		added := payload.Add(current)
 		if !added || current.IsAllocated() {
 			current = nil
@@ -468,6 +495,7 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 
 func (broker *Broker) startSend(wg *sync.WaitGroup) {
 	defer wg.Done()
+	defer log.Debug("Sender done")
 	in := broker.chTransmit
 	out := broker.chTransmitted
 	nErr := 0
@@ -475,7 +503,11 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 		log.Debug("Send loop ...")
 		payload, ok := <-in
 		if !ok {
-			break
+			return
+		}
+		for _, p := range payload.GetParts() {
+			beg, end := p.GetSlice()
+			log.Debug("Sending:", p.GetName(), beg, end)
 		}
 		for {
 			n, err := broker.Conf.Transmitter(payload)
@@ -512,14 +544,17 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 
 func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 	defer wg.Done()
+	defer log.Debug("Tracker done")
 	in := broker.chTransmitted
 	out := broker.chValidate
 	progress := make(map[string]*progressFile)
+	var waiter sync.WaitGroup
 	for {
 		log.Debug("Track loop ...")
 		payload, ok := <-in
 		if !ok {
-			break
+			waiter.Wait()
+			return
 		}
 		for _, binned := range payload.GetParts() {
 			key := binned.GetName()
@@ -537,9 +572,11 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 			if pFile.sent >= pFile.size {
 				pFile.completed = payload.GetCompleted()
 				broker.Conf.Logger.Sent(pFile)
-				go func() {
+				go func(wg *sync.WaitGroup) {
+					defer wg.Done()
+					wg.Add(1)
 					out <- pFile
-				}()
+				}(&waiter)
 			}
 		}
 	}
@@ -547,8 +584,12 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 
 func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 	defer wg.Done()
+	defer log.Debug("Validator done")
 	in := broker.chValidate
 	poll := make(map[string]*progressFile)
+	block := make(chan time.Time)
+	wait := broker.Conf.PollDelay
+	var timeout <-chan time.Time
 	var pollTime time.Time
 	var sent sts.Pollable
 	var ready []sts.Pollable
@@ -559,23 +600,26 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 	for {
 		log.Debug("Validate loop ...")
 		if len(poll) == 0 {
-			// If there's nothing in our Q, just block until we get a file
-			sent, ok = <-in
-			if !ok {
+			if in == nil {
+				// We can safely return once our Q is empty
 				return
 			}
+			// If there's nothing in our Q, just block until we get a file
+			timeout = block
 		} else {
-			// Don't block if we've got files in the poll Q
-			select {
-			case sent, ok = <-in:
-				if !ok {
-					return
-				}
-			default:
-				// To keep from thrashing until it's been long enough
-				time.Sleep(time.Millisecond * 100)
-				break
+			timeout = time.After(wait)
+		}
+		select {
+		case sent, ok = <-in:
+			if !ok {
+				// Receiving on a nil channel will block, which is what we want
+				// since the timeout will keep from thrashing while we work on
+				// remaining files to be polled
+				in = nil
 			}
+			break
+		case <-timeout:
+			break
 		}
 		if sent != nil {
 			poll[sent.GetName()] = sent.(*progressFile)
@@ -625,9 +669,7 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 				break
 			case f.Failed():
 				log.Error("File failed validation:", f.GetName())
-				broker.finish(f)
-				delete(poll, f.GetName())
-				break
+				fallthrough
 			case f.Received():
 				broker.finish(f)
 				delete(poll, f.GetName())
@@ -640,9 +682,11 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 func (broker *Broker) finish(file sts.Polled) {
 	switch {
 	case file.Received():
+		log.Debug("Received:", file.GetName())
 		cached := broker.Conf.Cache.Get(file.GetName())
 		tagName := broker.Conf.Tagger(file.GetName())
 		tag := broker.tagMap[tagName]
+		log.Debug("Tag:", file.GetName(), tagName, tag.Delete)
 		if tag != nil && tag.Delete {
 			broker.Conf.Store.Remove(cached)
 		}
@@ -788,8 +832,8 @@ func (f *binnable) AddAlloc(n int64) {
 }
 
 func (f *binnable) IsAllocated() bool {
-	b, n := f.GetSlice()
-	return f.allocated == (b + n)
+	_, n := f.GetSlice()
+	return f.allocated == n
 }
 
 type progressFile struct {
