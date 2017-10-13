@@ -44,6 +44,12 @@ func (f *cacheFile) IsDone() bool {
 	return f.Done
 }
 
+type oldJSON struct {
+	Time  int64                 `json:"time"`
+	Dir   string                `json:"dir"`
+	Files map[string]*cacheFile `json:"files"`
+}
+
 // JSON implements sts.FileCache for making a local cache of file info
 type JSON struct {
 	Time  time.Time             `json:"time"`
@@ -66,7 +72,12 @@ func NewJSON(cacheDir, fileRoot, key string) (j *JSON, err error) {
 		path:  filepath.Join(cacheDir, name),
 	}
 	if err = fileutil.LoadJSON(j.path, j); err != nil && !os.IsNotExist(err) {
-		return
+		jOld := &oldJSON{}
+		if err = fileutil.LoadJSON(j.path, jOld); err != nil {
+			return
+		}
+		j.Time = time.Unix(jOld.Time, 0)
+		j.Files = jOld.Files
 	}
 	err = nil
 	for k, f := range j.Files {

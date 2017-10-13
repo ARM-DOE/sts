@@ -188,8 +188,7 @@ func (broker *Broker) recover() (send []sts.Hashed, poll []sts.Pollable, err err
 		if exists {
 			log.Debug("Found partial:", f.GetRelPath())
 			// Partially sent; need to gracefully recover
-			var parts chunks
-			parts = partial.Parts[:0]
+			parts := make(chunks, len(partial.Parts))
 			for i, part := range partial.Parts {
 				parts[i] = part
 			}
@@ -213,25 +212,27 @@ func (broker *Broker) recover() (send []sts.Hashed, poll []sts.Pollable, err err
 					End: f.GetSize(),
 				})
 			}
-			send = append(send, &recovered{
-				path: f.GetPath(),
-				name: f.GetRelPath(),
-				prev: partial.Prev,
-				size: f.GetSize(),
-				time: f.GetTime(),
-				hash: f.GetHash(),
-				left: missing,
-			})
-		} else {
-			log.Debug("Found file to poll:", f.GetRelPath())
-			// Either fully sent or not at all; need to poll to find out which
-			poll = append(poll, &progressFile{
-				name:      f.GetRelPath(),
-				completed: time.Unix(f.GetTime(), 0),
-				size:      f.GetSize(),
-				hash:      f.GetHash(),
-			})
+			if len(missing) > 0 {
+				send = append(send, &recovered{
+					path: f.GetPath(),
+					name: f.GetRelPath(),
+					prev: partial.Prev,
+					size: f.GetSize(),
+					time: f.GetTime(),
+					hash: f.GetHash(),
+					left: missing,
+				})
+				return false
+			}
 		}
+		log.Debug("Found file to poll:", f.GetRelPath())
+		// Either fully sent or not at all; need to poll to find out which
+		poll = append(poll, &progressFile{
+			name:      f.GetRelPath(),
+			completed: time.Unix(f.GetTime(), 0),
+			size:      f.GetSize(),
+			hash:      f.GetHash(),
+		})
 		return false
 	})
 	if len(poll) > 0 {
@@ -360,10 +361,9 @@ func (broker *Broker) scan() []sts.Hashed {
 
 	// Prune the cache
 	cache.Iterate(func(cached sts.Cached) bool {
-		if cached.GetTime() > age.Unix() || !cached.IsDone() {
-			return false
+		if cached.IsDone() && cached.GetTime() < age.Unix() {
+			cache.Remove(cached.GetRelPath())
 		}
-		cache.Remove(cached.GetRelPath())
 		return false
 	})
 

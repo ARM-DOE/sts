@@ -107,7 +107,9 @@ func (c *clientApp) setDefaults() (err error) {
 	}
 	if defaultTag == nil {
 		// If no default tag exists, add one
-		c.conf.Tags = append(c.conf.Tags, &tagConf{})
+		c.conf.Tags = append(c.conf.Tags, &tagConf{
+			Method: httpMethod,
+		})
 	}
 	return
 }
@@ -144,6 +146,15 @@ func (c *clientApp) init() (err error) {
 	qtags := make([]*queue.Tag, len(c.conf.Tags))
 	for i, t := range c.conf.Tags {
 		name := ""
+		switch t.Method {
+		case httpMethod:
+			break
+		default:
+			// Ignore unknown methods. This allows us to extend the
+			// configuration for outside uses like disk mode, which is not
+			// part of this package
+			store.Ignore = append(store.Ignore, t.Pattern)
+		}
 		if t.Pattern != nil {
 			name = t.Pattern.String()
 		}

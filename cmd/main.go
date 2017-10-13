@@ -39,6 +39,7 @@ const (
 	defCache   = ".sts"
 	defStage   = "stage"
 	defFinal   = "incoming_from"
+	httpMethod = "http"
 )
 
 func main() {

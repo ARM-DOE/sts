@@ -82,7 +82,8 @@ type Transmit func(Payload) (int, error)
 
 // PayloadDecoderFactory creates a decoder instance to be used to parse a
 // multipart byte stream with the metadata at the beginning
-type PayloadDecoderFactory func(metaLen int, payload io.Reader) (PayloadDecoder, error)
+type PayloadDecoderFactory func(
+	metaLen int, payload io.Reader) (PayloadDecoder, error)
 
 // Validate is the function type for validating files sent by the client were
 // successfully received by the server
@@ -119,7 +120,8 @@ type Cached interface {
 	IsDone() bool
 }
 
-// Recovered ...
+// Recovered is the interface a file must implement to be recovered after a
+// partial send
 type Recovered interface {
 	Hashed
 	GetPrev() string
@@ -173,7 +175,8 @@ type PayloadDecoder interface {
 	Next() (io.Reader, bool)
 }
 
-// Partial ...
+// Partial is the JSON-encodable struct containing metadata for a single file
+// on the receiving end
 type Partial struct {
 	Name   string       `json:"path"`
 	Prev   string       `json:"prev"`
@@ -183,7 +186,8 @@ type Partial struct {
 	Parts  []*ByteRange `json:"parts"`
 }
 
-// ByteRange ...
+// ByteRange is the JSON-encodable struct used by the Partial for tracking a
+// a single byte range
 type ByteRange struct {
 	Beg int64 `json:"b"`
 	End int64 `json:"e"`
@@ -213,7 +217,7 @@ type Polled interface {
 	Received() bool
 }
 
-// Received ...
+// Received is the interface a file must implement to be logged as received
 type Received interface {
 	GetName() string
 	GetSize() int64

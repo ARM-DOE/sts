@@ -18,17 +18,17 @@ const (
 	compExt = ".cmp"
 	partExt = ".part"
 
-	// cacheAge is how long a finalized file is kept in memory.
+	// cacheAge is how long a finalized file is kept in memory
 	cacheAge = time.Minute * 60
 
-	// cacheCnt is the number of files after which to age the cache.
+	// cacheCnt is the number of files after which to age the cache
 	cacheCnt = 1000
 
 	// waitPollCount is the number of times a file can be polled before a file
-	// in waiting is released without any sign of its predecessor.
+	// in waiting is released without any sign of its predecessor
 	waitPollCount = 5
 
-	// logSearch is how far back (max) to look in the logs for a finalized file.
+	// logSearch is how far back (max) to look in the logs for a finalized file
 	logSearch = time.Duration(30 * 24 * time.Hour)
 )
 
@@ -37,7 +37,7 @@ func newCompanion(path string, file *sts.Partial) (cmp *sts.Partial, err error) 
 	if ext != compExt {
 		path += compExt
 	}
-	if cmp, err = readCompanion(path); err != nil || cmp != nil {
+	if cmp, err = readCompanion(path, file.Name); err != nil || cmp != nil {
 		return
 	}
 	cmp = &sts.Partial{
@@ -51,7 +51,7 @@ func newCompanion(path string, file *sts.Partial) (cmp *sts.Partial, err error) 
 }
 
 // readCompanion deserializes a companion file based on the input path.
-func readCompanion(path string) (cmp *sts.Partial, err error) {
+func readCompanion(path, name string) (cmp *sts.Partial, err error) {
 	ext := filepath.Ext(path)
 	if ext != compExt {
 		path += compExt
@@ -63,6 +63,29 @@ func readCompanion(path string) (cmp *sts.Partial, err error) {
 	}
 	cmp = &sts.Partial{}
 	err = fileutil.LoadJSON(path, cmp)
+	if err != nil {
+		// Try reading the old-style companion for backward compatibility
+		oldCmp := &oldCompanion{}
+		err = fileutil.LoadJSON(path, oldCmp)
+		if err != nil {
+			return
+		}
+		cmp.Hash = oldCmp.Hash
+		cmp.Name = oldCmp.Path
+		cmp.Prev = oldCmp.Prev
+		cmp.Size = oldCmp.Size
+		cmp.Source = oldCmp.Source
+		if name != "" {
+			// Because the old-style companion stored the full path and not
+			// the name part
+			cmp.Name = name
+		}
+		for _, p := range oldCmp.Parts {
+			cmp.Parts = append(cmp.Parts, &sts.ByteRange{
+				Beg: p.Beg, End: p.End,
+			})
+		}
+	}
 	return
 }
 
@@ -78,7 +101,7 @@ func addCompanionPart(cmp *sts.Partial, beg, end int64) {
 	j := len(cmp.Parts)
 	for i := 0; i < j; i++ {
 		part := cmp.Parts[i]
-		if end <= part.End || end >= part.Beg {
+		if beg >= part.End || end <= part.Beg {
 			continue
 		}
 		log.Debug(fmt.Sprintf(
@@ -123,7 +146,7 @@ func (f *finalFile) GetHash() string {
 	return f.hash
 }
 
-// Stage ...
+// Stage is the manager for all things file reception
 type Stage struct {
 	rootDir   string
 	targetDir string
@@ -141,7 +164,10 @@ type Stage struct {
 	finalLock  sync.Mutex
 }
 
-// New ...
+// New creates a new instance of Stage where the rootDir is the directory
+// for the stage area (will append {source}/), targetDir is where files
+// should be moved once validated, and logger instance for logging files
+// received
 func New(rootDir, targetDir string, logger sts.ReceiveLogger) *Stage {
 	s := &Stage{
 		rootDir:   rootDir,
@@ -173,27 +199,41 @@ func (s *Stage) delWriteLock(key string) {
 	delete(s.writeLocks, key)
 }
 
-// Scan ...
+func (s *Stage) cmpPathToName(cmpPath string) (name string) {
+	// Strip the root directory
+	name = cmpPath[len(s.rootDir)+len(string(os.PathSeparator)):]
+	// Trim the companion extension
+	name = strings.TrimSuffix(name, compExt)
+	// Strip the source
+	name = filepath.Join(
+		strings.Split(
+			name, string(os.PathSeparator))[1:]...)
+	return
+}
+
+// Scan walks the stage area tree (optionally restricted by source) looking
+// for companion files and returns any found
 func (s *Stage) Scan(source string) (partials []*sts.Partial, err error) {
 	var relPath string
 	var lock *sync.RWMutex
 	root := filepath.Join(s.rootDir, source)
-	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if filepath.Ext(path) == compExt {
-			relPath = path[len(root)+len(string(os.PathSeparator)):]
-			relPath = strings.TrimSuffix(relPath, compExt)
-			lock = s.getWriteLock(strings.TrimSuffix(path, compExt))
-			lock.RLock()
-			if _, err := os.Stat(path); !os.IsNotExist(err) { // Make sure it still exists.
-				cmp, err := readCompanion(path)
-				if err == nil {
-					partials = append(partials, cmp)
+	err = filepath.Walk(root,
+		func(path string, info os.FileInfo, err error) error {
+			if filepath.Ext(path) == compExt {
+				relPath = s.cmpPathToName(path)
+				lock = s.getWriteLock(strings.TrimSuffix(path, compExt))
+				lock.RLock()
+				// Make sure it still exists.
+				if _, err := os.Stat(path); !os.IsNotExist(err) {
+					cmp, err := readCompanion(path, relPath)
+					if err == nil {
+						partials = append(partials, cmp)
+					}
 				}
+				lock.RUnlock()
 			}
-			lock.RUnlock()
-		}
-		return nil
-	})
+			return nil
+		})
 	return
 }
 
@@ -224,7 +264,7 @@ func (s *Stage) initStageFile(path string, size int64) error {
 	return nil
 }
 
-// Receive ...
+// Receive reads a single file part with file metadata and reader
 func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 	if len(file.Parts) != 1 {
 		err = fmt.Errorf(
@@ -246,7 +286,8 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 	// Read the part and write it to the right place in the staged "partial"
 	fh, err := os.OpenFile(path+partExt, os.O_WRONLY, 0600)
 	if err != nil {
-		err = fmt.Errorf("Failed to open file while trying to write part: %s", err.Error())
+		err = fmt.Errorf("Failed to open file while trying to write part: %s",
+			err.Error())
 		return
 	}
 	part := file.Parts[0]
@@ -275,7 +316,8 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 	done := isCompanionComplete(cmp)
 	if done {
 		if err = os.Rename(path+partExt, path); err != nil {
-			err = fmt.Errorf("Failed to drop \"partial\" extension: %s", err.Error())
+			err = fmt.Errorf("Failed to drop \"partial\" extension: %s",
+				err.Error())
 			return
 		}
 		log.Debug("File transmitted:", path)
@@ -324,38 +366,43 @@ func (s *Stage) GetFileStatus(source, relPath string, sent time.Time) int {
 // run
 func (s *Stage) Recover() (err error) {
 	var ready []*sts.Partial
-	err = filepath.Walk(s.rootDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if filepath.Ext(path) != compExt {
-			return nil
-		}
-		cmp, err := readCompanion(path)
-		if err != nil {
-			log.Error("Failed to read companion:", path, err.Error())
-			return nil
-		}
-		base := strings.TrimSuffix(path, compExt)
-		if _, err = os.Stat(base + partExt); !os.IsNotExist(err) {
-			if isCompanionComplete(cmp) {
-				if err = os.Rename(base+partExt, base); err != nil {
-					log.Error("Failed to drop \"partial\" extension:", err.Error())
-					return nil
-				}
-				ready = append(ready, cmp)
-			}
-		} else if _, err = os.Stat(base); os.IsNotExist(err) {
-			if err = os.Remove(path); err != nil {
-				log.Error("Failed to remove orphaned companion:", path, err.Error())
+	err = filepath.Walk(s.rootDir,
+		func(path string, info os.FileInfo, err error) error {
+			if err != nil {
 				return nil
 			}
-			log.Info("Removed orphaned companion:", path)
-		} else if isCompanionComplete(cmp) {
-			ready = append(ready, cmp)
-		}
-		return nil
-	})
+			if filepath.Ext(path) != compExt {
+				return nil
+			}
+			cmp, err := readCompanion(path, s.cmpPathToName(path))
+			if err != nil {
+				log.Error("Failed to read companion:", path, err.Error())
+				return nil
+			}
+			base := strings.TrimSuffix(path, compExt)
+			if _, err = os.Stat(base + partExt); !os.IsNotExist(err) {
+				if isCompanionComplete(cmp) {
+					if err = os.Rename(base+partExt, base); err != nil {
+						log.Error("Failed to drop \"partial\" extension:",
+							err.Error())
+						return nil
+					}
+					log.Debug("Found already done:", cmp.Name)
+					ready = append(ready, cmp)
+				}
+			} else if _, err = os.Stat(base); os.IsNotExist(err) {
+				if err = os.Remove(path); err != nil {
+					log.Error("Failed to remove orphaned companion:",
+						path, err.Error())
+					return nil
+				}
+				log.Info("Removed orphaned companion:", path)
+			} else if isCompanionComplete(cmp) {
+				log.Debug("Found already done:", cmp.Name)
+				ready = append(ready, cmp)
+			}
+			return nil
+		})
 	for _, file := range ready {
 		s.process(file)
 	}
@@ -457,7 +504,9 @@ func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 				err = nil
 				return
 			}
-			if !s.logger.WasReceived(file.source, file.prev, time.Now(), time.Now().Add(-logSearch)) {
+			if !s.logger.WasReceived(
+				file.source, file.prev,
+				time.Now(), time.Now().Add(-logSearch)) {
 				log.Debug("Previous file not found in log:",
 					file.name, "<-", file.prev)
 				if count := s.getPollCount(file.path); count < waitPollCount {
@@ -642,4 +691,19 @@ func (s *Stage) toCache(file *finalFile) {
 			}
 		}
 	}
+}
+
+type oldCompanion struct {
+	Path   string              `json:"path"`
+	Prev   string              `json:"prev"`
+	Size   int64               `json:"size"`
+	Hash   string              `json:"hash"`
+	Source string              `json:"src"`
+	Parts  map[string]*oldPart `json:"parts"`
+}
+
+type oldPart struct {
+	Hash string `json:"hash"`
+	Beg  int64  `json:"b"`
+	End  int64  `json:"e"`
 }
