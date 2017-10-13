@@ -111,7 +111,7 @@ type General struct {
 	debug     bool
 }
 
-// New creates a new General logging instance
+// NewGeneral creates a new General logging instance
 func NewGeneral(rootDir string, debug bool) *General {
 	return &General{
 		logger:    newRollingFile(rootDir, "", log.Ldate|log.Ltime),

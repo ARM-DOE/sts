@@ -45,25 +45,17 @@ func (f *fileMeta) GetSlice() (int64, int64) {
 }
 
 type part struct {
-	file sts.Binnable // The file for which this part applies
-	beg  int64        // Beginning byte in the part
-	end  int64        // Ending byte in the part
-}
-
-func (p *part) GetName() string {
-	return p.file.GetRelPath()
-}
-
-func (p *part) GetPrev() string {
-	return p.file.GetPrev()
+	sts.Binnable       // The file for which this part applies
+	beg          int64 // Beginning byte in the part
+	end          int64 // Ending byte in the part
 }
 
 func (p *part) GetFileSize() int64 {
-	return p.file.GetSize()
+	return p.Binnable.GetSize()
 }
 
 func (p *part) GetFileHash() string {
-	return p.file.GetHash()
+	return p.Binnable.GetHash()
 }
 
 func (p *part) GetSlice() (int64, int64) {
@@ -143,9 +135,9 @@ func (bin *Bin) Add(chunk sts.Binnable) (added bool) {
 	bytes := end - beg
 	if bytes > 0 {
 		p := &part{
-			file: chunk,
-			beg:  beg,
-			end:  end,
+			Binnable: chunk,
+			beg:      beg,
+			end:      end,
 		}
 		bin.parts = append(bin.parts, p)
 		bin.bytes += bytes
@@ -153,7 +145,7 @@ func (bin *Bin) Add(chunk sts.Binnable) (added bool) {
 		added = true
 		return
 	}
-	log.Debug("Not binned:", chunk.GetRelPath(), beg, end, bin.capacity, bin.bytes, bin.fluff)
+	log.Debug("Not binned:", chunk.GetName(), beg, end, bin.capacity, bin.bytes, bin.fluff)
 	return
 }
 
@@ -215,10 +207,10 @@ func (bin *Bin) EncodeHeader() (byteMeta []byte, err error) {
 	for i := 0; i < len(bin.parts); i++ {
 		part := bin.parts[i]
 		meta[i] = &fileMeta{
-			Name: part.file.GetRelPath(),
-			Prev: part.file.GetPrev(),
-			Hash: part.file.GetHash(),
-			Size: part.file.GetSize(),
+			Name: part.GetName(),
+			Prev: part.GetPrev(),
+			Hash: part.GetFileHash(),
+			Size: part.GetFileSize(),
 			Beg:  part.beg,
 			End:  part.end,
 		}
@@ -271,16 +263,16 @@ func (b *Encoder) startNextPart() error {
 	b.partProgress = 0
 	b.binPart = b.bin.parts[b.partIndex]
 	b.partIndex++
-	if b.handle, err = b.bin.opener(b.binPart.file); err != nil {
+	if b.handle, err = b.bin.opener(b.binPart.Binnable); err != nil {
 		return fmt.Errorf(
 			"Failed to open %s for bin writing: %s",
-			b.binPart.file.GetPath(),
+			b.binPart.GetPath(),
 			err.Error())
 	}
 	if _, err = b.handle.Seek(b.binPart.beg, 0); err != nil {
 		return fmt.Errorf(
 			"Failed to seek %s:%d while writing bin: %s",
-			b.binPart.file.GetPath(),
+			b.binPart.GetPath(),
 			b.binPart.beg,
 			err.Error())
 	}
@@ -319,7 +311,7 @@ func (b *Encoder) Read(p []byte) (n int, err error) {
 	}
 	bytesLeft -= int64(n)
 	b.partProgress += int64(n)
-	// logging.Debug("BIN Bytes Read", n, b.binPart.File.GetRelPath(), bytesLeft)
+	// logging.Debug("BIN Bytes Read", n, b.binPart.File.GetName(), bytesLeft)
 	if err == io.EOF || n == 0 || bytesLeft == 0 {
 		err = b.startNextPart()
 		b.eop = true

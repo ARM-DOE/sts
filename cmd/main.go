@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/fileutil"
 	"code.arm.gov/dataflow/sts/http"
 	"code.arm.gov/dataflow/sts/log"
@@ -30,18 +31,6 @@ var (
 	BuildTime = ""
 )
 
-const (
-	defLogs    = "logs"
-	defLogMsgs = "messages"
-	defLogOut  = "outgoing_to"
-	defLogIn   = "incoming_from"
-	defOut     = "outgoing_to"
-	defCache   = ".sts"
-	defStage   = "stage"
-	defFinal   = "incoming_from"
-	httpMethod = "http"
-)
-
 func main() {
 	app := newApp()
 	app.run()
@@ -63,7 +52,7 @@ type app struct {
 	mode       string
 	root       string
 	confPath   string
-	conf       *conf
+	conf       *sts.Conf
 	clients    []*clientApp
 	serverStop chan<- bool
 	serverDone <-chan bool
@@ -115,7 +104,7 @@ func newApp() *app {
 			panic(err.Error())
 		}
 	}
-	conf, err := newConf(a.confPath)
+	conf, err := sts.NewConf(a.confPath)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to parse configuration:\n%s", err.Error()))
 	}
@@ -168,19 +157,19 @@ func (a *app) startServer() bool {
 	}
 	dirs := conf.Dirs
 	if dirs.Logs == "" {
-		dirs.Logs = defLogs
+		dirs.Logs = sts.DefLogs
 	}
 	if dirs.LogsMsg == "" {
-		dirs.LogsMsg = defLogMsgs
+		dirs.LogsMsg = sts.DefLogsMsg
 	}
 	if dirs.LogsIn == "" {
-		dirs.LogsIn = defLogIn
+		dirs.LogsIn = sts.DefLogsIn
 	}
 	if dirs.Stage == "" {
-		dirs.Stage = defStage
+		dirs.Stage = sts.DefStage
 	}
 	if dirs.Final == "" {
-		dirs.Final = defFinal
+		dirs.Final = sts.DefFinal
 	}
 	dirPaths := map[string]string{
 		"log":   filepath.Join(dirs.Logs, dirs.LogsMsg),
@@ -263,19 +252,19 @@ func (a *app) startClients() bool {
 	var err error
 	dirs := a.conf.Client.Dirs
 	if dirs.Logs == "" {
-		dirs.Logs = defLogs
+		dirs.Logs = sts.DefLogs
 	}
 	if dirs.LogsMsg == "" {
-		dirs.LogsMsg = defLogMsgs
+		dirs.LogsMsg = sts.DefLogsMsg
 	}
 	if dirs.LogsOut == "" {
-		dirs.LogsOut = defLogOut
+		dirs.LogsOut = sts.DefLogsOut
 	}
 	if dirs.Cache == "" {
-		dirs.Cache = defCache
+		dirs.Cache = sts.DefCache
 	}
 	if dirs.Out == "" {
-		dirs.Out = defOut
+		dirs.Out = sts.DefOut
 	}
 	logMsgPath, err := fileutil.InitPath(
 		a.root, filepath.Join(dirs.Logs, dirs.LogsMsg), true)

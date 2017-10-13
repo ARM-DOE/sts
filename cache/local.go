@@ -12,20 +12,21 @@ import (
 )
 
 type cacheFile struct {
-	path    string
-	relPath string
-	Size    int64  `json:"size"`
-	Time    int64  `json:"mtime"`
-	Hash    string `json:"hash"`
-	Done    bool   `json:"done"`
+	path string
+	name string
+	Size int64  `json:"size"`
+	Time int64  `json:"mtime"`
+	Meta []byte `json:"meta"`
+	Hash string `json:"hash"`
+	Done bool   `json:"done"`
 }
 
 func (f *cacheFile) GetPath() string {
 	return f.path
 }
 
-func (f *cacheFile) GetRelPath() string {
-	return f.relPath
+func (f *cacheFile) GetName() string {
+	return f.name
 }
 
 func (f *cacheFile) GetSize() int64 {
@@ -34,6 +35,10 @@ func (f *cacheFile) GetSize() int64 {
 
 func (f *cacheFile) GetTime() int64 {
 	return f.Time
+}
+
+func (f *cacheFile) GetMeta() []byte {
+	return f.Meta
 }
 
 func (f *cacheFile) GetHash() string {
@@ -82,7 +87,7 @@ func NewJSON(cacheDir, fileRoot, key string) (j *JSON, err error) {
 	err = nil
 	for k, f := range j.Files {
 		f.path = filepath.Join(j.Dir, k)
-		f.relPath = k
+		f.name = k
 	}
 	return
 }
@@ -165,20 +170,22 @@ func (j *JSON) Persist(boundary time.Time) (err error) {
 }
 
 func (j *JSON) add(file sts.Hashed) {
-	if existing, ok := j.Files[file.GetRelPath()]; ok {
+	j.dirty = true
+	if existing, ok := j.Files[file.GetName()]; ok {
 		existing.Size = file.GetSize()
 		existing.Time = file.GetTime()
+		existing.Meta = file.GetMeta()
 		existing.Hash = file.GetHash()
 		return
 	}
-	j.Files[file.GetRelPath()] = &cacheFile{
-		path:    file.GetPath(),
-		relPath: file.GetRelPath(),
-		Size:    file.GetSize(),
-		Time:    file.GetTime(),
-		Hash:    file.GetHash(),
+	j.Files[file.GetName()] = &cacheFile{
+		path: file.GetPath(),
+		name: file.GetName(),
+		Size: file.GetSize(),
+		Time: file.GetTime(),
+		Meta: file.GetMeta(),
+		Hash: file.GetHash(),
 	}
-	j.dirty = true
 }
 
 func (j *JSON) write() error {

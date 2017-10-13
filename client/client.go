@@ -168,6 +168,8 @@ func (broker *Broker) recover() (send []sts.Hashed, poll []sts.Pollable, err err
 			log.Error("Stale companion on target host:", p.Name)
 		}
 	}
+	// TODO: handle old-style cache where MD5s weren't included?  If not, we
+	// need to remove the cache file when migrating from a pre-1.0 release.
 	store := broker.Conf.Store
 	cache := broker.Conf.Cache
 	cache.Iterate(func(f sts.Cached) bool {
@@ -175,7 +177,7 @@ func (broker *Broker) recover() (send []sts.Hashed, poll []sts.Pollable, err err
 		file, err = store.Sync(f)
 		if store.IsNotExist(err) {
 			log.Info("File disappeared:", f.GetPath())
-			cache.Remove(f.GetRelPath())
+			cache.Remove(f.GetName())
 			return false
 		} else if err != nil {
 			log.Error("Failed to stat cached file:", f.GetPath(), err.Error())
@@ -184,9 +186,9 @@ func (broker *Broker) recover() (send []sts.Hashed, poll []sts.Pollable, err err
 			log.Debug("Ignore changed file:", f.GetPath())
 			return false
 		}
-		partial, exists := lookup[f.GetRelPath()]
+		partial, exists := lookup[f.GetName()]
 		if exists {
-			log.Debug("Found partial:", f.GetRelPath())
+			log.Debug("Found partial:", f.GetName())
 			// Partially sent; need to gracefully recover
 			parts := make(chunks, len(partial.Parts))
 			for i, part := range partial.Parts {
@@ -214,21 +216,17 @@ func (broker *Broker) recover() (send []sts.Hashed, poll []sts.Pollable, err err
 			}
 			if len(missing) > 0 {
 				send = append(send, &recovered{
-					path: f.GetPath(),
-					name: f.GetRelPath(),
-					prev: partial.Prev,
-					size: f.GetSize(),
-					time: f.GetTime(),
-					hash: f.GetHash(),
-					left: missing,
+					Cached: f,
+					prev:   partial.Prev,
+					left:   missing,
 				})
 				return false
 			}
 		}
-		log.Debug("Found file to poll:", f.GetRelPath())
+		log.Debug("Found file to poll:", f.GetName())
 		// Either fully sent or not at all; need to poll to find out which
 		poll = append(poll, &progressFile{
-			name:      f.GetRelPath(),
+			name:      f.GetName(),
 			completed: time.Unix(f.GetTime(), 0),
 			size:      f.GetSize(),
 			hash:      f.GetHash(),
@@ -249,7 +247,7 @@ func (broker *Broker) recover() (send []sts.Hashed, poll []sts.Pollable, err err
 				break
 			case f.Waiting():
 				poll = append(poll, &progressFile{
-					name:      cached.GetRelPath(),
+					name:      cached.GetName(),
 					completed: time.Unix(cached.GetTime(), 0),
 					size:      cached.GetSize(),
 					hash:      cached.GetHash(),
@@ -261,7 +259,7 @@ func (broker *Broker) recover() (send []sts.Hashed, poll []sts.Pollable, err err
 			case f.Received():
 				if !broker.Conf.Logger.WasSent(f.GetName(), time.Unix(cached.GetTime(), 0), time.Now()) {
 					broker.Conf.Logger.Sent(&progressFile{
-						name:      cached.GetRelPath(),
+						name:      cached.GetName(),
 						completed: time.Unix(cached.GetTime(), 0),
 						size:      cached.GetSize(),
 						hash:      cached.GetHash(),
@@ -333,7 +331,7 @@ func (broker *Broker) scan() []sts.Hashed {
 			// after being sent successfully
 			check := true
 			if broker.cleanSome {
-				tagName := broker.Conf.Tagger(file.GetRelPath())
+				tagName := broker.Conf.Tagger(file.GetName())
 				if tag, ok := broker.tagMap[tagName]; ok && !tag.Delete {
 					check = true
 				}
@@ -342,7 +340,7 @@ func (broker *Broker) scan() []sts.Hashed {
 			// mod times before the scan time minus the minimum age minus
 			// the cache age
 			if check && file.GetTime() < age.Unix() {
-				log.Debug("Skipping due to age:", file.GetRelPath())
+				log.Debug("Skipping due to age:", file.GetName())
 				continue
 			}
 		}
@@ -362,7 +360,7 @@ func (broker *Broker) scan() []sts.Hashed {
 	// Prune the cache
 	cache.Iterate(func(cached sts.Cached) bool {
 		if cached.IsDone() && cached.GetTime() < age.Unix() {
-			cache.Remove(cached.GetRelPath())
+			cache.Remove(cached.GetName())
 		}
 		return false
 	})
@@ -386,7 +384,7 @@ func (broker *Broker) hash(scanned []sts.Hashed, batchSize int64) *sync.WaitGrou
 		var err error
 		var fh sts.Readable
 		for _, file := range files {
-			log.Debug(fmt.Sprintf("HASHing %s ...", file.GetRelPath()))
+			log.Debug(fmt.Sprintf("HASHing %s ...", file.GetName()))
 			fh, err = broker.Conf.Store.GetOpener()(file)
 			if err != nil {
 				log.Error(err)
@@ -490,12 +488,12 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 			select {
 			case sendable, ok = <-in:
 				if sendable != nil {
-					tagName := broker.Conf.Tagger(sendable.GetRelPath())
+					tagName := broker.Conf.Tagger(sendable.GetName())
 					tag := broker.tagMap[tagName]
 					current = &binnable{
-						orig:   sendable,
-						tag:    tagName,
-						noPrev: tag == nil || tag.InOrder == false,
+						Sendable: sendable,
+						tag:      tagName,
+						noPrev:   tag == nil || tag.InOrder == false,
 					}
 				}
 				if !ok {
@@ -518,7 +516,7 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 				int64(broker.Conf.PayloadSize),
 				broker.Conf.Store.GetOpener())
 		}
-		log.Debug("Payload:", current.GetRelPath(), payload.IsFull())
+		log.Debug("Payload:", current.GetName(), payload.IsFull())
 		added := payload.Add(current)
 		if !added || current.IsAllocated() {
 			current = nil
@@ -783,8 +781,8 @@ func (f *hashFile) GetPath() string {
 	return f.orig.GetPath()
 }
 
-func (f *hashFile) GetRelPath() string {
-	return f.orig.GetRelPath()
+func (f *hashFile) GetName() string {
+	return f.orig.GetName()
 }
 
 func (f *hashFile) GetSize() int64 {
@@ -795,44 +793,20 @@ func (f *hashFile) GetTime() int64 {
 	return f.orig.GetTime()
 }
 
+func (f *hashFile) GetMeta() []byte {
+	return f.orig.GetMeta()
+}
+
 func (f *hashFile) GetHash() string {
 	return f.hash
 }
 
 type recovered struct {
-	path string
-	name string
+	sts.Cached
 	prev string
-	size int64
-	time int64
-	hash string
 	left []*sts.ByteRange
 	part int
 	used int64
-}
-
-func (f *recovered) GetPath() string {
-	return f.path
-}
-
-func (f *recovered) GetRelPath() string {
-	return f.name
-}
-
-func (f *recovered) GetPrev() string {
-	return f.prev
-}
-
-func (f *recovered) GetSize() int64 {
-	return f.size
-}
-
-func (f *recovered) GetTime() int64 {
-	return f.time
-}
-
-func (f *recovered) GetHash() string {
-	return f.hash
 }
 
 func (f *recovered) Allocate(desired int64) (offset int64, length int64) {
@@ -862,41 +836,17 @@ func (c chunks) Swap(i, j int) {
 }
 
 type binnable struct {
-	orig      sts.Sendable
+	sts.Sendable
 	tag       string
 	noPrev    bool
 	allocated int64
-}
-
-func (f *binnable) GetPath() string {
-	return f.orig.GetPath()
-}
-
-func (f *binnable) GetRelPath() string {
-	return f.orig.GetRelPath()
-}
-
-func (f *binnable) GetSize() int64 {
-	return f.orig.GetSize()
-}
-
-func (f *binnable) GetTime() int64 {
-	return f.orig.GetTime()
-}
-
-func (f *binnable) GetHash() string {
-	return f.orig.GetHash()
 }
 
 func (f *binnable) GetPrev() string {
 	if f.noPrev {
 		return ""
 	}
-	return f.orig.GetPrev()
-}
-
-func (f *binnable) GetSlice() (int64, int64) {
-	return f.orig.GetSlice()
+	return f.Sendable.GetPrev()
 }
 
 func (f *binnable) GetNextAlloc() (int64, int64) {

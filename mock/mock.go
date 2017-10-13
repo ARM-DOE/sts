@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"code.arm.gov/dataflow/sts"
-	"code.arm.gov/dataflow/sts/log"
 )
 
 // File is meant to implement as many o the file-typed interfaces as possible
@@ -18,6 +17,7 @@ type File struct {
 	Path     string
 	Size     int64
 	Time     time.Time
+	Meta     []byte
 	Hash     string
 	SendTime int64
 	Done     bool
@@ -29,12 +29,7 @@ func (f *File) GetPath() string {
 	return f.Path
 }
 
-// GetRelPath gets the name part of the path
-func (f *File) GetRelPath() string {
-	return f.Name
-}
-
-// GetName is the same as GetRelPath
+// GetName gets the name part of the path
 func (f *File) GetName() string {
 	return f.Name
 }
@@ -47,6 +42,11 @@ func (f *File) GetSize() int64 {
 // GetTime gets the file mod time
 func (f *File) GetTime() int64 {
 	return f.Time.Unix()
+}
+
+// GetMeta gets any additional metadata needed by the store implementation
+func (f *File) GetMeta() []byte {
+	return f.Meta
 }
 
 // GetHash gets the file signature
@@ -106,7 +106,7 @@ func NewStore(n, size int) *Store {
 		store.files[name] = f
 		total += size
 	}
-	log.Debug(fmt.Sprintf("Total store size: %.2f MB", float64(total)/1024/1024))
+	println(fmt.Sprintf("Total store size: %.2f MB", float64(total)/1024/1024))
 	store.mtime = now.Add(time.Duration(-n) * time.Second)
 	return store
 }
@@ -129,7 +129,7 @@ func (s *Store) Scan(cached func(string) sts.File) ([]sts.File, time.Time, error
 func (s *Store) Remove(file sts.File) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	delete(s.files, file.GetRelPath())
+	delete(s.files, file.GetName())
 	return nil
 }
 
@@ -154,7 +154,7 @@ func (s *Store) opener(file sts.File) (sts.Readable, error) {
 	if f, ok := file.(*File); ok {
 		return Readable{bytes.NewReader(f.data)}, nil
 	}
-	if f, ok := s.files[file.GetRelPath()]; ok {
+	if f, ok := s.files[file.GetName()]; ok {
 		return Readable{bytes.NewReader(f.data)}, nil
 	}
 	return nil, MissingError{
@@ -252,20 +252,21 @@ func (c *Cache) Persist(t time.Time) (err error) {
 }
 
 func (c *Cache) add(file sts.Hashed) {
-	if existing, ok := c.files[file.GetRelPath()]; ok {
+	c.dirty = true
+	if existing, ok := c.files[file.GetName()]; ok {
 		existing.Size = file.GetSize()
 		existing.Time = time.Unix(file.GetTime(), 0)
 		existing.Hash = file.GetHash()
 		return
 	}
-	c.files[file.GetRelPath()] = &File{
+	c.files[file.GetName()] = &File{
 		Path: file.GetPath(),
-		Name: file.GetRelPath(),
+		Name: file.GetName(),
 		Size: file.GetSize(),
 		Time: time.Unix(file.GetTime(), 0),
+		Meta: file.GetMeta(),
 		Hash: file.GetHash(),
 	}
-	c.dirty = true
 }
 
 func (c *Cache) write() error {

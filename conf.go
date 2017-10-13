@@ -1,4 +1,4 @@
-package main
+package sts
 
 import (
 	"io/ioutil"
@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"time"
 
-	"code.arm.gov/dataflow/sts/queue"
 	"code.arm.gov/dataflow/sts/reflectutil"
 
 	"github.com/alecthomas/units"
@@ -15,26 +14,37 @@ import (
 
 const (
 	defaultTag = "DEFAULT"
+
+	// OrderFIFO indicates first-in, first-out sorting
+	OrderFIFO = "fifo"
+
+	// OrderLIFO indicates last-in, first-out sorting
+	OrderLIFO = "lifo"
+
+	// OrderAlpha indicates alphabetic ordering
+	OrderAlpha = ""
 )
 
-type conf struct {
-	Client *clientConf `yaml:"OUT"`
-	Server *serverConf `yaml:"IN"`
+// Conf is the outer struct for decoding a YAML config file
+type Conf struct {
+	Client *ClientConf `yaml:"OUT"`
+	Server *ServerConf `yaml:"IN"`
 }
 
-// clientConf is the struct for housing all outgoing configuration.
-type clientConf struct {
-	Dirs    *clientDirs
-	Sources []*sourceConf
+// ClientConf is the struct for housing all outgoing configuration.
+type ClientConf struct {
+	Dirs    *ClientDirs
+	Sources []*SourceConf
 }
 
 // UnmarshalYAML implements the Unmarshaler interface for handling custom
 // member(s): https://godoc.org/gopkg.in/yaml.v2
 // This is where we implement the feature of propagating options.
-func (conf *clientConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
+func (conf *ClientConf) UnmarshalYAML(
+	unmarshal func(interface{}) error) (err error) {
 	var aux struct {
-		Dirs    *clientDirs   `yaml:"dirs"`
-		Sources []*sourceConf `yaml:"sources"`
+		Dirs    *ClientDirs   `yaml:"dirs"`
+		Sources []*SourceConf `yaml:"sources"`
 	}
 	if err = unmarshal(&aux); err != nil {
 		return
@@ -44,8 +54,8 @@ func (conf *clientConf) UnmarshalYAML(unmarshal func(interface{}) error) (err er
 	if len(conf.Sources) == 0 {
 		return
 	}
-	var src *sourceConf
-	var tgt *sourceConf
+	var src *SourceConf
+	var tgt *SourceConf
 	for i := 0; i < len(conf.Sources); i++ {
 		if src != nil {
 			tgt = conf.Sources[i]
@@ -65,9 +75,9 @@ func (conf *clientConf) UnmarshalYAML(unmarshal func(interface{}) error) (err er
 	return
 }
 
-// clientDirs is the struct for managing the outgoing directory configuration
+// ClientDirs is the struct for managing the outgoing directory configuration
 // items.
-type clientDirs struct {
+type ClientDirs struct {
 	Out       string `yaml:"out"`
 	OutFollow bool   `yaml:"out-follow"`
 	Logs      string `yaml:"logs"`
@@ -76,9 +86,9 @@ type clientDirs struct {
 	Cache     string `yaml:"cache"`
 }
 
-// sourceConf is the struct for managing the configuration of an outgoing
+// SourceConf is the struct for managing the configuration of an outgoing
 // client source.
-type sourceConf struct {
+type SourceConf struct {
 	Name         string
 	OutDir       string
 	Threads      int
@@ -94,16 +104,17 @@ type sourceConf struct {
 	PollDelay    time.Duration
 	PollInterval time.Duration
 	PollAttempts int
-	Target       *targetConf
+	Target       *TargetConf
 	GroupBy      *regexp.Regexp
 	Include      []*regexp.Regexp
 	Ignore       []*regexp.Regexp
-	Tags         []*tagConf
+	Tags         []*TagConf
 }
 
 // UnmarshalYAML implements the Unmarshaler interface for handling custom member(s).
 // https://godoc.org/gopkg.in/yaml.v2
-func (ss *sourceConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
+func (ss *SourceConf) UnmarshalYAML(
+	unmarshal func(interface{}) error) (err error) {
 	var aux struct {
 		Name         string        `yaml:"name"`
 		OutDir       string        `yaml:"out-dir"`
@@ -120,11 +131,11 @@ func (ss *sourceConf) UnmarshalYAML(unmarshal func(interface{}) error) (err erro
 		PollDelay    time.Duration `yaml:"poll-delay"`
 		PollInterval time.Duration `yaml:"poll-interval"`
 		PollAttempts int           `yaml:"poll-attempts"`
-		Target       *targetConf   `yaml:"target"`
+		Target       *TargetConf   `yaml:"target"`
 		GroupBy      string        `yaml:"group-by"`
 		Include      []string      `yaml:"include"`
 		Ignore       []string      `yaml:"ignore"`
-		Tags         []*tagConf    `yaml:"tags"`
+		Tags         []*TagConf    `yaml:"tags"`
 	}
 	if err = unmarshal(&aux); err != nil {
 		return
@@ -168,9 +179,9 @@ func (ss *sourceConf) UnmarshalYAML(unmarshal func(interface{}) error) (err erro
 	return
 }
 
-// tagConf is the struct for managing configuration options for "tags" (groups)
+// TagConf is the struct for managing configuration options for "tags" (groups)
 // of files.
-type tagConf struct {
+type TagConf struct {
 	Pattern   *regexp.Regexp
 	Priority  int
 	Method    string
@@ -181,7 +192,7 @@ type tagConf struct {
 
 // UnmarshalYAML implements the Unmarshaler interface for handling custom
 // member(s): https://godoc.org/gopkg.in/yaml.v2
-func (t *tagConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
+func (t *TagConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 	var aux struct {
 		Pattern   string        `yaml:"pattern"`
 		Priority  int           `yaml:"priority"`
@@ -199,7 +210,7 @@ func (t *tagConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 		}
 	} else {
 		if aux.Order == "" {
-			aux.Order = queue.ByFIFO
+			aux.Order = OrderFIFO
 		}
 	}
 	t.Priority = aux.Priority
@@ -210,25 +221,25 @@ func (t *tagConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 	return
 }
 
-// targetConf houses the configuration for the target host for a given source
-type targetConf struct {
+// TargetConf houses the configuration for the target host for a given source
+type TargetConf struct {
 	Name        string `yaml:"name"`
 	Key         string `yaml:"key"`
 	Host        string `yaml:"http-host"`
 	TLSCertPath string `yaml:"http-tls-cert"`
 }
 
-// serverConf is the struct for housing all incoming configuration
-type serverConf struct {
+// ServerConf is the struct for housing all incoming configuration
+type ServerConf struct {
 	Sources []string    `yaml:"sources"`
 	Keys    []string    `yaml:"keys"`
-	Dirs    *serverDirs `yaml:"dirs"`
-	Server  *httpServer `yaml:"server"`
+	Dirs    *ServerDirs `yaml:"dirs"`
+	Server  *HTTPServer `yaml:"server"`
 }
 
-// serverDirs is the struct for managing the incoming directory configuration
+// ServerDirs is the struct for managing the incoming directory configuration
 // items.
-type serverDirs struct {
+type ServerDirs struct {
 	Logs    string `yaml:"logs"`
 	LogsIn  string `yaml:"logs-in"`
 	LogsMsg string `yaml:"logs-flow"`
@@ -237,8 +248,8 @@ type serverDirs struct {
 	Serve   string `yaml:"serve"`
 }
 
-// httpServer is the struct for managing the incoming HTTP host
-type httpServer struct {
+// HTTPServer is the struct for managing the incoming HTTP host
+type HTTPServer struct {
 	Host        string `yaml:"http-host"`
 	Port        int    `yaml:"http-port"`
 	TLSCertPath string `yaml:"http-tls-cert"`
@@ -246,10 +257,10 @@ type httpServer struct {
 	Compression int    `yaml:"compress"`
 }
 
-// newConf returns a parsed Conf reference based on the provided conf file path
-func newConf(path string) (*conf, error) {
+// NewConf returns a parsed Conf reference based on the provided conf file path
+func NewConf(path string) (*Conf, error) {
 	var err error
-	conf := &conf{}
+	conf := &Conf{}
 	if !filepath.IsAbs(path) {
 		path, err = filepath.Abs(path)
 		if err != nil {

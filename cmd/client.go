@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/cache"
 	"code.arm.gov/dataflow/sts/client"
 	"code.arm.gov/dataflow/sts/fileutil"
@@ -24,7 +25,7 @@ type clientApp struct {
 	dirCache     string
 	dirOut       string
 	dirOutFollow bool
-	conf         *sourceConf
+	conf         *sts.SourceConf
 	host         string
 	port         int
 	tls          *tls.Config
@@ -98,7 +99,7 @@ func (c *clientApp) setDefaults() (err error) {
 		// Default is up to the first dot of the relative path.
 		c.conf.GroupBy = regexp.MustCompile(`^([^\.]*)`)
 	}
-	var defaultTag *tagConf
+	var defaultTag *sts.TagConf
 	for _, tag := range c.conf.Tags {
 		if tag.Pattern == nil {
 			defaultTag = tag
@@ -107,8 +108,8 @@ func (c *clientApp) setDefaults() (err error) {
 	}
 	if defaultTag == nil {
 		// If no default tag exists, add one
-		c.conf.Tags = append(c.conf.Tags, &tagConf{
-			Method: httpMethod,
+		c.conf.Tags = append(c.conf.Tags, &sts.TagConf{
+			Method: sts.MethodHTTP,
 		})
 	}
 	return
@@ -139,6 +140,7 @@ func (c *clientApp) init() (err error) {
 		Ignore:         c.conf.Ignore,
 		FollowSymlinks: c.dirOutFollow,
 	}
+	store.AddStandardIgnore()
 	cache, err := cache.NewJSON(c.cachePath, c.outPath, "")
 	if err != nil {
 		return
@@ -147,7 +149,7 @@ func (c *clientApp) init() (err error) {
 	for i, t := range c.conf.Tags {
 		name := ""
 		switch t.Method {
-		case httpMethod:
+		case sts.MethodHTTP:
 			break
 		default:
 			// Ignore unknown methods. This allows us to extend the

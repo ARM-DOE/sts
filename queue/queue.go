@@ -10,17 +10,6 @@ import (
 	"code.arm.gov/dataflow/sts/log"
 )
 
-const (
-	// ByFIFO indicates first in, first out ordering
-	ByFIFO = "fifo"
-
-	// ByLIFO indicates last in, first out ordering
-	ByLIFO = "lifo"
-
-	// ByAlpha indicates an alphabetic ordering
-	ByAlpha = ""
-)
-
 type link interface {
 	getPrev() link
 	getNext() link
@@ -93,7 +82,7 @@ func (f *sortedFile) getPrevName() string {
 		return r.GetPrev()
 	}
 	if f.prev != nil {
-		return f.prev.orig.GetRelPath()
+		return f.prev.orig.GetName()
 	}
 	return ""
 }
@@ -217,30 +206,10 @@ func (g *sortedGroup) insertBefore(next *sortedGroup) {
 }
 
 type sendable struct {
-	orig   sts.Hashed
+	sts.Hashed
 	prev   string
 	offset int64
 	length int64
-}
-
-func (s *sendable) GetPath() string {
-	return s.orig.GetPath()
-}
-
-func (s *sendable) GetRelPath() string {
-	return s.orig.GetRelPath()
-}
-
-func (s *sendable) GetTime() int64 {
-	return s.orig.GetTime()
-}
-
-func (s *sendable) GetSize() int64 {
-	return s.orig.GetSize()
-}
-
-func (s *sendable) GetHash() string {
-	return s.orig.GetHash()
 }
 
 func (s *sendable) GetPrev() string {
@@ -292,13 +261,13 @@ func (q *Tagged) Push(files []sts.Hashed) {
 	q.mux.Lock()
 	defer q.mux.Unlock()
 	for _, file := range files {
-		if orig, ok := q.byFile[file.GetRelPath()]; ok {
+		if orig, ok := q.byFile[file.GetName()]; ok {
 			// TODO: add this to the test...
 			// If a file by this name is already here, let's start over
 			q.removeFile(orig)
 			orig.unlink()
 		}
-		groupName := q.grouper(file.GetRelPath())
+		groupName := q.grouper(file.GetName())
 		group, exists := q.byGroup[groupName]
 		if !exists {
 			group = &sortedGroup{
@@ -313,7 +282,7 @@ func (q *Tagged) Push(files []sts.Hashed) {
 			}
 			if group.conf == nil {
 				log.Info(fmt.Sprintf("Q: No matching tag found: %s",
-					file.GetRelPath()))
+					file.GetName()))
 				continue
 			}
 			q.addGroup(group)
@@ -323,7 +292,7 @@ func (q *Tagged) Push(files []sts.Hashed) {
 			orig:  file,
 			group: group,
 		}
-		log.Debug("Q Add:", file.GetRelPath())
+		log.Debug("Q Add:", file.GetName())
 		q.addFile(fileWrapper)
 	}
 }
@@ -357,14 +326,14 @@ func (q *Tagged) Pop() sts.Sendable {
 	}
 	offset, length := next.allocate(g.conf.ChunkSize)
 	chunk := &sendable{
-		orig:   next.orig,
+		Hashed: next.orig,
 		prev:   next.getPrevName(),
 		offset: offset,
 		length: length,
 	}
-	log.Debug("Q Out:", chunk.orig.GetRelPath(), "<-", chunk.prev)
+	log.Debug("Q Out:", chunk.GetName(), "<-", chunk.prev)
 	if next.isAllocated() {
-		log.Debug("Q Done:", next.orig.GetRelPath(), offset, length, next.orig.GetSize())
+		log.Debug("Q Done:", next.orig.GetName(), offset, length, next.orig.GetSize())
 		// File is fully allocated and can be removed from the queue
 		q.removeFile(next)
 		if next.prev != nil {
@@ -422,7 +391,7 @@ func (q *Tagged) addGroup(group *sortedGroup) {
 }
 
 func (q *Tagged) addFile(file *sortedFile) {
-	q.byFile[file.orig.GetRelPath()] = file
+	q.byFile[file.orig.GetName()] = file
 	f := q.headFile[file.group.name]
 	if f == nil {
 		q.headFile[file.group.name] = file
@@ -432,30 +401,30 @@ func (q *Tagged) addFile(file *sortedFile) {
 loop:
 	for f != nil {
 		switch file.group.conf.Order {
-		case ByFIFO:
+		case sts.OrderFIFO:
 			if file.orig.GetTime() < f.orig.GetTime() {
 				file.insertBefore(f)
 				break loop
 			}
 			if file.orig.GetTime() == f.orig.GetTime() {
-				if file.orig.GetRelPath() < f.orig.GetRelPath() {
+				if file.orig.GetName() < f.orig.GetName() {
 					file.insertBefore(f)
 					break loop
 				}
 			}
-		case ByLIFO:
+		case sts.OrderLIFO:
 			if file.orig.GetTime() > f.orig.GetTime() {
 				file.insertBefore(f)
 				break loop
 			}
 			if file.orig.GetTime() == f.orig.GetTime() {
-				if file.orig.GetRelPath() > f.orig.GetRelPath() {
+				if file.orig.GetName() > f.orig.GetName() {
 					file.insertBefore(f)
 					break loop
 				}
 			}
-		case ByAlpha:
-			if file.orig.GetRelPath() < f.orig.GetRelPath() {
+		case sts.OrderAlpha:
+			if file.orig.GetName() < f.orig.GetName() {
 				file.insertBefore(f)
 				break loop
 			}
@@ -477,5 +446,5 @@ func (q *Tagged) removeFile(file *sortedFile) {
 	if q.headFile[file.group.name] == file {
 		q.headFile[file.group.name] = file.next
 	}
-	delete(q.byFile, file.orig.GetRelPath())
+	delete(q.byFile, file.orig.GetName())
 }

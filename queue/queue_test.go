@@ -17,17 +17,17 @@ func TestGeneral(t *testing.T) {
 	tags := []*Tag{
 		&Tag{
 			Name:     "^g1",
-			Order:    ByFIFO,
+			Order:    sts.OrderFIFO,
 			Priority: 1,
 		},
 		&Tag{
 			Name:     "^g2",
-			Order:    ByLIFO,
+			Order:    sts.OrderLIFO,
 			Priority: 1,
 		},
 		&Tag{
 			Name:     "^g3",
-			Order:    ByAlpha,
+			Order:    sts.OrderAlpha,
 			Priority: 0,
 		},
 	}
@@ -77,7 +77,7 @@ func TestGeneral(t *testing.T) {
 	for {
 		f := queue.Pop()
 		done = append(done, f.(*sendable))
-		g := strings.Split(f.GetRelPath(), ".")[0]
+		g := strings.Split(f.GetName(), ".")[0]
 		doneByGroup[g] = append(doneByGroup[g], f.(*sendable))
 		if len(done) == len(files) {
 			break
@@ -88,21 +88,21 @@ func TestGeneral(t *testing.T) {
 			switch g {
 			case "g1":
 				if f.GetPrev() == "" {
-					t.Error(f.GetRelPath(), "does not have a predessor")
+					t.Error(f.GetName(), "does not have a predessor")
 				}
 				if f.GetTime() < gFiles[i].GetTime() {
-					t.Error(f.GetRelPath(), "should not follow", gFiles[i].GetRelPath())
+					t.Error(f.GetName(), "should not follow", gFiles[i].GetName())
 				}
 			case "g2":
 				if f.GetPrev() == "" {
-					t.Error(f.GetRelPath(), "does not have a predessor")
+					t.Error(f.GetName(), "does not have a predessor")
 				}
 				// g2 and g3 are the same given the original LIFO order of
 				// the array
 				fallthrough
 			case "g3":
 				if f.GetTime() > gFiles[i].GetTime() {
-					t.Error(f.GetRelPath(), "should not follow", gFiles[i].GetRelPath())
+					t.Error(f.GetName(), "should not follow", gFiles[i].GetName())
 				}
 			}
 		}
@@ -116,13 +116,13 @@ func TestGeneral(t *testing.T) {
 		} else if i%2 == 0 {
 			g = 2
 		}
-		if grouper(f.GetRelPath()) != fmt.Sprintf("g%d", g) {
-			t.Error("File (", f.GetRelPath(), fmt.Sprintf(") should be g%d", g))
+		if grouper(f.GetName()) != fmt.Sprintf("g%d", g) {
+			t.Error("File (", f.GetName(), fmt.Sprintf(") should be g%d", g))
 		}
 	}
 	for group, headFile := range queue.headFile {
 		if headFile != nil {
-			t.Error("Group (", group, ") head file should be nil:", headFile.orig.GetRelPath())
+			t.Error("Group (", group, ") head file should be nil:", headFile.orig.GetName())
 		}
 	}
 	if len(queue.byFile) > 0 {

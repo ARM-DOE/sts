@@ -5,6 +5,38 @@ import (
 	"time"
 )
 
+const (
+	// DefLogs is the default logs directory name
+	DefLogs = "logs"
+
+	// DefLogsMsg is the default log messages directory name
+	// (appended to "logs")
+	DefLogsMsg = "messages"
+
+	// DefLogsOut is the default outgoing log messages directory name
+	// (appended to "logs")
+	DefLogsOut = "outgoing_to"
+
+	// DefLogsIn is the default incoming log messages directory name
+	// (appended to "logs")
+	DefLogsIn = "incoming_from"
+
+	// DefOut is the default outgoing data directory name
+	DefOut = "outgoing_to"
+
+	// DefCache is the default cache directory name
+	DefCache = ".sts"
+
+	// DefStage is the default stage directory name
+	DefStage = "stage"
+
+	// DefFinal is the default final directory name
+	DefFinal = "incoming_from"
+
+	// MethodHTTP indicates HTTP transfer method
+	MethodHTTP = "http"
+)
+
 // Logger is the generic logging interface
 type Logger interface {
 	Debug(...interface{})
@@ -15,7 +47,7 @@ type Logger interface {
 // SendLogger is the interface for logging on the sending side
 type SendLogger interface {
 	Sent(Sent)
-	WasSent(relPath string, after time.Time, before time.Time) bool
+	WasSent(name string, after time.Time, before time.Time) bool
 }
 
 // ReceiveLogger is the interface for logging on the incoming side
@@ -95,9 +127,10 @@ type Translate func(string) string
 // File is the most basic interface for a File object
 type File interface {
 	GetPath() string
-	GetRelPath() string
+	GetName() string
 	GetSize() int64
 	GetTime() int64
+	GetMeta() []byte
 }
 
 // Readable is a wrapper for being able to seek, read, and close a file
@@ -114,7 +147,7 @@ type Hashed interface {
 	GetHash() string
 }
 
-// Cached is the interface a file must implement to be cached
+// Cached is the interface a cached file must implement
 type Cached interface {
 	Hashed
 	IsDone() bool

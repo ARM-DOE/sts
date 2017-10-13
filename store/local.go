@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,15 +18,18 @@ const disabledName = ".disabled"
 
 type localFile struct {
 	path    string
-	relPath string
+	name    string
 	info    os.FileInfo
+	meta    *meta
+	metaEnc []byte
 }
 
 func newLocalFile(path string, relPath string, info os.FileInfo) (f *localFile, err error) {
 	f = &localFile{
-		path:    path,
-		relPath: relPath,
-		info:    info,
+		path: path,
+		name: relPath,
+		info: info,
+		meta: &meta{},
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
 		var linkedPath string
@@ -36,7 +40,12 @@ func newLocalFile(path string, relPath string, info os.FileInfo) (f *localFile, 
 			return
 		}
 		if f.info.IsDir() {
-			err = fmt.Errorf("Found symbolic link to directory: %s", path)
+			err = filepath.SkipDir
+			return
+		}
+		f.meta.Link = linkedPath
+		f.metaEnc, err = encodeMeta(f.meta)
+		if err != nil {
 			return
 		}
 	}
@@ -47,8 +56,8 @@ func (f *localFile) GetPath() string {
 	return f.path
 }
 
-func (f *localFile) GetRelPath() string {
-	return f.relPath
+func (f *localFile) GetName() string {
+	return f.name
 }
 
 func (f *localFile) GetSize() int64 {
@@ -57,6 +66,24 @@ func (f *localFile) GetSize() int64 {
 
 func (f *localFile) GetTime() int64 {
 	return f.info.ModTime().Unix()
+}
+
+func (f *localFile) GetMeta() []byte {
+	return f.metaEnc
+}
+
+type meta struct {
+	Link string `json:"link"`
+}
+
+func encodeMeta(m *meta) ([]byte, error) {
+	return json.Marshal(m)
+}
+
+func decodeMeta(encoded []byte) (*meta, error) {
+	m := meta{}
+	err := json.Unmarshal(encoded, &m)
+	return &m, err
 }
 
 // Local implements sts.FileStore for local files
@@ -69,6 +96,18 @@ type Local struct {
 	scanTime       time.Time
 	scanFiles      []sts.File
 	cached         func(string) sts.File
+}
+
+// AddStandardIgnore adds standard ignore patterns
+func (dir *Local) AddStandardIgnore() {
+	ignore := []*regexp.Regexp{
+		regexp.MustCompile(`\.DS_Store$`),
+		regexp.MustCompile(
+			fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutil.LockExt))),
+		regexp.MustCompile(
+			fmt.Sprintf(`%s$`, regexp.QuoteMeta(disabledName))),
+	}
+	dir.Ignore = append(dir.Ignore, ignore...)
 }
 
 // Scan reads the root directory tree and builds a list of files to be returned.
@@ -137,14 +176,20 @@ func (dir *Local) handleNode(path string, info os.FileInfo, err error) error {
 	if fAge < dir.MinAge {
 		return nil
 	}
-	cached := dir.cached(relPath)
-	if cached != nil {
-		if cached.GetTime() == fTime.Unix() && cached.GetSize() == info.Size() {
-			return nil
+	if dir.cached != nil {
+		cached := dir.cached(relPath)
+		if cached != nil {
+			if cached.GetTime() == fTime.Unix() &&
+				cached.GetSize() == info.Size() {
+				return nil
+			}
 		}
 	}
 	var file *localFile
 	if file, err = newLocalFile(path, relPath, info); err != nil {
+		if err == filepath.SkipDir {
+			return nil
+		}
 		return err
 	}
 	dir.scanFiles = append(dir.scanFiles, file)
@@ -163,7 +208,7 @@ func (dir *Local) Sync(origFile sts.File) (newFile sts.File, err error) {
 	if info, err = os.Lstat(origFile.GetPath()); err != nil {
 		return
 	}
-	if file, err = newLocalFile(origFile.GetPath(), origFile.GetRelPath(), info); err != nil {
+	if file, err = newLocalFile(origFile.GetPath(), origFile.GetName(), info); err != nil {
 		return
 	}
 	newFile = file
@@ -171,6 +216,9 @@ func (dir *Local) Sync(origFile sts.File) (newFile sts.File, err error) {
 		return
 	}
 	if file.GetSize() != origFile.GetSize() {
+		return
+	}
+	if string(file.GetMeta()) != string(origFile.GetMeta()) {
 		return
 	}
 	newFile = nil
@@ -190,5 +238,16 @@ func (dir *Local) GetOpener() sts.Open {
 
 // Open returns a readable for a local file instance
 func (dir *Local) Open(origFile sts.File) (sts.Readable, error) {
-	return os.Open(origFile.GetPath())
+	path := origFile.GetPath()
+	metaEnc := origFile.GetMeta()
+	if len(metaEnc) > 0 {
+		meta, err := decodeMeta(metaEnc)
+		if err != nil {
+			return nil, err
+		}
+		if meta.Link != "" {
+			path = meta.Link
+		}
+	}
+	return os.Open(path)
 }

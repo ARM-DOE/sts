@@ -87,7 +87,7 @@ func TestJSON(t *testing.T) {
 		t.Fatal("Iterate failed")
 	}
 	cache.Iterate(func(f sts.Cached) bool {
-		cache.Remove(f.GetRelPath())
+		cache.Remove(f.GetName())
 		return false
 	})
 }
