@@ -66,8 +66,11 @@ func newApp() *app {
 	help := flag.Bool("help", false, "Print the help message")
 	vers := flag.Bool("version", false, "Print version information")
 	debug := flag.Bool("debug", false, "Log program flow")
-	mode := flag.String("mode", modeAuto, fmt.Sprintf("Mode: \"%s\", \"%s\", \"%s\"", modeSend, modeRecv, modeAuto))
-	loop := flag.Bool("loop", false, "Run in a loop, i.e. don't exit until interrupted")
+	mode := flag.String("mode", modeAuto,
+		fmt.Sprintf("Mode: \"%s\", \"%s\", \"%s\"",
+			modeSend, modeRecv, modeAuto))
+	loop := flag.Bool("loop", false,
+		"Run in a loop, i.e. don't exit until interrupted")
 	confPath := flag.String("conf", "", "Configuration file path")
 
 	// Parse command line
@@ -109,6 +112,16 @@ func newApp() *app {
 		panic(fmt.Sprintf("Failed to parse configuration:\n%s", err.Error()))
 	}
 	a.conf = conf
+	err = sts.InitPaths(
+		a.conf,
+		filepath.Join,
+		func(path *string, isDir bool) error {
+			*path, err = fileutil.InitPath(a.root, *path, isDir)
+			return err
+		})
+	if err != nil {
+		panic(err.Error())
+	}
 
 	return a
 }
@@ -142,10 +155,13 @@ func (a *app) run() {
 }
 
 func (a *app) startServer() bool {
+	var err error
 	if a.mode != modeRecv && a.mode != modeAuto {
 		return false
 	}
-	if a.conf.Server == nil || a.conf.Server.Dirs == nil || a.conf.Server.Server == nil {
+	if a.conf.Server == nil ||
+		a.conf.Server.Dirs == nil ||
+		a.conf.Server.Server == nil {
 		if a.mode == modeAuto {
 			return false
 		}
@@ -156,47 +172,16 @@ func (a *app) startServer() bool {
 		panic("HTTP port not specified")
 	}
 	dirs := conf.Dirs
-	if dirs.Logs == "" {
-		dirs.Logs = sts.DefLogs
-	}
-	if dirs.LogsMsg == "" {
-		dirs.LogsMsg = sts.DefLogsMsg
-	}
-	if dirs.LogsIn == "" {
-		dirs.LogsIn = sts.DefLogsIn
-	}
-	if dirs.Stage == "" {
-		dirs.Stage = sts.DefStage
-	}
-	if dirs.Final == "" {
-		dirs.Final = sts.DefFinal
-	}
-	dirPaths := map[string]string{
-		"log":   filepath.Join(dirs.Logs, dirs.LogsMsg),
-		"logIn": filepath.Join(dirs.Logs, dirs.LogsIn),
-		"stage": dirs.Stage,
-		"final": dirs.Final,
-		"serve": dirs.Serve,
-	}
-	var err error
-	for key, path := range dirPaths {
-		if path == "" {
-			continue
-		}
-		if dirPaths[key], err = fileutil.InitPath(a.root, path, true); err != nil {
-			panic(err)
-		}
-	}
-	log.Init(dirPaths["log"], a.debug)
+	log.Init(dirs.LogMsg, a.debug)
 	stager := stage.New(
-		dirPaths["stage"],
-		dirPaths["final"],
-		log.NewReceive(dirPaths["logIn"]))
+		dirs.Stage,
+		dirs.Final,
+		log.NewReceive(dirs.LogIn))
 	if err = stager.Recover(); err != nil {
 		panic(err)
 	}
 	server := &http.Server{
-		ServeDir:       dirPaths["serve"],
+		ServeDir:       dirs.Serve,
 		Host:           conf.Server.Host,
 		Port:           conf.Server.Port,
 		Sources:        conf.Sources,
@@ -206,16 +191,9 @@ func (a *app) startServer() bool {
 		GateKeeper:     stager,
 	}
 	if conf.Server.TLSCertPath != "" && conf.Server.TLSKeyPath != "" {
-		var certPath, keyPath string
-		if certPath, err = fileutil.InitPath(
-			a.root, conf.Server.TLSCertPath, false); err != nil {
-			panic(err)
-		}
-		if keyPath, err = fileutil.InitPath(
-			a.root, conf.Server.TLSKeyPath, false); err != nil {
-			panic(err)
-		}
-		if server.TLS, err = http.GetTLSConf(certPath, keyPath, ""); err != nil {
+		if server.TLS, err = http.GetTLSConf(
+			conf.Server.TLSCertPath,
+			conf.Server.TLSKeyPath, ""); err != nil {
 			panic(err)
 		}
 	}
@@ -243,7 +221,9 @@ func (a *app) startClients() bool {
 	if a.mode != modeSend && a.mode != modeAuto {
 		return false
 	}
-	if a.conf.Client == nil || a.conf.Client.Sources == nil || len(a.conf.Client.Sources) < 1 {
+	if a.conf.Client == nil ||
+		a.conf.Client.Sources == nil ||
+		len(a.conf.Client.Sources) < 1 {
 		if a.mode == modeAuto {
 			return false
 		}
@@ -251,48 +231,20 @@ func (a *app) startClients() bool {
 	}
 	var err error
 	dirs := a.conf.Client.Dirs
-	if dirs.Logs == "" {
-		dirs.Logs = sts.DefLogs
-	}
-	if dirs.LogsMsg == "" {
-		dirs.LogsMsg = sts.DefLogsMsg
-	}
-	if dirs.LogsOut == "" {
-		dirs.LogsOut = sts.DefLogsOut
-	}
-	if dirs.Cache == "" {
-		dirs.Cache = sts.DefCache
-	}
-	if dirs.Out == "" {
-		dirs.Out = sts.DefOut
-	}
-	logMsgPath, err := fileutil.InitPath(
-		a.root, filepath.Join(dirs.Logs, dirs.LogsMsg), true)
-	if err != nil {
-		panic(err)
-	}
-	log.Init(logMsgPath, a.debug)
-	logOutPath, err := fileutil.InitPath(
-		a.root, filepath.Join(dirs.Logs, dirs.LogsOut), true)
-	if err != nil {
-		panic(err)
-	}
+	log.Init(dirs.LogMsg, a.debug)
 	a.clientStop = make(map[chan<- bool]<-chan bool)
 	watching := make(map[string]bool)
 	for _, source := range a.conf.Client.Sources {
 		c := &clientApp{
-			root:         a.root,
 			conf:         source,
 			dirCache:     dirs.Cache,
-			dirOut:       dirs.Out,
 			dirOutFollow: dirs.OutFollow,
-			logPath:      logOutPath,
 		}
 		if err = c.init(); err != nil {
 			panic(err)
 		}
 		a.clients = append(a.clients, c)
-		watch := c.outPath
+		watch := c.conf.OutDir
 		if _, ok := watching[watch]; ok {
 			panic("Multiple sources configured to watch the same outgoing directory")
 		}

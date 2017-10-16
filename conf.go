@@ -80,9 +80,9 @@ func (conf *ClientConf) UnmarshalYAML(
 type ClientDirs struct {
 	Out       string `yaml:"out"`
 	OutFollow bool   `yaml:"out-follow"`
-	Logs      string `yaml:"logs"`
-	LogsOut   string `yaml:"logs-out"`
-	LogsMsg   string `yaml:"logs-flow"`
+	Log       string `yaml:"logs"`
+	LogOut    string `yaml:"logs-out"`
+	LogMsg    string `yaml:"logs-flow"`
 	Cache     string `yaml:"cache"`
 }
 
@@ -91,6 +91,7 @@ type ClientDirs struct {
 type SourceConf struct {
 	Name         string
 	OutDir       string
+	LogDir       string
 	Threads      int
 	CacheAge     time.Duration
 	MinAge       time.Duration
@@ -118,6 +119,7 @@ func (ss *SourceConf) UnmarshalYAML(
 	var aux struct {
 		Name         string        `yaml:"name"`
 		OutDir       string        `yaml:"out-dir"`
+		LogDir       string        `yaml:"logout-dir"`
 		Threads      int           `yaml:"threads"`
 		CacheAge     time.Duration `yaml:"cache-age"`
 		MinAge       time.Duration `yaml:"min-age"`
@@ -142,6 +144,7 @@ func (ss *SourceConf) UnmarshalYAML(
 	}
 	ss.Name = aux.Name
 	ss.OutDir = aux.OutDir
+	ss.LogDir = aux.LogDir
 	ss.Threads = aux.Threads
 	ss.CacheAge = aux.CacheAge
 	ss.MinAge = aux.MinAge
@@ -240,12 +243,12 @@ type ServerConf struct {
 // ServerDirs is the struct for managing the incoming directory configuration
 // items.
 type ServerDirs struct {
-	Logs    string `yaml:"logs"`
-	LogsIn  string `yaml:"logs-in"`
-	LogsMsg string `yaml:"logs-flow"`
-	Stage   string `yaml:"stage"`
-	Final   string `yaml:"final"`
-	Serve   string `yaml:"serve"`
+	Log    string `yaml:"logs"`
+	LogIn  string `yaml:"logs-in"`
+	LogMsg string `yaml:"logs-flow"`
+	Stage  string `yaml:"stage"`
+	Final  string `yaml:"final"`
+	Serve  string `yaml:"serve"`
 }
 
 // HTTPServer is the struct for managing the incoming HTTP host
@@ -276,4 +279,98 @@ func NewConf(path string) (*Conf, error) {
 		return nil, err
 	}
 	return conf, nil
+}
+
+// InitPaths will initialize all conf paths and use the provided root for
+// resolving relative paths
+func InitPaths(conf *Conf,
+	join func(...string) string,
+	mkpath func(*string, bool) error) (err error) {
+	var dirs []*string
+	var files []*string
+	if conf.Client != nil {
+		SetDefault(map[*string]string{
+			&conf.Client.Dirs.Cache:  DefCache,
+			&conf.Client.Dirs.Log:    DefLog,
+			&conf.Client.Dirs.LogMsg: DefLogMsg,
+			&conf.Client.Dirs.LogOut: DefLogOut,
+			&conf.Client.Dirs.Out:    DefOut,
+		})
+		conf.Client.Dirs.LogMsg = join(
+			conf.Client.Dirs.Log,
+			conf.Client.Dirs.LogMsg)
+		conf.Client.Dirs.LogOut = join(
+			conf.Client.Dirs.Log,
+			conf.Client.Dirs.LogOut)
+		dirs = append(dirs,
+			&conf.Client.Dirs.Cache,
+			&conf.Client.Dirs.Log,
+			&conf.Client.Dirs.LogMsg,
+			&conf.Client.Dirs.LogOut,
+			&conf.Client.Dirs.Out)
+		files = append(files,
+			&conf.Server.Server.TLSKeyPath,
+			&conf.Server.Server.TLSCertPath)
+		for _, src := range conf.Client.Sources {
+			if src.Target.Name == "" {
+				src.Target.Name = src.Target.Host
+			}
+			SetDefault(map[*string]string{
+				&src.OutDir: join(
+					conf.Client.Dirs.Out, src.Target.Name),
+				&src.LogDir: join(
+					conf.Client.Dirs.LogOut, src.Target.Name),
+			})
+			dirs = append(dirs,
+				&src.OutDir,
+				&src.LogDir)
+			files = append(files,
+				&src.Target.TLSCertPath)
+		}
+	}
+	if conf.Server != nil {
+		SetDefault(map[*string]string{
+			&conf.Server.Dirs.Stage:  DefStage,
+			&conf.Server.Dirs.Final:  DefFinal,
+			&conf.Server.Dirs.Log:    DefLog,
+			&conf.Server.Dirs.LogMsg: DefLogMsg,
+			&conf.Server.Dirs.LogIn:  DefLogIn,
+		})
+		conf.Server.Dirs.LogMsg = join(
+			conf.Server.Dirs.Log,
+			conf.Server.Dirs.LogMsg)
+		conf.Server.Dirs.LogIn = join(
+			conf.Server.Dirs.Log,
+			conf.Server.Dirs.LogIn)
+		dirs = append(dirs,
+			&conf.Server.Dirs.Log,
+			&conf.Server.Dirs.LogMsg,
+			&conf.Server.Dirs.LogIn,
+			&conf.Server.Dirs.Stage,
+			&conf.Server.Dirs.Serve,
+			&conf.Server.Dirs.Final)
+		files = append(files,
+			&conf.Server.Server.TLSKeyPath,
+			&conf.Server.Server.TLSCertPath)
+	}
+	for i, p := range append(dirs, files...) {
+		if *p == "" {
+			continue
+		}
+		err = mkpath(p, i < len(dirs))
+		if err != nil {
+			return
+		}
+	}
+	return
+}
+
+// SetDefault will take a map of string pointers and set the values to the
+// corresponding string in the map if it is empty
+func SetDefault(def map[*string]string) {
+	for sPtr, defaultStr := range def {
+		if *sPtr == "" {
+			*sPtr = defaultStr
+		}
+	}
 }

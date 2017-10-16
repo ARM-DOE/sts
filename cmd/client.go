@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/tls"
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/cache"
 	"code.arm.gov/dataflow/sts/client"
-	"code.arm.gov/dataflow/sts/fileutil"
 	"code.arm.gov/dataflow/sts/http"
 	"code.arm.gov/dataflow/sts/log"
 	"code.arm.gov/dataflow/sts/payload"
@@ -21,17 +19,12 @@ import (
 )
 
 type clientApp struct {
-	root         string
 	dirCache     string
-	dirOut       string
 	dirOutFollow bool
 	conf         *sts.SourceConf
 	host         string
 	port         int
 	tls          *tls.Config
-	logPath      string
-	outPath      string
-	cachePath    string
 	broker       *client.Broker
 }
 
@@ -58,16 +51,9 @@ func (c *clientApp) setDefaults() (err error) {
 			return
 		}
 	}
-	if c.conf.Target.Name == "" {
-		c.conf.Target.Name = c.host
-	}
 	if c.conf.Target.TLSCertPath != "" {
-		var certPath string
-		if certPath, err = fileutil.InitPath(
-			c.root, c.conf.Target.TLSCertPath, false); err != nil {
-			return
-		}
-		if c.tls, err = http.GetTLSConf("", "", certPath); err != nil {
+		if c.tls, err = http.GetTLSConf(
+			"", "", c.conf.Target.TLSCertPath); err != nil {
 			return
 		}
 	}
@@ -119,29 +105,15 @@ func (c *clientApp) init() (err error) {
 	if err = c.setDefaults(); err != nil {
 		return
 	}
-	c.outPath = c.conf.OutDir
-	if c.outPath != "" {
-		if c.outPath, err = fileutil.InitPath(
-			c.root, c.outPath, true); err != nil {
-			return
-		}
-	} else if c.outPath, err = fileutil.InitPath(c.root,
-		filepath.Join(c.dirOut, c.conf.Target.Name), true); err != nil {
-		return
-	}
-	if c.cachePath, err = fileutil.InitPath(
-		c.root, c.dirCache, true); err != nil {
-		return
-	}
 	store := &store.Local{
-		Root:           c.outPath,
+		Root:           c.conf.OutDir,
 		MinAge:         c.conf.MinAge,
 		Include:        c.conf.Include,
 		Ignore:         c.conf.Ignore,
 		FollowSymlinks: c.dirOutFollow,
 	}
 	store.AddStandardIgnore()
-	cache, err := cache.NewJSON(c.cachePath, c.outPath, "")
+	cache, err := cache.NewJSON(c.dirCache, c.conf.OutDir, "")
 	if err != nil {
 		return
 	}
@@ -219,7 +191,7 @@ func (c *clientApp) init() (err error) {
 			BuildPayload: payload.NewBin,
 			Transmitter:  httpClient.Transmit,
 			Validator:    httpClient.Validate,
-			Logger:       log.NewSend(c.logPath, c.conf.Target.Name),
+			Logger:       log.NewSend(c.conf.LogDir),
 			Tagger:       nameToTag,
 			CacheAge:     c.conf.CacheAge,
 			ScanDelay:    c.conf.ScanDelay,

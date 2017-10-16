@@ -20,9 +20,9 @@ type Send struct {
 }
 
 // NewSend creates a new Send logging instance
-func NewSend(rootDir string, host string) *Send {
+func NewSend(rootDir string) *Send {
 	return &Send{
-		logger: newRollingFile(filepath.Join(rootDir, host), "", 0),
+		logger: newRollingFile(rootDir, "", 0),
 		lock:   sync.RWMutex{},
 	}
 }

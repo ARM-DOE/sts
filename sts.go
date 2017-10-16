@@ -6,20 +6,20 @@ import (
 )
 
 const (
-	// DefLogs is the default logs directory name
-	DefLogs = "logs"
+	// DefLog is the default logs directory name
+	DefLog = "logs"
 
-	// DefLogsMsg is the default log messages directory name
+	// DefLogMsg is the default log messages directory name
 	// (appended to "logs")
-	DefLogsMsg = "messages"
+	DefLogMsg = "messages"
 
-	// DefLogsOut is the default outgoing log messages directory name
+	// DefLogOut is the default outgoing log messages directory name
 	// (appended to "logs")
-	DefLogsOut = "outgoing_to"
+	DefLogOut = "outgoing_to"
 
-	// DefLogsIn is the default incoming log messages directory name
+	// DefLogIn is the default incoming log messages directory name
 	// (appended to "logs")
-	DefLogsIn = "incoming_from"
+	DefLogIn = "incoming_from"
 
 	// DefOut is the default outgoing data directory name
 	DefOut = "outgoing_to"
