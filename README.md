@@ -1,7 +1,8 @@
 Site Transfer Software (STS)
 ----------------------------
 
-STS is a utility used for transmitting data over wide-area networks with the following priorities:
+STS is a utility used for transmitting data over wide-area networks with the
+following priorities:
 
 - In-order delivery
 - Confirmed transfer via hash validation
@@ -24,16 +25,23 @@ $ sts -help
     	Mode: "out", "in", "auto" (default "auto")
 ```
 
-**NOTE**: Specifying `-mode auto` (or if `-mode` omitted since `auto` is the default) will use the configuration file to determine which mode(s) to run.  If only an `OUT` block is present then it will run in `out` mode.  If only an `IN` block is present then it will run in `in` mode.  If both exist then both are run.
+**NOTE**: Specifying `-mode auto` (or if `-mode` omitted since `auto` is the
+    default) will use the configuration file to determine which mode(s) to run.
+    If only an `OUT` block is present then it will run in `out` mode.  If only
+    an `IN` block is present then it will run in `in` mode.  If both exist then
+    both are run.
 
 ### Example Configuration
 
-Below is an example configuration file.  The "outgoing" and "incoming" blocks do not have to be included in the same configuration file.  In fact, by default if `-conf` is not used, STS will look in `$STS_HOME` (or `$PWD` if not defined) for `sts.{mode}.yaml` (or `sts.yaml` if running `-mode auto`).
+Below is an example configuration file.  The "outgoing" and "incoming" blocks
+do not have to be included in the same configuration file.  In fact, by default
+if `-conf` is not used, STS will look in `$STS_HOME` (or `$PWD` if not defined)
+for `sts.{mode}.yaml` (or `sts.yaml` if running `-mode auto`).
 
 ```yaml
 # OUTGOING CONFIGURATION
 OUT:
-  dirs: # Outgoing directory configuration; relative to $STS_HOME or $PWD if not absolute
+  dirs: # Outgoing directory configuration; relative to $STS_HOME or directory of configuration file if not absolute
     cache : .sts     # Used to store queue cache(s)
     out   : data/out # Directory to watch for files to send; appends "/{target name}"
     logs  : data/log # Root directory for logging

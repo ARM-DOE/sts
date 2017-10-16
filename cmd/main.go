@@ -36,16 +36,6 @@ func main() {
 	app.run()
 }
 
-// getRoot returns the STS root.  It will use $STS_HOME and fall back to the
-// directory of the executable.
-func getRoot() (root string) {
-	root = os.Getenv("STS_HOME")
-	if root == "" {
-		root, _ = filepath.Abs(filepath.Dir(os.Args[0]))
-	}
-	return
-}
-
 type app struct {
 	debug      bool
 	loop       bool
@@ -92,20 +82,26 @@ func newApp() *app {
 		mode:     strings.ToLower(*mode),
 		loop:     *loop,
 		confPath: *confPath,
-		root:     getRoot(),
+		root:     os.Getenv("STS_HOME"),
 	}
 
 	// Parse configuration
 	if a.confPath == "" {
+		if a.root == "" {
+			panic("Cannot find configuration file")
+		}
 		if a.mode == modeAuto {
-			a.confPath = filepath.Join(getRoot(), "conf", "sts.yaml")
+			a.confPath = filepath.Join(a.root, "conf", "sts.yaml")
 		} else {
-			a.confPath = filepath.Join(getRoot(), "conf", "sts."+a.mode+".yaml")
+			a.confPath = filepath.Join(a.root, "conf", "sts."+a.mode+".yaml")
 		}
 	} else if !filepath.IsAbs(a.confPath) {
 		if a.confPath, err = filepath.Abs(a.confPath); err != nil {
 			panic(err.Error())
 		}
+	}
+	if a.root == "" {
+		a.root = filepath.Dir(a.confPath)
 	}
 	conf, err := sts.NewConf(a.confPath)
 	if err != nil {
