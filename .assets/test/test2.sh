@@ -45,7 +45,7 @@ mv $STS_HOME/data/log/incoming_from $STS_HOME/data2/log
 echo "Restarting..."
 $cmd3 > /dev/null &
 
-sleep 30
+sleep 10
 
 pkill $exe
 

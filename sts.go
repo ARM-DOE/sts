@@ -1,100 +1,273 @@
 package sts
 
-import "time"
+import (
+	"io"
+	"time"
+)
 
-// FinalStatusService is the interface for determining a file's final status.
-type FinalStatusService interface {
+const (
+	// DefLog is the default logs directory name
+	DefLog = "logs"
+
+	// DefLogMsg is the default log messages directory name
+	// (appended to "logs")
+	DefLogMsg = "messages"
+
+	// DefLogOut is the default outgoing log messages directory name
+	// (appended to "logs")
+	DefLogOut = "outgoing_to"
+
+	// DefLogIn is the default incoming log messages directory name
+	// (appended to "logs")
+	DefLogIn = "incoming_from"
+
+	// DefOut is the default outgoing data directory name
+	DefOut = "outgoing_to"
+
+	// DefCache is the default cache directory name
+	DefCache = ".sts"
+
+	// DefStage is the default stage directory name
+	DefStage = "stage"
+
+	// DefFinal is the default final directory name
+	DefFinal = "incoming_from"
+
+	// MethodHTTP indicates HTTP transfer method
+	MethodHTTP = "http"
+)
+
+// Logger is the generic logging interface
+type Logger interface {
+	Debug(...interface{})
+	Info(...interface{})
+	Error(...interface{})
+}
+
+// SendLogger is the interface for logging on the sending side
+type SendLogger interface {
+	Sent(Sent)
+	WasSent(name string, after time.Time, before time.Time) bool
+}
+
+// ReceiveLogger is the interface for logging on the incoming side
+type ReceiveLogger interface {
+	Received(source string, file Received)
+	WasReceived(
+		source string,
+		relPath string,
+		after time.Time,
+		before time.Time) bool
+}
+
+// FileSource is the interface for reading and deleting from a store of file
+// objects on the client (i.e. sending) side
+type FileSource interface {
+	Scan(func(string) File) ([]File, time.Time, error)
+	GetOpener() Open
+	Remove(File) error
+	Sync(File) (File, error)
+	IsNotExist(error) bool
+}
+
+// FileCache is the interface for caching a collection of files
+type FileCache interface {
+	Boundary() time.Time
+	Iterate(func(Cached) bool)
+	Get(string) Cached
+	Add(Hashed)
+	Done(string)
+	Remove(string)
+	Persist(boundary time.Time) error
+}
+
+// FileQueue is the interface for getting files in the proper order
+type FileQueue interface {
+	Push([]Hashed)
+	Pop() Sendable
+}
+
+// GateKeeper is the interface for managing the "putting away" of files
+// received on the server
+type GateKeeper interface {
+	Recover() error
+	Scan(source string) ([]*Partial, error)
+	Receive(*Partial, io.Reader) error
 	GetFileStatus(source, relPath string, sent time.Time) int
 }
 
-// ScanFile is the interface for a file as found on disk.
-type ScanFile interface {
-	GetPath(bool) string
-	GetRelPath() string
+// Recover is the function type for determining what partial files need to be
+// sent since previous run
+type Recover func() ([]*Partial, error)
+
+// Open is a generic function for creating a Readable handle to a file
+type Open func(File) (Readable, error)
+
+// PayloadFactory creates a Payload instance based on the input max size (in
+// bytes) and Open function
+type PayloadFactory func(int64, Open) Payload
+
+// Transmit is the function type for actually sending payload over the wire (or
+// whatever).  It returns some representation of how much was successfully
+// transmitted and any error encountered.
+type Transmit func(Payload) (int, error)
+
+// PayloadDecoderFactory creates a decoder instance to be used to parse a
+// multipart byte stream with the metadata at the beginning
+type PayloadDecoderFactory func(
+	metaLen int, payload io.Reader) (PayloadDecoder, error)
+
+// Validate is the function type for validating files sent by the client were
+// successfully received by the server
+type Validate func([]Pollable) ([]Polled, error)
+
+// Translate is a general function type for converting one string to another
+type Translate func(string) string
+
+// File is the most basic interface for a File object
+type File interface {
+	GetPath() string
+	GetName() string
 	GetSize() int64
 	GetTime() int64
-	Reset() (bool, error)
+	GetMeta() []byte
 }
 
-// SortFile is the interface for a file as needed for sorting.
-// Implements ScanFile.
-type SortFile interface {
-	ScanFile
-	GetOrigFile() ScanFile
-	GetPrevName() string
+// Readable is a wrapper for being able to seek, read, and close a file
+// generically
+type Readable interface {
+	io.Reader
+	io.Seeker
+	io.Closer
 }
 
-// SendFile is the interface for a file as needed for sending.
-// Implements ScanFile.
-type SendFile interface {
-	ScanFile
+// Hashed is the interface a file must implement to include a signature
+type Hashed interface {
+	File
 	GetHash() string
-	GetPrevName() string
-	SetStarted(time.Time)
+}
+
+// Cached is the interface a cached file must implement
+type Cached interface {
+	Hashed
+	IsDone() bool
+}
+
+// Recovered is the interface a file must implement to be recovered after a
+// partial send
+type Recovered interface {
+	Hashed
+	GetPrev() string
+	Allocate(int64) (int64, int64)
+	IsAllocated() bool
+}
+
+// Sendable is the interface a file must implement to be sent by the client
+type Sendable interface {
+	Hashed
+	GetPrev() string
+	GetSlice() (int64, int64)
+}
+
+// Binnable is the interface a file must implement to have a chunk be part of
+// a sendable bin
+type Binnable interface {
+	Sendable
+	GetNextAlloc() (int64, int64)
+	AddAlloc(int64)
+	IsAllocated() bool
+}
+
+// Binned is the interface for a single file chunk that is part of a payload
+type Binned interface {
+	GetName() string
+	GetPrev() string
+	GetFileHash() string
+	GetFileSize() int64
+	GetSlice() (int64, int64)
+}
+
+// Payload is the interface to a slice of Binnables that can be read for
+// transmission
+type Payload interface {
+	Add(Binnable) bool
+	Remove(Binned)
+	IsFull() bool
+	Split(nParts int) Payload
+	GetSize() int64
+	GetParts() []Binned
+	EncodeHeader() ([]byte, error)
+	GetEncoder() io.Reader
 	GetStarted() time.Time
-	SetCompleted(time.Time)
 	GetCompleted() time.Time
-	GetNextAlloc() (int64, int64)
-	GetBytesAlloc() int64
-	GetBytesSent() int64
-	AddAlloc(int64)
-	AddSent(int64) bool // Returns IsSent() to keep the transaction atomic
-	TimeMs() int64
-	IsSent() bool
-	SetCancel(bool)
-	GetCancel() bool
-	Stat() (bool, error)
 }
 
-// RecoverFile is a partial duplicate of SendFile and will be the underlying
-// file reference for the sendFile wrapper and these are the functions that
-// should be used to properly fill bins with only those parts of the file that
-// haven't already been received.
-// Also implements ScanFile in order to be inserted into the pipeline at the
-// sorter.
-type RecoverFile interface {
-	ScanFile
+// PayloadDecoder is the interface on the receiving side to a sent payload
+type PayloadDecoder interface {
+	GetParts() []Binned
+	Next() (io.Reader, bool)
+}
+
+// Partial is the JSON-encodable struct containing metadata for a single file
+// on the receiving end
+type Partial struct {
+	Name   string       `json:"path"`
+	Prev   string       `json:"prev"`
+	Size   int64        `json:"size"`
+	Hash   string       `json:"hash"`
+	Source string       `json:"src"`
+	Parts  []*ByteRange `json:"parts"`
+}
+
+// ByteRange is the JSON-encodable struct used by the Partial for tracking a
+// a single byte range
+type ByteRange struct {
+	Beg int64 `json:"b"`
+	End int64 `json:"e"`
+}
+
+// Sent is the interface a file must implement to be recorded as sent
+type Sent interface {
+	GetName() string
+	GetSize() int64
 	GetHash() string
-	GetNextAlloc() (int64, int64)
-	GetBytesAlloc() int64
-	GetBytesSent() int64
-	AddAlloc(int64)
-	AddSent(int64)
-	IsSent() bool
-	Stat() (bool, error)
+	TimeMs() int64
 }
 
-// Companion is the interface to a companion file
-type Companion interface {
-	AddPart(partHash string, beg int64, end int64)
-	Write() error
-	Delete() error
-	IsComplete() bool
-}
-
-// RecvFile is the interface for a received file
-type RecvFile interface {
-	ScanFile
-	GetCompanion() Companion
-}
-
-// PollFile is the interface for a file as needed for polling.
-type PollFile interface {
-	GetOrigFile() interface{} // Needs to be generic to accommodate polling at different stages.
-	GetRelPath() string
+// Pollable is the interface a file must implement to be polled by the client
+// for whether or not the server received the file successfully
+type Pollable interface {
+	GetName() string
 	GetStarted() time.Time
 }
 
-// DoneFile is the interface for a file as needed for completion.
-type DoneFile interface {
-	GetPath() string
-	GetRelPath() string
-	GetSuccess() bool
+// Polled is the interface a file must implement as a response to being polled
+type Polled interface {
+	GetName() string
+	NotFound() bool
+	Waiting() bool
+	Failed() bool
+	Received() bool
 }
 
-// ConfirmFile is used by both the poller and receiver for validating full-file
-// transfers.  The members are public for JSON encoding/decoding.
-type ConfirmFile struct {
-	RelPath string `json:"n"`
-	Started int64  `json:"t"` // Expects Unix
+// Received is the interface a file must implement to be logged as received
+type Received interface {
+	GetName() string
+	GetSize() int64
+	GetHash() string
 }
+
+const (
+	// ConfirmNone is the indicator that a file has not been confirmed.
+	ConfirmNone = 0
+
+	// ConfirmFailed is the indicator that file confirmation failed.
+	ConfirmFailed = 1
+
+	// ConfirmPassed is the indicator that file confirmation succeeded.
+	ConfirmPassed = 2
+
+	// ConfirmWaiting is the indicator that file confirmation succeeded but its
+	// predecessor has not been confirmed.
+	ConfirmWaiting = 3
+)
