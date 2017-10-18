@@ -161,7 +161,7 @@ func (j *JSON) Remove(key string) {
 
 // Persist writes the in-memory cache to disk
 func (j *JSON) Persist(boundary time.Time) (err error) {
-	if j.Time.Equal(boundary) && !j.dirty {
+	if !boundary.IsZero() && j.Time.Equal(boundary) && !j.dirty {
 		return
 	}
 	j.Time = boundary
