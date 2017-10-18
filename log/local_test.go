@@ -11,7 +11,7 @@ import (
 	"code.arm.gov/dataflow/sts/mock"
 )
 
-var root = "/var/tmp/sts/log"
+var root = "/var/tmp/sts-log"
 
 func tearDown() {
 	os.RemoveAll(root)
@@ -27,7 +27,7 @@ func TestDefault(t *testing.T) {
 
 func TestSend(t *testing.T) {
 	tearDown()
-	logger := NewSend(root, "host")
+	logger := NewSend(root)
 	n := 1000
 	start := time.Now()
 	var names []string
