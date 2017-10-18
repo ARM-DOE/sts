@@ -728,6 +728,9 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 			}
 			break
 		}
+		// Update the poll time only after the request has completed so as to
+		// not include the request time in the interval delay
+		pollTime = time.Now()
 		for _, f := range polled {
 			switch {
 			case f.NotFound():
