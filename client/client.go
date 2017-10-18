@@ -147,7 +147,8 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 	done <- true
 }
 
-func (broker *Broker) recover() (send []sts.Hashed, poll []sts.Pollable, err error) {
+func (broker *Broker) recover() (
+	send []sts.Hashed, poll []sts.Pollable, err error) {
 	var partials []*sts.Partial
 	nErr := 0
 	for {
@@ -257,7 +258,8 @@ func (broker *Broker) recover() (send []sts.Hashed, poll []sts.Pollable, err err
 				send = append(send, cached)
 				break
 			case f.Received():
-				if !broker.Conf.Logger.WasSent(f.GetName(), time.Unix(cached.GetTime(), 0), time.Now()) {
+				if !broker.Conf.Logger.WasSent(
+					f.GetName(), time.Unix(cached.GetTime(), 0), time.Now()) {
 					broker.Conf.Logger.Sent(&progressFile{
 						name:      cached.GetName(),
 						completed: time.Unix(cached.GetTime(), 0),
@@ -268,6 +270,10 @@ func (broker *Broker) recover() (send []sts.Hashed, poll []sts.Pollable, err err
 				broker.finish(f)
 				break
 			}
+		}
+		// Make sure changes get persisted after the batch is processed
+		if err = broker.Conf.Cache.Persist(time.Time{}); err != nil {
+			log.Error(err.Error())
 		}
 	}
 	err = nil
@@ -370,14 +376,16 @@ func (broker *Broker) scan() []sts.Hashed {
 	for _, file := range wrapped {
 		cache.Add(file)
 	}
-	if err = cache.Persist(scanTime.Add(-1 * broker.Conf.CacheAge)); err != nil {
+	if err = cache.Persist(
+		scanTime.Add(-1 * broker.Conf.CacheAge)); err != nil {
 		log.Error(err)
 		return nil
 	}
 	return wrapped
 }
 
-func (broker *Broker) hash(scanned []sts.Hashed, batchSize int64) *sync.WaitGroup {
+func (broker *Broker) hash(
+	scanned []sts.Hashed, batchSize int64) *sync.WaitGroup {
 	hashFiles := func(files []sts.Hashed, wg *sync.WaitGroup) {
 		defer wg.Done()
 		log.Debug(fmt.Sprintf("HASHing %d files...", len(files)))
@@ -564,7 +572,8 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 					payload.Remove(binned)
 					continue
 				}
-				if f, err := broker.Conf.Store.Sync(file); f != nil || err != nil {
+				if f, err := broker.Conf.Store.Sync(
+					file); f != nil || err != nil {
 					// If the file changed, it will get picked up again
 					// automatically, so we can just ignore it
 					payload.Remove(binned)
@@ -641,7 +650,8 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 					// proportion of this complete file's size to that of the
 					// bin's.  This is to get a more accurate amount of time
 					// it took to send the file.
-					t := payload.GetCompleted().Sub(payload.GetStarted()).Nanoseconds()
+					t := payload.GetCompleted().Sub(
+						payload.GetStarted()).Nanoseconds()
 					r := float64(n) / float64(payload.GetSize())
 					d := time.Duration(float64(t) * r)
 					pFile.completed = pFile.started.Add(d)
@@ -649,6 +659,7 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 					pFile.completed = payload.GetCompleted()
 				}
 				broker.Conf.Logger.Sent(pFile)
+				delete(progress, key)
 				go func(wg *sync.WaitGroup) {
 					defer wg.Done()
 					wg.Add(1)
@@ -701,7 +712,8 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 			sent = nil
 		}
 		// Make sure it's been long enough to send another poll
-		if !pollTime.IsZero() && time.Now().Sub(pollTime) < broker.Conf.PollInterval {
+		if !pollTime.IsZero() &&
+			time.Now().Sub(pollTime) < broker.Conf.PollInterval {
 			continue
 		}
 		// Build the list of pollable files
@@ -754,6 +766,10 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 				delete(poll, f.GetName())
 				break
 			}
+		}
+		// Make sure changes get persisted after the batch is processed
+		if err = broker.Conf.Cache.Persist(time.Time{}); err != nil {
+			log.Error(err.Error())
 		}
 	}
 }
