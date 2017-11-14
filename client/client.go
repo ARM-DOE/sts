@@ -177,7 +177,12 @@ func (broker *Broker) recover() (
 		var file sts.File
 		file, err = store.Sync(f)
 		if store.IsNotExist(err) {
-			log.Info("File disappeared:", f.GetPath())
+			if !f.IsDone() {
+				// This should really only happen in rare scenarios when the
+				// file is removed before the cache is updated (and later
+				// persisted).
+				log.Info("File disappeared:", f.GetPath())
+			}
 			cache.Remove(f.GetName())
 			return false
 		} else if err != nil {
@@ -786,7 +791,7 @@ func (broker *Broker) finish(file sts.Polled) {
 		}
 		fallthrough
 	default:
-		broker.Conf.Cache.Remove(file.GetName())
+		broker.Conf.Cache.Done(file.GetName())
 		break
 	}
 }

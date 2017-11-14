@@ -338,7 +338,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 // -> sts.ConfirmWaiting: MD5 validation was successful but waiting on predecessor
 // -> sts.ConfirmNone: No knowledge of file
 func (s *Stage) GetFileStatus(source, relPath string, sent time.Time) int {
-	log.Debug("Checking sttaus:", source, relPath)
+	log.Debug("Checking status:", source, relPath)
 	path := filepath.Join(s.rootDir, source, relPath)
 	success, found := s.fromCache(path)
 	if success {
@@ -459,7 +459,18 @@ func (s *Stage) validate(file *finalFile) (err error) {
 }
 
 func (s *Stage) finalizeChain(file *finalFile) {
+	log.Debug("Finalize chain:", file.name)
+
+	s.finalLock.Lock()
+	// It's possible to get duplicates so we can use the cache to identify
+	// those and safely ignore them.
+	if success, _ := s.fromCache(file.path); success {
+		log.Debug("File already finalized:", file.name)
+		return
+	}
 	done, err := s.finalize(file)
+	s.finalLock.Unlock()
+
 	if err != nil {
 		log.Error(err)
 		return
@@ -467,15 +478,14 @@ func (s *Stage) finalizeChain(file *finalFile) {
 	if done {
 		waiting := s.fromWait(file.path)
 		for _, waitFile := range waiting {
-			log.Debug("Stage found waiting:", waitFile.name)
+			log.Debug("Stage found waiting:", waitFile.name, "<-", file.name)
 			s.finalizeChain(waitFile)
 		}
 	}
+	log.Debug("Finalize chain complete:", file.name)
 }
 
 func (s *Stage) finalize(file *finalFile) (done bool, err error) {
-	s.finalLock.Lock()
-	defer s.finalLock.Unlock()
 	// Make sure it doesn't need to wait in line.
 	if file.prev != "" {
 		stagedPrevFile := filepath.Join(s.rootDir, file.source, file.prev)
