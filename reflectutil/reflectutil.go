@@ -16,8 +16,14 @@ func CopyStruct(tgt interface{}, src interface{}) {
 		return
 	}
 	for i := 0; i < v.NumField(); i++ {
-		if IsZero(v.Field(i)) {
-			v.Field(i).Set(reflect.ValueOf(z.Field(i).Interface()))
+		fv := v.Field(i)
+		fz := z.Field(i)
+		// Skip unexported fields
+		if !fv.CanInterface() || !fz.CanInterface() {
+			continue
+		}
+		if IsZero(fv) {
+			fv.Set(reflect.ValueOf(fz.Interface()))
 		}
 	}
 }

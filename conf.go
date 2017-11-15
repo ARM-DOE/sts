@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"code.arm.gov/dataflow/sts/reflectutil"
@@ -59,7 +60,11 @@ func (conf *ClientConf) UnmarshalYAML(
 	for i := 0; i < len(conf.Sources); i++ {
 		if src != nil {
 			tgt = conf.Sources[i]
+			origStat := tgt.StatPayload
 			reflectutil.CopyStruct(tgt, src)
+			if tgt.isStatPayloadSet {
+				tgt.StatPayload = origStat
+			}
 			if src.Target != nil && tgt.Target != nil {
 				reflectutil.CopyStruct(tgt.Target, src.Target)
 			}
@@ -68,7 +73,11 @@ func (conf *ClientConf) UnmarshalYAML(
 		if len(src.Tags) > 1 {
 			tdef := src.Tags[0]
 			for j := 1; j < len(src.Tags); j++ {
+				origDelete := src.Tags[j].Delete
 				reflectutil.CopyStruct(src.Tags[j], tdef)
+				if src.Tags[j].isDeleteSet {
+					src.Tags[j].Delete = origDelete
+				}
 			}
 		}
 	}
@@ -110,9 +119,16 @@ type SourceConf struct {
 	Include      []*regexp.Regexp
 	Ignore       []*regexp.Regexp
 	Tags         []*TagConf
+
+	// We have to do this mumbo jumbo if we ever want a false value to
+	// override a true value because a false boolean value is the "empty"
+	// value and it's impossible to know if it was set in the config file or
+	// if it was just the default value because it wasn't specified.
+	isStatPayloadSet bool
 }
 
-// UnmarshalYAML implements the Unmarshaler interface for handling custom member(s).
+// UnmarshalYAML implements the Unmarshaler interface for handling custom
+// member(s).
 // https://godoc.org/gopkg.in/yaml.v2
 func (ss *SourceConf) UnmarshalYAML(
 	unmarshal func(interface{}) error) (err error) {
@@ -128,7 +144,7 @@ func (ss *SourceConf) UnmarshalYAML(
 		Timeout      time.Duration `yaml:"timeout"`
 		BinSize      string        `yaml:"bin-size"`
 		Compression  int           `yaml:"compress"`
-		StatPayload  bool          `yaml:"stat-payload"`
+		StatPayload  string        `yaml:"stat-payload"`
 		StatInterval time.Duration `yaml:"stat-interval"`
 		PollDelay    time.Duration `yaml:"poll-delay"`
 		PollInterval time.Duration `yaml:"poll-interval"`
@@ -157,7 +173,14 @@ func (ss *SourceConf) UnmarshalYAML(
 		}
 	}
 	ss.Compression = aux.Compression
-	ss.StatPayload = aux.StatPayload
+	switch {
+	case strings.ToLower(aux.StatPayload) == "true":
+		ss.StatPayload = true
+		break
+	case strings.ToLower(aux.StatPayload) == "false":
+		ss.isStatPayloadSet = true
+		break
+	}
 	ss.StatInterval = aux.StatInterval
 	ss.PollDelay = aux.PollDelay
 	ss.PollInterval = aux.PollInterval
@@ -191,6 +214,12 @@ type TagConf struct {
 	Order     string
 	Delete    bool
 	LastDelay time.Duration
+
+	// We have to do this mumbo jumbo if we ever want a false value to
+	// override a true value because a false boolean value is the "empty"
+	// value and it's impossible to know if it was set in the config file or
+	// if it was just the default value because it wasn't specified.
+	isDeleteSet bool
 }
 
 // UnmarshalYAML implements the Unmarshaler interface for handling custom
@@ -201,7 +230,7 @@ func (t *TagConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 		Priority  int           `yaml:"priority"`
 		Method    string        `yaml:"method"`
 		Order     string        `yaml:"order"`
-		Delete    bool          `yaml:"delete"`
+		Delete    string        `yaml:"delete"`
 		LastDelay time.Duration `yaml:"last-delay"`
 	}
 	if err = unmarshal(&aux); err != nil {
@@ -219,7 +248,15 @@ func (t *TagConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 	t.Priority = aux.Priority
 	t.Method = aux.Method
 	t.Order = aux.Order
-	t.Delete = aux.Delete
+	switch {
+	case strings.ToLower(aux.Delete) == "true":
+		t.Delete = true
+		break
+	case strings.ToLower(aux.Delete) == "false":
+		t.Delete = false
+		t.isDeleteSet = true
+		break
+	}
 	t.LastDelay = aux.LastDelay
 	return
 }
