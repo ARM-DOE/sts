@@ -308,9 +308,6 @@ func InitPaths(conf *Conf,
 			&conf.Client.Dirs.LogMsg,
 			&conf.Client.Dirs.LogOut,
 			&conf.Client.Dirs.Out)
-		files = append(files,
-			&conf.Server.Server.TLSKeyPath,
-			&conf.Server.Server.TLSCertPath)
 		for _, src := range conf.Client.Sources {
 			if src.Target.Name == "" {
 				src.Target.Name = src.Target.Host

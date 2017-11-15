@@ -807,10 +807,14 @@ func (broker *Broker) finish(file sts.Polled) {
 		tag := broker.tagMap[tagName]
 		if tag != nil && tag.Delete {
 			broker.Conf.Store.Remove(cached)
+			broker.Conf.Cache.Remove(file.GetName())
+		} else {
+			broker.Conf.Cache.Done(file.GetName())
 		}
-		fallthrough
+		break
 	default:
-		broker.Conf.Cache.Done(file.GetName())
+		log.Debug("Trying again:", file.GetName())
+		broker.Conf.Cache.Remove(file.GetName())
 		break
 	}
 }
