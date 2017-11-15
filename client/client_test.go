@@ -10,11 +10,12 @@ import (
 
 func TestScan(t *testing.T) {
 	log.InitExternal(&mock.Logger{DebugMode: true})
-	n := 100
+	n := 10000
 	broker := &Broker{
 		Conf: &Conf{
-			Store: mock.NewStore(n, 1024*100),
-			Cache: mock.NewCache(),
+			Store:   mock.NewStore(n, 1024),
+			Cache:   mock.NewCache(),
+			Threads: 10,
 		},
 	}
 	hashed := broker.scan()
