@@ -550,16 +550,12 @@ func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 	// Move it.
 	targetPath := filepath.Join(s.targetDir, file.source, file.name)
 	os.MkdirAll(filepath.Dir(targetPath), 0775)
-	if err = os.Rename(file.path, targetPath+fileutil.LockExt); err != nil {
+	if err = fileutil.Move(file.path, targetPath); err != nil {
 		err = fmt.Errorf(
 			"Failed to move %s to %s: %s",
 			file.path,
 			targetPath+fileutil.LockExt,
 			err.Error())
-		return
-	}
-	if err = os.Rename(targetPath+fileutil.LockExt, targetPath); err != nil {
-		err = fmt.Errorf("Failed to unlock %s: %s", targetPath, err.Error())
 		return
 	}
 

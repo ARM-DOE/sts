@@ -21,12 +21,14 @@ const LockExt = ".lck"
 // BlockSize is the number of bytes read into memory.
 const BlockSize = 8192
 
-// InitPath will turn a relative path into absolute (based on root) and make sure it exists.
+// InitPath will turn a relative path into absolute (based on root) and make
+// sure it exists.
 func InitPath(root string, path string, isdir bool) (string, error) {
 	var err error
 	if !filepath.IsAbs(path) {
 		if root == "" {
-			return path, fmt.Errorf("Cannot use a relative path with an empty root: %s", path)
+			return path, fmt.Errorf(
+				"Cannot use a relative path with an empty root: %s", path)
 		}
 		path, err = filepath.Abs(filepath.Join(root, path))
 		if err != nil {
@@ -45,8 +47,8 @@ func InitPath(root string, path string, isdir bool) (string, error) {
 	return path, nil
 }
 
-// FindLine searches the given file for the provided byte array and returns that
-// line if found.
+// FindLine searches the given file for the provided byte array and returns
+// that line if found.
 func FindLine(path string, b []byte) string {
 	fh, err := os.Open(path)
 	if err != nil {
@@ -81,8 +83,8 @@ func WriteJSON(path string, data interface{}) (err error) {
 	return
 }
 
-// LoadJSON reads the file at specified path and decodes the JSON into the specified
-// struct.  The input data struct should be a pointer.
+// LoadJSON reads the file at specified path and decodes the JSON into the
+// specified struct.  The input data struct should be a pointer.
 func LoadJSON(path string, data interface{}) error {
 	fh, err := os.Open(path)
 	if err != nil {
@@ -124,7 +126,8 @@ func ReadableMD5(handle sts.Readable) (hash string, err error) {
 	return
 }
 
-// PartialMD5 computes the MD5 of part of a file, specified from start byte to end byte.
+// PartialMD5 computes the MD5 of part of a file, specified from start byte to
+// end byte.
 func PartialMD5(path string, start int64, end int64) (hash string, err error) {
 	var fh *os.File
 	if fh, err = os.Open(path); err != nil {
@@ -140,9 +143,48 @@ func PartialMD5(path string, start int64, end int64) (hash string, err error) {
 	return
 }
 
-// HashHex calls Sum(nil) on the input hash and formats the result in hexadecimal.
+// HashHex calls Sum(nil) on the input hash and formats the result in
+// hexadecimal.
 func HashHex(h hash.Hash) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+// Copy copies a file byte by byte from the src path to the dst path.
+func Copy(src, dst string) error {
+	fpSrc, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer fpSrc.Close()
+	fpDst, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer fpDst.Close()
+	_, err = io.Copy(fpDst, fpSrc)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// Move moves a file from one path to another.  It attempts to do a rename and,
+// if that fails, will instead do a copy followed by a deletion of the
+// original.  If the destination file already exists it will be overwritten.
+func Move(src, dst string) error {
+	var err error
+	if err = os.Rename(src, dst+LockExt); err != nil {
+		if err = Copy(src, dst+LockExt); err != nil {
+			return err
+		}
+		if err = os.Remove(src); err != nil {
+			return err
+		}
+	}
+	if err = os.Rename(dst+LockExt, dst); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Readdir is a simple wrapper around File.Readdir that accepts a path argument
@@ -156,11 +198,17 @@ func Readdir(dirname string) ([]os.FileInfo, error) {
 	return f.Readdir(-1)
 }
 
-// walk mimics the internal filepath.walk() function except that it keeps track of
-// the path relative to the original root separate from the path normalized by
-// filepath.EvalSymlinks() and also tracks a history of the latter to avoid
+// walk mimics the internal filepath.walk() function except that it keeps track
+// of the path relative to the original root separate from the path normalized
+// by filepath.EvalSymlinks() and also tracks a history of the latter to avoid
 // unintentional infinite loops caused by recursive linking.
-func walk(path string, evalPath string, info os.FileInfo, walkFn filepath.WalkFunc, history map[string]os.FileInfo) error {
+func walk(
+	path string,
+	evalPath string,
+	info os.FileInfo,
+	walkFn filepath.WalkFunc,
+	history map[string]os.FileInfo) error {
+
 	err := walkFn(path, info, nil)
 	if err != nil {
 		if info.IsDir() && err == filepath.SkipDir {
@@ -196,7 +244,8 @@ func walk(path string, evalPath string, info os.FileInfo, walkFn filepath.WalkFu
 		}
 		nodeInfo, err := os.Lstat(nodeEvalPath)
 		if err != nil {
-			if err = walkFn(nodePath, nodeInfo, err); err != nil && err != filepath.SkipDir {
+			if err = walkFn(nodePath, nodeInfo, err); err != nil &&
+				err != filepath.SkipDir {
 				return err
 			}
 		} else {
@@ -211,10 +260,14 @@ func walk(path string, evalPath string, info os.FileInfo, walkFn filepath.WalkFu
 	return nil
 }
 
-// Walk mimics https://golang.org/pkg/path/filepath/#Walk wih the exceptions that
-// 1) it allows for the option to follow symbolic links, and 2) the order of the
-// calls to walkFn are NOT deterministic (i.e. no lexical ordering).
-func Walk(root string, walkFn filepath.WalkFunc, followSymLinks bool) (err error) {
+// Walk mimics https://golang.org/pkg/path/filepath/#Walk wih the exceptions
+// that 1) it allows for the option to follow symbolic links, and 2) the order
+// of the calls to walkFn are NOT deterministic (i.e. no lexical ordering).
+func Walk(
+	root string,
+	walkFn filepath.WalkFunc,
+	followSymLinks bool) (err error) {
+
 	path := root
 	if followSymLinks {
 		path, err = filepath.EvalSymlinks(root)
