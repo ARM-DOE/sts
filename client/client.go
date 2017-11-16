@@ -408,8 +408,8 @@ func (broker *Broker) hash(
 					log.Error(err)
 					return
 				}
-				defer fh.Close()
 				file.(*hashFile).hash, err = fileutil.ReadableMD5(fh)
+				fh.Close()
 				if err != nil {
 					log.Error(err)
 					return
