@@ -361,27 +361,41 @@ func (broker *Broker) scan() []sts.Hashed {
 		i++
 	}
 	wrapped = wrapped[:i]
-	if len(wrapped) == 0 {
-		return nil
-	}
-
-	if err = broker.hash(wrapped,
-		broker.Conf.Threads,
-		int64(broker.Conf.PayloadSize)); err != nil {
-
-		log.Error(err)
-		return nil
-	}
-
-	// Update the cache
 	cache.Iterate(func(cached sts.Cached) bool {
+		// Add any that might have failed the hash calculation last time
+		if cached.GetHash() == "" {
+			wrapped = append(wrapped, cached)
+			return false
+		}
+		// Clean the cache while we're at it
 		if cached.IsDone() && cached.GetTime() < age.Unix() {
 			cache.Remove(cached.GetName())
 		}
 		return false
 	})
+	if len(wrapped) == 0 {
+		return nil
+	}
+
+	var n int
+	if n, err = broker.hash(wrapped,
+		broker.Conf.Threads,
+		int64(broker.Conf.PayloadSize)); err != nil {
+
+		log.Error(err)
+	}
+
+	var ready []sts.Hashed
+	if n == len(wrapped) {
+		ready = wrapped
+	}
 	for _, file := range wrapped {
+		// Update the cache with all files--even those without a hash (will try
+		// again next time)
 		cache.Add(file)
+		if n < len(wrapped) && file.GetHash() != "" {
+			ready = append(ready, file)
+		}
 	}
 	if err = cache.Persist(
 		scanTime.Add(-1 * broker.Conf.CacheAge)); err != nil {
@@ -389,11 +403,12 @@ func (broker *Broker) scan() []sts.Hashed {
 		return nil
 	}
 
-	return wrapped
+	return ready
 }
 
 func (broker *Broker) hash(
-	scanned []sts.Hashed, nWorkers int, batchSize int64) error {
+	scanned []sts.Hashed,
+	nWorkers int, batchSize int64) (int, error) {
 
 	hashFiles := func(in <-chan []sts.Hashed, wg *sync.WaitGroup) {
 		defer wg.Done()
@@ -406,14 +421,13 @@ func (broker *Broker) hash(
 				fh, err = broker.Conf.Store.GetOpener()(file)
 				if err != nil {
 					log.Error(err)
-					return
+					continue
 				}
 				file.(*hashFile).hash, err = fileutil.ReadableMD5(fh)
-				fh.Close()
 				if err != nil {
 					log.Error(err)
-					return
 				}
+				fh.Close()
 			}
 		}
 	}
@@ -442,17 +456,13 @@ func (broker *Broker) hash(
 	}
 	close(ch)
 	wg.Wait()
-	var n int
+	n := 0
 	for _, file := range scanned {
-		if file.GetHash() == "" {
+		if file.GetHash() != "" {
 			n++
 		}
 	}
-	if n > 0 {
-		return fmt.Errorf("%d of %d files failed hash calculation",
-			n, len(scanned))
-	}
-	return nil
+	return n, nil
 }
 
 func (broker *Broker) startQueue(wg *sync.WaitGroup) {
