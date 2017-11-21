@@ -176,6 +176,8 @@ func (j *JSON) Persist(boundary time.Time) (err error) {
 		return
 	}
 	j.Time = boundary
+	j.mutex.RLock()
+	defer j.mutex.RUnlock()
 	err = j.write()
 	return
 }

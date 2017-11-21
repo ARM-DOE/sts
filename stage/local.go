@@ -159,9 +159,10 @@ type Stage struct {
 	waitLock   sync.RWMutex
 	cache      map[string]*finalFile
 	cacheLock  sync.RWMutex
-	lock       sync.Mutex
+	writeLock  sync.Mutex
 	writeLocks map[string]*sync.RWMutex
 	finalLock  sync.Mutex
+	finalLocks map[string]*sync.Mutex
 }
 
 // New creates a new instance of Stage where the rootDir is the directory
@@ -178,12 +179,13 @@ func New(rootDir, targetDir string, logger sts.ReceiveLogger) *Stage {
 	s.wait = make(map[string][]*finalFile)
 	s.cache = make(map[string]*finalFile)
 	s.writeLocks = make(map[string]*sync.RWMutex)
+	s.finalLocks = make(map[string]*sync.Mutex)
 	return s
 }
 
 func (s *Stage) getWriteLock(key string) *sync.RWMutex {
-	s.lock.Lock()
-	defer s.lock.Unlock()
+	s.writeLock.Lock()
+	defer s.writeLock.Unlock()
 	var m *sync.RWMutex
 	var exists bool
 	if m, exists = s.writeLocks[key]; !exists {
@@ -194,9 +196,21 @@ func (s *Stage) getWriteLock(key string) *sync.RWMutex {
 }
 
 func (s *Stage) delWriteLock(key string) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
+	s.writeLock.Lock()
+	defer s.writeLock.Unlock()
 	delete(s.writeLocks, key)
+}
+
+func (s *Stage) getFinalLock(key string) *sync.Mutex {
+	s.finalLock.Lock()
+	defer s.finalLock.Unlock()
+	var m *sync.Mutex
+	var exists bool
+	if m, exists = s.finalLocks[key]; !exists {
+		m = &sync.Mutex{}
+		s.finalLocks[key] = m
+	}
+	return m
 }
 
 func (s *Stage) cmpPathToName(cmpPath string) (name string) {
@@ -322,9 +336,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 		}
 		log.Debug("File transmitted:", path)
 		s.delWriteLock(path)
-		go func() {
-			s.process(file)
-		}()
+		go s.process(file)
 	}
 	return
 }
@@ -461,15 +473,19 @@ func (s *Stage) validate(file *finalFile) (err error) {
 func (s *Stage) finalizeChain(file *finalFile) {
 	log.Debug("Finalize chain:", file.name)
 
-	s.finalLock.Lock()
+	lock := s.getFinalLock(file.source)
+	lock.Lock()
+
 	// It's possible to get duplicates so we can use the cache to identify
 	// those and safely ignore them.
 	if success, _ := s.fromCache(file.path); success {
 		log.Debug("File already finalized:", file.name)
+		lock.Unlock()
 		return
 	}
+
 	done, err := s.finalize(file)
-	s.finalLock.Unlock()
+	lock.Unlock()
 
 	if err != nil {
 		log.Error(err)
@@ -479,10 +495,9 @@ func (s *Stage) finalizeChain(file *finalFile) {
 		waiting := s.fromWait(file.path)
 		for _, waitFile := range waiting {
 			log.Debug("Stage found waiting:", waitFile.name, "<-", file.name)
-			s.finalizeChain(waitFile)
+			go s.finalizeChain(waitFile)
 		}
 	}
-	log.Debug("Finalize chain complete:", file.name)
 }
 
 func (s *Stage) finalize(file *finalFile) (done bool, err error) {
@@ -514,6 +529,8 @@ func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 				err = nil
 				return
 			}
+			log.Debug("Checking log for previous file:",
+				file.name, "<-", file.prev)
 			if !s.logger.WasReceived(
 				file.source, file.prev,
 				time.Now(), time.Now().Add(-logSearch)) {

@@ -91,6 +91,9 @@ func (c *clientApp) setDefaults() (err error) {
 			defaultTag = tag
 			break
 		}
+		if tag.Method == "" {
+			tag.Method = sts.MethodHTTP
+		}
 	}
 	if defaultTag == nil {
 		// If no default tag exists, add one
@@ -127,7 +130,9 @@ func (c *clientApp) init() (err error) {
 			// Ignore unknown methods. This allows us to extend the
 			// configuration for outside uses like disk mode, which is not
 			// part of this package
-			store.Ignore = append(store.Ignore, t.Pattern)
+			if t.Pattern != nil {
+				store.Ignore = append(store.Ignore, t.Pattern)
+			}
 		}
 		if t.Pattern != nil {
 			name = t.Pattern.String()
