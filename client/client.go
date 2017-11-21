@@ -824,7 +824,7 @@ func (broker *Broker) finish(file sts.Polled) {
 		break
 	default:
 		log.Debug("Trying again:", file.GetName())
-		broker.Conf.Cache.Remove(file.GetName())
+		broker.Conf.Cache.Reset(file.GetName())
 		break
 	}
 }

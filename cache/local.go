@@ -147,6 +147,17 @@ func (j *JSON) Done(key string) {
 	f.(*cacheFile).Done = true
 }
 
+// Reset clears the hash
+func (j *JSON) Reset(key string) {
+	f := j.Get(key)
+	if f == nil {
+		return
+	}
+	j.mutex.Lock()
+	defer j.mutex.Unlock()
+	f.(*cacheFile).Hash = ""
+}
+
 // Remove removes the file by the specified key from the in-memory cache
 func (j *JSON) Remove(key string) {
 	f := j.Get(key)

@@ -77,6 +77,7 @@ type FileCache interface {
 	Get(string) Cached
 	Add(Hashed)
 	Done(string)
+	Reset(string)
 	Remove(string)
 	Persist(boundary time.Time) error
 }
