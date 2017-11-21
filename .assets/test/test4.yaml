@@ -1,0 +1,50 @@
+OUT: # Outgoing configuration
+  dirs: # Outgoing directory configuration
+    cache      : .sts/out # Used to store internal caches
+    logs       : data/log
+    out        : data/out # Directory to watch for files to send; appends "/{target}" unless overridden
+    out-follow : true
+  sources: # Supports multiple sources where omitted entries will inherit from previous sources hierarchically
+    - name          : stsout-1 # Name of the source
+      threads       : 4        # Maximum number of concurrent connections
+      scan-delay    : 10s
+      min-age       : 0s       # How old a file must be before being added to the "outgoing" queue
+      max-age       : 0s       # How old a file can be before getting logged as "stale" (remains in the queue)
+      bin-size      : 20MB     # The generally-desired size for a given HTTP request (BEFORE any compression)
+      compress      : 3        # Use GZIP compression level (0-9) (NOTE: bin-size is based on file size BEFORE compression)
+      stat-payload  : true     # Log payload transmission stats
+      poll-delay    : 2s       # How long to wait after file sent before final validation
+      poll-interval : 5s       # How long to wait between polling requests
+      poll-attempts : 1        # How many times to "poll" for the successful reception of a file before re-sending
+      target: # Target-specific configuration
+        name        : stsin-1  # Name of the target
+        http-host   : localhost:1992
+      tags: # Tags are for configuration based on file patterns (omitted attributes are inherited)
+        - pattern   : DEFAULT # The file "tag" pattern
+          priority  : 0       # Relative importance (higher the number, greater the importance)
+          order     : fifo    # File order (fifo (first in, first out), lifo, or none)
+          delete    : true    # Whether or not to delete files after reception confirmation
+          method    : http
+        - pattern   : ^xs/
+          priority  : 3
+        - pattern   : ^sm/
+          priority  : 2
+        - pattern   : ^xl/
+          priority  : -1
+    - name    : stsout-2
+      out-dir : data/out/stsin-2 # Have to override when running on the same host since the target is the same
+      target:
+        name  : stsin-1
+
+IN: # Incoming configuration.
+    sources:
+      - stsout-1
+      - stsout-2
+    dirs: # Incoming directory configuration.
+        stage : data/stage # Directory to stage data as it comes in; appends "source" name
+        final : data/in    # Final location for incoming files; appends "/{source}"
+        logs  : data/log   # Root directory for log files
+    server: # Server configuration.
+        http-host     : localhost
+        http-port     : 1992 # What port to listen on
+        compress      : 4 # Use GZIP compression level (0-9) on response data
