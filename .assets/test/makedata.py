@@ -3,47 +3,45 @@
 import os
 import sys
 import time
+import random
 import datetime
 import subprocess
 
 
-def makedata(name):
+def makedata(name, prefix, size, count):
     now = datetime.datetime.fromtimestamp(
         time.time()
     ).strftime('%Y%m%d.%H%M%S')
-    root = '%s/run/data/out/%s' % (
-        os.path.dirname(os.path.realpath(__file__)), name
-    )
+    root = '%s/data/out/%s' % (os.getenv('STS_HOME', '/var/tmp/sts'), name)
     root = os.path.abspath(root)
-    tags = {
-        'xl': {'size': 100*1024*1024,  'count': 3},
-        'lg': {'size': 15*1024*1024,   'count': 7},
-        'md': {'size': 5*1024*1024,    'count': 2},
-        'sm': {'size': 50*1024,        'count': 1000},
-        'xs': {'size': 500,            'count': 100},
-    }
-    for t in sorted(tags.keys()):
-        td = tags[t]
-        tdir = '%s/%s' % (root, t)
-        if not os.path.exists(tdir):
-            os.makedirs(tdir)
-        for i in range(td['count']):
-            path = "%s/%s.%s.%06d" % (tdir, t, now, i)
-            with open(os.devnull, 'w') as devnull:
-                subprocess.call([
-                    "dd",
-                    "if=/dev/zero",
-                    "of=%s.lck" % path,
-                    "bs=%d" % td['size'], "count=1"
-                ], stdout=devnull, stderr=devnull)
-            os.rename("%s.lck" % path, path)
+    tdir = '%s/%s' % (root, prefix)
+    if not os.path.exists(tdir):
+        os.makedirs(tdir)
+    c = int(count)
+    s = int(size)
+    count = random.randint(int(c-c*0.5), int(c+c*0.5))
+    for i in range(count):
+        size = random.randint(int(s-s*0.5), int(s+s*0.5))
+        name = "%s.%s.%06d" % (prefix, now, i)
+        path = "%s/%s" % (tdir, name)
+        with open(os.devnull, 'w') as devnull:
+            subprocess.call([
+                "dd",
+                "if=/dev/urandom",
+                "of=%s.lck" % path,
+                "bs=%d" % size, "count=1"
+            ], stdout=devnull, stderr=devnull)
+        os.rename("%s.lck" % path, path)
 
 
 def main(argv):
+    if len(argv) < 5:
+        print("Expected 5 args")
+        return 1
+    (name, prefix, size, count, sleep) = tuple(argv)
     while True:
-        makedata('stsin-1')
-        makedata('stsin-2')
-        time.sleep(60)
+        makedata(name, prefix, size, count)
+        time.sleep(int(sleep))
 
 
 if __name__ == '__main__':
