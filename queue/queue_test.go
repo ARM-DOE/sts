@@ -71,15 +71,20 @@ func TestGeneral(t *testing.T) {
 			Time: mt,
 		})
 	}
+	// Add them twice to make sure file replacement works
+	queue.Push(files)
 	queue.Push(files)
 	var done []*sendable
 	doneByGroup := make(map[string][]*sendable)
 	for {
 		f := queue.Pop()
+		if f == nil {
+			t.Fatal("Popped file should not be nil")
+		}
 		done = append(done, f.(*sendable))
 		g := strings.Split(f.GetName(), ".")[0]
 		doneByGroup[g] = append(doneByGroup[g], f.(*sendable))
-		if len(done) == len(files) {
+		if len(done) == n {
 			break
 		}
 	}
@@ -121,8 +126,24 @@ func TestGeneral(t *testing.T) {
 		}
 	}
 	for group, headFile := range queue.headFile {
-		if headFile != nil {
-			t.Error("Group (", group, ") head file should be nil:", headFile.orig.GetName())
+		if headFile == nil {
+			t.Errorf("Group (%s) head file should not be nil: %s",
+				group,
+				headFile.orig.GetName())
+			continue
+		}
+		if !headFile.isAllocated() {
+			t.Errorf("Group (%s) head file should have been allocated: %s",
+				group,
+				headFile.orig.GetName())
+		}
+		if headFile.prev != nil {
+			t.Errorf("Group (%s) head file should not have a predecessor: %s",
+				group,
+				headFile.prev.orig.GetName())
+		}
+		if headFile.next != nil {
+			t.Errorf("Group (%s) head file should be the last one", group)
 		}
 	}
 	if len(queue.byFile) > 0 {

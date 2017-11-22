@@ -262,7 +262,6 @@ func (q *Tagged) Push(files []sts.Hashed) {
 	defer q.mux.Unlock()
 	for _, file := range files {
 		if orig, ok := q.byFile[file.GetName()]; ok {
-			// TODO: add this to the test...
 			// If a file by this name is already here, let's start over
 			q.removeFile(orig)
 			orig.unlink()
@@ -305,7 +304,8 @@ func (q *Tagged) Pop() sts.Sendable {
 	var next *sortedFile
 	for g != nil {
 		next = q.headFile[g.name]
-		if next == nil {
+		if next == nil || next.isAllocated() {
+			next = nil
 			g = g.next
 			continue
 		}
@@ -334,15 +334,18 @@ func (q *Tagged) Pop() sts.Sendable {
 	log.Debug("Q Out:", chunk.GetName(), "<-", chunk.prev)
 	if next.isAllocated() {
 		log.Debug("Q Done:", next.orig.GetName(), offset, length, next.orig.GetSize())
-		// File is fully allocated and can be removed from the queue
+		// File is fully allocated and can be removed from the Q
 		q.removeFile(next)
-		if next.prev != nil {
-			// Unlink the previous file because now no one in the Q is
-			// dependent on it
+		for next.prev != nil {
+			// Unlink all previous files because they are no longer needed
 			next.prev.unlink()
 		}
-		if next.next == nil {
-			// Only unlink this node if there's nothing dependent on it
+		if q.headFile[next.group.name] == nil {
+			// Put the head file back if it's nil--we want to keep this file's
+			// place for the next one that comes in
+			q.headFile[next.group.name] = next
+			// If we get here then this file is just a placeholder and doesn't
+			// need its predecessor
 			next.unlink()
 		}
 	}
@@ -392,12 +395,12 @@ func (q *Tagged) addGroup(group *sortedGroup) {
 
 func (q *Tagged) addFile(file *sortedFile) {
 	q.byFile[file.orig.GetName()] = file
-	f := q.headFile[file.group.name]
-	if f == nil {
+	head := q.headFile[file.group.name]
+	if head == nil {
 		q.headFile[file.group.name] = file
 		return
 	}
-	n := 0
+	f := head
 loop:
 	for f != nil {
 		switch file.group.conf.Order {
@@ -429,15 +432,15 @@ loop:
 				break loop
 			}
 		}
-		n++
 		if f.next == nil {
 			file.insertAfter(f)
 			break
 		}
 		f = f.next
 	}
-	// If we inserted before the head file we need to update the pointer.
-	if n == 0 {
+	// Update the head file if we inserted before it or if we inserted after it
+	// and it's already allocated
+	if f == head && (f.prev == file || f.isAllocated()) {
 		q.headFile[file.group.name] = file
 	}
 }
