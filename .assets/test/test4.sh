@@ -129,6 +129,6 @@ pids+=($!)
 check &
 pids+=($!)
 
-while True; do
+while true; do
     sleep 5
 done
