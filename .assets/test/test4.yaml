@@ -8,7 +8,7 @@ OUT: # Outgoing configuration
     - name          : stsout-1 # Name of the source
       threads       : 4        # Maximum number of concurrent connections
       scan-delay    : 10s
-      min-age       : 0s       # How old a file must be before being added to the "outgoing" queue
+      min-age       : 5s       # How old a file must be before being added to the "outgoing" queue
       max-age       : 0s       # How old a file can be before getting logged as "stale" (remains in the queue)
       bin-size      : 20MB     # The generally-desired size for a given HTTP request (BEFORE any compression)
       compress      : 3        # Use GZIP compression level (0-9) (NOTE: bin-size is based on file size BEFORE compression)

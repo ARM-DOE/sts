@@ -60,7 +60,7 @@ function clean() {
         sleep 10
 
         # Remove "in" files older than a minute
-        find $STS_HOME/data/in -type f -mmin +1 -exec rm {} \;
+        find $STS_HOME/data/in -type f -mmin +1 -exec rm {} \; 2>/dev/null
 
         # Keep the log files from getting out of hand
         # NOTE: This actually doesn't work as long as STS keeps a file handle
@@ -98,7 +98,7 @@ function check() {
         fi
 
         # Check for stuck "out" files
-        old=`find $STS_HOME/data/out -type f -mmin +2`
+        old=`find $STS_HOME/data/out -type f -mmin +2 2>/dev/null`
         if [ "$old" ]; then
             echo "Found old files in outgoing tree:"
             cat <(echo "$old")

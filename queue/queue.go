@@ -401,33 +401,26 @@ func (q *Tagged) addFile(file *sortedFile) {
 		return
 	}
 	f := head
+	t1 := file.orig.GetTime()
+	n1 := file.orig.GetName()
+	order := file.group.conf.Order
 loop:
 	for f != nil {
-		switch file.group.conf.Order {
-		case sts.OrderFIFO:
-			if file.orig.GetTime() < f.orig.GetTime() {
+		t0 := f.orig.GetTime()
+		n0 := f.orig.GetName()
+		switch {
+		case order == sts.OrderAlpha || t0 == t1:
+			if n1 < n0 {
 				file.insertBefore(f)
 				break loop
 			}
-			if file.orig.GetTime() == f.orig.GetTime() {
-				if file.orig.GetName() < f.orig.GetName() {
-					file.insertBefore(f)
-					break loop
-				}
-			}
-		case sts.OrderLIFO:
-			if file.orig.GetTime() > f.orig.GetTime() {
+		case order == sts.OrderFIFO:
+			if t1 < t0 {
 				file.insertBefore(f)
 				break loop
 			}
-			if file.orig.GetTime() == f.orig.GetTime() {
-				if file.orig.GetName() > f.orig.GetName() {
-					file.insertBefore(f)
-					break loop
-				}
-			}
-		case sts.OrderAlpha:
-			if file.orig.GetName() < f.orig.GetName() {
+		case order == sts.OrderLIFO:
+			if t1 > t0 {
 				file.insertBefore(f)
 				break loop
 			}
