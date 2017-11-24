@@ -1,13 +1,15 @@
 #!/bin/bash
 
+pid=$$
+
 basedir=$(dirname $0)
 if [ -z ${STS_HOME+x} ]; then
     export STS_HOME=/var/tmp/sts4
 fi
 
 bin="$GOPATH/bin/sts"
-cmd_server="$bin $args --mode=in"
-cmd_client="$bin $args --mode=out"
+cmd_server="$bin $args --debug --mode=in"
+cmd_client="$bin $args --debug --mode=out"
 
 echo "Cleaning last run..."
 rm -rf $STS_HOME
@@ -48,6 +50,7 @@ function ctrl_c() {
     done
     echo "Cleaning out incoming directory ..."
     find $STS_HOME/data/in -type f -exec rm {} \;
+    kill $pid
     exit 0
 }
 
@@ -91,7 +94,6 @@ function check() {
         if [ "$errors" ]; then
             cat <(echo "$errors")
             ctrl_c
-            return
         fi
 
         # Check for stuck "out" files
@@ -100,7 +102,6 @@ function check() {
             echo "Found old files in outgoing tree:"
             cat <(echo "$old")
             ctrl_c
-            return
         fi
 
         # Check for out-of-order delivery
@@ -113,7 +114,6 @@ function check() {
                     echo "$host:$type: out-of-order:"
                     cat <(echo "$match")
                     ctrl_c
-                    return
                 fi
             done
         done
