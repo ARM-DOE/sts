@@ -1,7 +1,9 @@
 #!/bin/bash
 
 basedir=$(dirname $0)
-export STS_HOME=/var/tmp/sts4
+if [ -z ${STS_HOME+x} ]; then
+    export STS_HOME=/var/tmp/sts4
+fi
 
 bin="$GOPATH/bin/sts"
 cmd_server="$bin $args --mode=in"
