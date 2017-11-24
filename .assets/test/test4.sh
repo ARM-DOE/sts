@@ -1,6 +1,6 @@
 #!/bin/bash
 
-pid=$$
+pid_main=$$
 
 basedir=$(dirname $0)
 if [ -z ${STS_HOME+x} ]; then
@@ -36,6 +36,7 @@ for cmd in "${cmds[@]}"; do
     echo "Starting $cmd ..."
     $cmd > /dev/null &
     pids+=($!)
+    sleep 0.5
 done
 
 ncmd=${#cmds[@]}
@@ -50,7 +51,7 @@ function ctrl_c() {
     done
     echo "Cleaning out incoming directory ..."
     find $STS_HOME/data/in -type f -exec rm {} \;
-    kill $pid
+    kill $pid_main
     exit 0
 }
 
