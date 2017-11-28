@@ -21,7 +21,7 @@ OUT: # Outgoing configuration
         http-host   : localhost:1992
       tags: # Tags are for configuration based on file patterns (omitted attributes are inherited)
         - pattern   : DEFAULT # The file "tag" pattern
-          priority  : 0       # Relative importance (higher the number, greater the importance)
+          priority  : 1       # Relative importance (higher the number, greater the importance)
           order     : fifo    # File order (fifo (first in, first out), lifo, or none)
           delete    : true    # Whether or not to delete files after reception confirmation
           method    : http
@@ -30,7 +30,7 @@ OUT: # Outgoing configuration
         - pattern   : ^sm/
           priority  : 2
         - pattern   : ^xl/
-          priority  : -1
+          priority  : 0
     - name    : stsout-2
       out-dir : data/out/stsin-2 # Have to override when running on the same host since the target is the same
       target:
