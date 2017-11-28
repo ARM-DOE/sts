@@ -299,6 +299,21 @@ func (s *Stage) initStageFile(path string, size int64) error {
 	return nil
 }
 
+// Prepare is called with all binned parts of a request before each one is
+// "Receive"d (below).  We want to initialize the files in the stage area.
+func (s *Stage) Prepare(source string, parts []sts.Binned) {
+	for _, part := range parts {
+		path := filepath.Join(s.rootDir, source, part.GetName())
+		lock := s.getWriteLock(path)
+		lock.Lock()
+		err := s.initStageFile(path, part.GetFileSize())
+		lock.Unlock()
+		if err != nil {
+			log.Error(err.Error())
+		}
+	}
+}
+
 // Receive reads a single file part with file metadata and reader
 func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 	if len(file.Parts) != 1 {
@@ -310,13 +325,6 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 	path := filepath.Join(s.rootDir, file.Source, file.Name)
 
 	lock := s.getWriteLock(path)
-
-	lock.Lock()
-	err = s.initStageFile(path, file.Size)
-	lock.Unlock()
-	if err != nil {
-		return
-	}
 
 	// Read the part and write it to the right place in the staged "partial"
 	fh, err := os.OpenFile(path+partExt, os.O_WRONLY, 0600)

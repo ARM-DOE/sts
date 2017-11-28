@@ -260,6 +260,7 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := decoder.GetParts()
+	s.GateKeeper.Prepare(source, parts)
 	index := 0
 	for {
 		next, eof := decoder.Next()
