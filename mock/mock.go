@@ -244,6 +244,17 @@ func (c *Cache) Remove(key string) {
 	c.dirty = true
 }
 
+// Reset marks a file to be sent again
+func (c *Cache) Reset(key string) {
+	f := c.Get(key)
+	if f == nil {
+		return
+	}
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	f.(*File).Hash = ""
+}
+
 // Persist writes the in-memory cache to disk
 func (c *Cache) Persist(t time.Time) (err error) {
 	c.boundary = t
