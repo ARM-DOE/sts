@@ -166,7 +166,6 @@ type Stage struct {
 	targetDir string
 	logger    sts.ReceiveLogger
 
-	last       time.Time
 	poll       map[string]int
 	pollLock   sync.RWMutex
 	wait       map[string][]*finalFile
@@ -745,6 +744,9 @@ func (s *Stage) toCache(file *finalFile, state int) {
 	now := time.Now()
 	file.time = now
 	file.state = state
+	if f, ok := s.cache[file.path]; ok && f.next {
+		file.next = true
+	}
 	s.cache[file.path] = file
 	if file.prev != "" {
 		// If it has a prev, mark it to be eligible for removal from the cache
@@ -754,11 +756,10 @@ func (s *Stage) toCache(file *finalFile, state int) {
 		}
 	}
 	if state == stateFinalized {
-		s.last = now
 		s.cacheByAge = append(s.cacheByAge, file)
-	}
-	if len(s.cacheByAge)%cacheCnt == 0 {
-		go s.cleanCache()
+		if len(s.cacheByAge)%cacheCnt == 0 {
+			go s.cleanCache()
+		}
 	}
 }
 
@@ -774,8 +775,8 @@ func (s *Stage) cleanCache() {
 		}
 		n++
 		// We want to keep the most recent one in a given chain to make
-		// validation faster for files that take longer than the
-		// cacheAge to come in (avoids having to read the log file)
+		// validation faster for files that take longer than the cacheAge to
+		// come in (avoids having to read the log file)
 		if cacheFile.prev != "" && !cacheFile.next && age < cacheMaxAge {
 			keep = append(keep, cacheFile)
 			continue
@@ -787,6 +788,16 @@ func (s *Stage) cleanCache() {
 		s.cacheByAge = s.cacheByAge[n:]
 		if len(keep) > 0 {
 			s.cacheByAge = append(keep, s.cacheByAge...)
+		}
+	}
+	// Clean any straggling non-finalized files, which should almost always be
+	// none (we hope)
+	for _, cacheFile := range s.cache {
+		if cacheFile.state == stateFinalized {
+			continue
+		}
+		if time.Since(cacheFile.time) > cacheAge {
+			delete(s.cache, cacheFile.path)
 		}
 	}
 }
