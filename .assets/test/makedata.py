@@ -39,9 +39,12 @@ def main(argv):
         print("Expected 5 args")
         return 1
     (name, prefix, size, count, sleep) = tuple(argv)
+    sleep = int(sleep)
     while True:
         makedata(name, prefix, size, count)
-        time.sleep(int(sleep))
+        if not sleep:
+            break
+        time.sleep(sleep)
 
 
 if __name__ == '__main__':
