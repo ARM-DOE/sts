@@ -19,9 +19,9 @@ cp $basedir/test4.yaml $STS_HOME/conf/sts.out.yaml
 
 sim=(
     "stsin-1 xl 100000000     4  60"
-    "stsin-1 xs       100  5000 120"
+    "stsin-1 xs       100  1000 120"
     "stsin-2 lg   1000000   200  45"
-    "stsin-2 sm     10000  1000  60"
+    "stsin-2 sm     10000   500  60"
     "stsin-2 md    100000   100  30"
 )
 cmds=()
