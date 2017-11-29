@@ -98,7 +98,7 @@ function check() {
         fi
 
         # Check for stuck "out" files
-        old=`find $STS_HOME/data/out -type f -mmin +2 2>/dev/null`
+        old=`find $STS_HOME/data/out -type f -mmin +5 2>/dev/null | sort`
         if [ "$old" ]; then
             echo "Found old files in outgoing tree:"
             cat <(echo "$old")
