@@ -76,7 +76,7 @@ function clean() {
 }
 
 function mem() {
-    ps=`ps xv -p $1 | tail -1`
+    ps=`ps xv | egrep "^\s*$1"`
     echo " $ps" | tr -s ' ' | cut -d ' ' -f 9
 }
 
