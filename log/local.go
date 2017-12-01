@@ -1,11 +1,15 @@
 package log
 
 import (
+	"bufio"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -66,7 +70,25 @@ func NewReceive(rootDir string) *Receive {
 	}
 }
 
-func (r *Receive) bySource(source string) (logger *rollingFile, lock *sync.RWMutex) {
+func (r *Receive) getSources() []string {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	nodes, err := ioutil.ReadDir(r.rootDir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, node := range nodes {
+		if node.IsDir() {
+			names = append(names, node.Name())
+		}
+	}
+	return names
+}
+
+func (r *Receive) bySource(source string) (
+	logger *rollingFile, lock *sync.RWMutex,
+) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	var ok bool
@@ -96,11 +118,36 @@ func (r *Receive) Received(source string, file sts.Received) {
 }
 
 // WasReceived tries to find the path specified between the times specified
-func (r *Receive) WasReceived(source string, relPath string, after time.Time, before time.Time) bool {
+func (r *Receive) WasReceived(
+	source string, relPath string, after time.Time, before time.Time) bool {
+
 	logger, lock := r.bySource(source)
 	lock.RLock()
 	defer lock.RUnlock()
 	return logger.search(relPath+":", after, before)
+}
+
+// Parse reads the log files for all sources in the provided time range and
+// calls the handler on each record
+func (r *Receive) Parse(
+	handler func(source, name, hash string, size int64, t time.Time) bool,
+	after time.Time, before time.Time) bool {
+
+	for _, source := range r.getSources() {
+		logger, lock := r.bySource(source)
+		lock.Lock()
+		logger.eachLine(func(line string) bool {
+			parts := strings.Split(line, ":")
+			if len(parts) < 4 {
+				return false
+			}
+			b, _ := strconv.ParseInt(parts[2], 10, 64)
+			t, _ := strconv.ParseInt(parts[3], 10, 64)
+			return handler(source, parts[0], parts[1], b, time.Unix(t, 0))
+		}, after, before)
+		lock.Unlock()
+	}
+	return false
 }
 
 // General is a rolling-file logger that implements sts.Logger
@@ -223,8 +270,11 @@ func (rf *rollingFile) close() {
 	}
 }
 
-// search will look for a given text pattern in the log history
-func (rf *rollingFile) search(text string, start time.Time, stop time.Time) bool {
+// each will loop over all log files in date range and call the provided
+// handler for each one
+func (rf *rollingFile) each(handler func(string) bool,
+	start time.Time, stop time.Time) bool {
+
 	if start.IsZero() {
 		start = time.Now()
 	}
@@ -238,10 +288,9 @@ func (rf *rollingFile) search(text string, start time.Time, stop time.Time) bool
 	if stop.Before(start) {
 		offset *= -1
 	}
-	b := []byte(text)
 	for {
 		path := rf.getPath(start)
-		if fileutil.FindLine(path, b) != "" {
+		if handler(path) {
 			return true
 		}
 		if offset > 0 && start.After(stop) {
@@ -253,4 +302,39 @@ func (rf *rollingFile) search(text string, start time.Time, stop time.Time) bool
 		start = start.Add(offset)
 	}
 	return false
+}
+
+// eachLine will call the handler on each line of each log file in the input
+// time range
+func (rf *rollingFile) eachLine(handler func(string) bool,
+	start, stop time.Time) bool {
+
+	broke := rf.each(func(path string) bool {
+		fp, err := os.Open(path)
+		if err != nil {
+			return false
+		}
+		defer fp.Close()
+		scanner := bufio.NewScanner(fp)
+		lines := 0
+		for scanner.Scan() {
+			if handler(scanner.Text()) {
+				return true
+			}
+			lines++
+		}
+		return false
+	}, start, stop)
+	return broke
+}
+
+// search will look for a given text pattern in the log history
+func (rf *rollingFile) search(text string,
+	start time.Time, stop time.Time) bool {
+
+	b := []byte(text)
+	broke := rf.each(func(path string) bool {
+		return fileutil.FindLine(path, b) != ""
+	}, start, stop)
+	return broke
 }

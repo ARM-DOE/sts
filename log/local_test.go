@@ -82,4 +82,16 @@ func TestReceive(t *testing.T) {
 			t.Error("Failed to find:", name)
 		}
 	}
+	parsed := 0
+	logger.Parse(func(source, name, hash string, size int64, r time.Time) bool {
+		parsed++
+		if size == 0 || r.IsZero() {
+			t.Error("Bad size/time:", size, r)
+		}
+		println(source, name, hash, size, r.String())
+		return false
+	}, start, time.Now())
+	if parsed < len(names) {
+		t.Fatal("Failed to parse each log line")
+	}
 }

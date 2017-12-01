@@ -412,6 +412,8 @@ func (s *Stage) GetFileStatus(source, relPath string, sent time.Time) int {
 // files in the stage area that should be completed from the previous server
 // run
 func (s *Stage) Recover() (err error) {
+	log.Debug("Recovering...")
+	defer log.Debug("Recovery complete")
 	var ready []*sts.Partial
 	err = filepath.Walk(s.rootDir,
 		func(path string, info os.FileInfo, err error) error {
@@ -453,7 +455,27 @@ func (s *Stage) Recover() (err error) {
 	if len(ready) == 0 {
 		return
 	}
-	worker := func(ch <-chan *sts.Partial) {
+	// Build the cache from the log
+	s.cacheLock.Lock() // Shouldn't be necessary but just to be safe
+	s.logger.Parse(func(source, name, hash string, size int64, t time.Time) bool {
+		path := filepath.Join(s.rootDir, source, name)
+		file := &finalFile{
+			source: source,
+			path:   path,
+			name:   name,
+			hash:   hash,
+			size:   size,
+			time:   t,
+			state:  stateFinalized,
+		}
+		s.cache[path] = file
+		s.cacheByAge = append(s.cacheByAge, file)
+		log.Debug("Log to cache:", source, file.name)
+		return false
+	}, time.Now().Add(-1*cacheMaxAge), time.Now())
+	s.cacheLock.Unlock()
+	worker := func(wg *sync.WaitGroup, ch <-chan *sts.Partial) {
+		defer wg.Done()
 		for f := range ch {
 			s.process(s.partialToFinal(f))
 		}
@@ -464,12 +486,13 @@ func (s *Stage) Recover() (err error) {
 	// things concurrently.  We don't want to just have them all go off because
 	// we could bump against the OS's threshold for max files open at once.
 	for i := 0; i < 16; i++ {
-		go worker(ch)
 		wg.Add(1)
+		go worker(&wg, ch)
 	}
 	for _, file := range ready {
 		ch <- file
 	}
+	close(ch)
 	wg.Wait()
 	return
 }
@@ -559,25 +582,18 @@ func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 				err = nil
 				return
 			}
-			log.Debug("Checking log for previous file:",
-				file.name, "<-", file.prev)
-			if !s.logger.WasReceived(
-				file.source, file.prev,
-				time.Now(), time.Now().Add(-logSearch)) {
-				log.Debug("Previous file not found in log:",
-					file.name, "<-", file.prev)
-				if count := s.getPollCount(file.path); count < waitPollCount {
-					s.toWait(stagedPrevFile, file)
-					err = nil
-					return
-				}
-				// If this file has been polled MaxPollCount times and we still
-				// can't find any trace of its predecessor (which is the case
-				// if we get here) then release it anyway at the risk of
-				// getting data out of order. We can only do so much.
-				log.Info("Done Waiting:", file.name, "<-", file.prev)
-				s.doneWaiting(stagedPrevFile, file)
+			pollCount := s.getPollCount(file.path)
+			if pollCount <= waitPollCount {
+				s.toWait(stagedPrevFile, file)
+				err = nil
+				return
 			}
+			// If this file has been polled MaxPollCount times and we still
+			// can't find any trace of its predecessor (which is the case
+			// if we get here) then release it anyway at the risk of
+			// getting data out of order. We can only do so much.
+			log.Info("Done Waiting:", file.name, "<-", file.prev)
+			s.doneWaiting(stagedPrevFile, file)
 
 		case f.state == stateReceived:
 			log.Debug("Waiting for previous file:",

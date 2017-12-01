@@ -18,6 +18,14 @@ echo "Staging test data..."
 tar -C $STS_HOME -xzf $PWD/$basedir/crash.tgz
 rm -rf $STS_HOME/data/log/messages
 
+ym=`date +%Y%m`
+d=`date +%d`
+mv $STS_HOME/data/log/incoming_from/stsout-2/201703 \
+   $STS_HOME/data/log/incoming_from/stsout-2/$ym
+
+mv $STS_HOME/data/log/incoming_from/stsout-2/$ym/22 \
+   $STS_HOME/data/log/incoming_from/stsout-2/$ym/$d
+
 echo "Running..."
 $cmd > /dev/null
 

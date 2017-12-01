@@ -52,10 +52,14 @@ type SendLogger interface {
 
 // ReceiveLogger is the interface for logging on the incoming side
 type ReceiveLogger interface {
+	Parse(
+		handler func(source, name, hash string, size int64, t time.Time) bool,
+		after time.Time,
+		before time.Time) bool
 	Received(source string, file Received)
 	WasReceived(
 		source string,
-		relPath string,
+		name string,
 		after time.Time,
 		before time.Time) bool
 }
