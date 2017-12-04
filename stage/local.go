@@ -387,6 +387,11 @@ func (s *Stage) GetFileStatus(source, relPath string, sent time.Time) int {
 	if f == nil {
 		if s.logger.WasReceived(source, relPath, sent, time.Now()) {
 			s.removePoll(path)
+			s.toCache(&finalFile{
+				path:   path,
+				name:   relPath,
+				source: source,
+			}, stateFinalized)
 			return sts.ConfirmPassed
 		}
 		return sts.ConfirmNone
@@ -790,6 +795,7 @@ func (s *Stage) toCache(file *finalFile, state int) {
 func (s *Stage) cleanCache() {
 	s.cacheLock.Lock()
 	defer s.cacheLock.Unlock()
+	defer log.Debug("Cache sizes:", len(s.cacheByAge), len(s.cache))
 	var keep []*finalFile
 	var n int
 	for _, cacheFile := range s.cacheByAge {

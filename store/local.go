@@ -11,7 +11,6 @@ import (
 
 	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/fileutil"
-	"code.arm.gov/dataflow/sts/log"
 )
 
 // disabledName is the file name used to disable scanning externally.
@@ -153,7 +152,6 @@ func (dir *Local) shouldIgnore(relPath string, isDir bool) bool {
 }
 
 func (dir *Local) handleNode(path string, info os.FileInfo, err error) error {
-	log.Debug("Scanned:", path, info.ModTime(), err)
 	if info == nil || err != nil {
 		// If a file just doesn't exist anymore, we probably don't need to stop
 		// the scan for that.
