@@ -250,7 +250,6 @@ func (broker *Broker) recover() (
 			switch {
 			case f.NotFound():
 				send = append(send, cached)
-				break
 			case f.Waiting():
 				poll = append(poll, &progressFile{
 					name:      cached.GetName(),
@@ -258,10 +257,8 @@ func (broker *Broker) recover() (
 					size:      cached.GetSize(),
 					hash:      cached.GetHash(),
 				})
-				break
 			case f.Failed():
 				send = append(send, cached)
-				break
 			case f.Received():
 				if !broker.Conf.Logger.WasSent(
 					f.GetName(), time.Unix(cached.GetTime(), 0), time.Now()) {
@@ -273,7 +270,6 @@ func (broker *Broker) recover() (
 					})
 				}
 				broker.finish(f)
-				break
 			}
 		}
 		// Make sure changes get persisted after the batch is processed
@@ -305,6 +301,14 @@ func (broker *Broker) startScan(wg *sync.WaitGroup) {
 	}
 }
 
+func (broker *Broker) fromCache(key string) sts.File {
+	cached := broker.Conf.Cache.Get(key)
+	if cached != nil {
+		return cached.(sts.File)
+	}
+	return nil
+}
+
 func (broker *Broker) scan() []sts.Hashed {
 	var err error
 	var files []sts.File
@@ -313,17 +317,8 @@ func (broker *Broker) scan() []sts.Hashed {
 	store := broker.Conf.Store
 	cache := broker.Conf.Cache
 
-	// For looking up what is already in the cache
-	getter := func(key string) sts.File {
-		cached := cache.Get(key)
-		if cached != nil {
-			return cached.(sts.File)
-		}
-		return nil
-	}
-
 	// Perform the scan
-	if files, scanTime, err = store.Scan(getter); err != nil {
+	if files, scanTime, err = store.Scan(broker.fromCache); err != nil {
 		log.Error(err)
 		return nil
 	}
@@ -362,39 +357,50 @@ func (broker *Broker) scan() []sts.Hashed {
 	}
 	wrapped = wrapped[:i]
 	cache.Iterate(func(cached sts.Cached) bool {
+		switch {
 		// Add any that might have failed the hash calculation last time
-		if cached.GetHash() == "" {
+		case cached.GetHash() == "":
 			wrapped = append(wrapped, cached)
 			return false
-		}
+		case !cached.IsDone():
+			return false
 		// Clean the cache while we're at it
-		if cached.IsDone() && cached.GetTime() < age.Unix() {
-			cache.Remove(cached.GetName())
+		case !broker.cleanAll:
+			check := true
+			if broker.cleanSome {
+				tagName := broker.Conf.Tagger(cached.GetName())
+				if tag, ok := broker.tagMap[tagName]; ok && !tag.Delete {
+					check = true
+				}
+			}
+			if check && cached.GetTime() > age.Unix() {
+				return false
+			}
 		}
+		log.Debug("Cleaned:", cached.GetName())
+		cache.Remove(cached.GetName())
 		return false
 	})
-	if len(wrapped) == 0 {
-		return nil
-	}
-
-	var n int
-	if n, err = broker.hash(wrapped,
-		broker.Conf.Threads,
-		int64(broker.Conf.PayloadSize)); err != nil {
-
-		log.Error(err)
-	}
-
 	var ready []sts.Hashed
-	if n == len(wrapped) {
-		ready = wrapped
-	}
-	for _, file := range wrapped {
-		// Update the cache with all files--even those without a hash (will try
-		// again next time)
-		cache.Add(file)
-		if n < len(wrapped) && file.GetHash() != "" {
-			ready = append(ready, file)
+	if len(wrapped) > 0 {
+		var n int
+		if n, err = broker.hash(wrapped,
+			broker.Conf.Threads,
+			int64(broker.Conf.PayloadSize)); err != nil {
+
+			log.Error(err)
+		}
+
+		if n == len(wrapped) {
+			ready = wrapped
+		}
+		for _, file := range wrapped {
+			// Update the cache with all files--even those without a hash (will
+			// try again next time)
+			cache.Add(file)
+			if n < len(wrapped) && file.GetHash() != "" {
+				ready = append(ready, file)
+			}
 		}
 	}
 	if err = cache.Persist(
@@ -406,36 +412,38 @@ func (broker *Broker) scan() []sts.Hashed {
 	return ready
 }
 
+func hashFiles(opener sts.Open, in <-chan []sts.Hashed, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for files := range in {
+		log.Debug(fmt.Sprintf("HASHing %d files...", len(files)))
+		var err error
+		var fh sts.Readable
+		for _, file := range files {
+			log.Debug(fmt.Sprintf("HASHing %s ...", file.GetName()))
+			fh, err = opener(file)
+			if err != nil {
+				log.Error(err)
+				continue
+			}
+			file.(*hashFile).hash, err = fileutil.ReadableMD5(fh)
+			if err != nil {
+				log.Error(err)
+			}
+			fh.Close()
+		}
+	}
+}
+
 func (broker *Broker) hash(
 	scanned []sts.Hashed,
 	nWorkers int, batchSize int64) (int, error) {
 
-	hashFiles := func(in <-chan []sts.Hashed, wg *sync.WaitGroup) {
-		defer wg.Done()
-		for files := range in {
-			log.Debug(fmt.Sprintf("HASHing %d files...", len(files)))
-			var err error
-			var fh sts.Readable
-			for _, file := range files {
-				log.Debug(fmt.Sprintf("HASHing %s ...", file.GetName()))
-				fh, err = broker.Conf.Store.GetOpener()(file)
-				if err != nil {
-					log.Error(err)
-					continue
-				}
-				file.(*hashFile).hash, err = fileutil.ReadableMD5(fh)
-				if err != nil {
-					log.Error(err)
-				}
-				fh.Close()
-			}
-		}
-	}
 	wg := sync.WaitGroup{}
 	wg.Add(nWorkers)
 	ch := make(chan []sts.Hashed, nWorkers*2)
+	opener := broker.Conf.Store.GetOpener()
 	for i := 0; i < nWorkers; i++ {
-		go hashFiles(ch, &wg)
+		go hashFiles(opener, ch, &wg)
 	}
 	j := 0
 	count := 1
@@ -658,6 +666,11 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 	out := broker.chValidate
 	progress := make(map[string]*progressFile)
 	var waiter sync.WaitGroup
+	done := func(f *progressFile) {
+		defer waiter.Done()
+		waiter.Add(1)
+		out <- f
+	}
 	for {
 		log.Debug("Track loop ...")
 		payload, ok := <-in
@@ -694,11 +707,7 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 				}
 				broker.Conf.Logger.Sent(pFile)
 				delete(progress, key)
-				go func(wg *sync.WaitGroup) {
-					defer wg.Done()
-					wg.Add(1)
-					out <- pFile
-				}(&waiter)
+				go done(pFile)
 			}
 		}
 	}
@@ -786,19 +795,16 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 					broker.finish(f)
 					delete(poll, f.GetName())
 				}
-				break
 			case f.Waiting():
 				// Nothing to do with "waiting" files. They should continue to
 				// be polled since eventually they will be released on the
 				// receiving end
-				break
 			case f.Failed():
 				log.Error("Failed validation:", f.GetName())
 				fallthrough
 			case f.Received():
 				broker.finish(f)
 				delete(poll, f.GetName())
-				break
 			}
 		}
 		// Make sure changes get persisted after the batch is processed
@@ -820,11 +826,9 @@ func (broker *Broker) finish(file sts.Polled) {
 			broker.Conf.Store.Remove(cached)
 		}
 		broker.Conf.Cache.Done(file.GetName())
-		break
 	default:
 		log.Debug("Trying again:", file.GetName())
 		broker.Conf.Cache.Reset(file.GetName())
-		break
 	}
 }
 
