@@ -172,12 +172,14 @@ func (j *JSON) Remove(key string) {
 
 // Persist writes the in-memory cache to disk
 func (j *JSON) Persist(boundary time.Time) (err error) {
-	if !boundary.IsZero() && j.Time.Equal(boundary) && !j.dirty {
+	if !j.dirty {
 		return
 	}
-	j.Time = boundary
-	j.mutex.RLock()
-	defer j.mutex.RUnlock()
+	j.mutex.Lock()
+	defer j.mutex.Unlock()
+	if !boundary.IsZero() {
+		j.Time = boundary
+	}
 	err = j.write()
 	return
 }
