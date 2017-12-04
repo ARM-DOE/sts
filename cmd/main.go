@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 
+	stackimpact "github.com/stackimpact/stackimpact-go"
+
 	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/fileutil"
 	"code.arm.gov/dataflow/sts/http"
@@ -123,6 +125,16 @@ func newApp() *app {
 }
 
 func (a *app) run() {
+	if a.conf.AgentKey != "" {
+		agent := stackimpact.Start(stackimpact.Options{
+			AgentKey:   a.conf.AgentKey,
+			AppName:    "STS",
+			AppVersion: Version,
+			Debug:      a.debug,
+		})
+		span := agent.Profile()
+		defer span.Stop()
+	}
 	i := a.startServer()
 	o := a.startClients()
 	if !i && !o {

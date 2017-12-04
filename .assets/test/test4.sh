@@ -8,14 +8,14 @@ if [ -z ${STS_HOME+x} ]; then
 fi
 
 bin="$GOPATH/bin/sts"
-cmd_server="$bin $args --debug --mode=in"
-cmd_client="$bin $args --debug --mode=out"
+cmd_server="$bin $args --mode=in"
+cmd_client="$bin $args --mode=out"
 
 echo "Cleaning last run..."
 rm -rf $STS_HOME
 mkdir -p $STS_HOME/conf
-cp $basedir/test4.yaml $STS_HOME/conf/sts.in.yaml
-cp $basedir/test4.yaml $STS_HOME/conf/sts.out.yaml
+cp $basedir/test4.server.yaml $STS_HOME/conf/sts.in.yaml
+cp $basedir/test4.client.yaml $STS_HOME/conf/sts.out.yaml
 
 sim=(
     "stsin-1 xl 100000000     4  60"

@@ -28,8 +28,9 @@ const (
 
 // Conf is the outer struct for decoding a YAML config file
 type Conf struct {
-	Client *ClientConf `yaml:"OUT"`
-	Server *ServerConf `yaml:"IN"`
+	AgentKey string      `yaml:"stackimpact"`
+	Client   *ClientConf `yaml:"OUT"`
+	Server   *ServerConf `yaml:"IN"`
 }
 
 // ClientConf is the struct for housing all outgoing configuration.
