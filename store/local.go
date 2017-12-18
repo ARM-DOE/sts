@@ -135,6 +135,11 @@ func (dir *Local) getRelPath(path string) string {
 
 func (dir *Local) shouldIgnore(relPath string, isDir bool) bool {
 	var pattern *regexp.Regexp
+	for _, pattern = range dir.Ignore {
+		if pattern.MatchString(relPath) {
+			return true
+		}
+	}
 	if !isDir && len(dir.Include) > 0 {
 		for _, pattern = range dir.Include {
 			if pattern.MatchString(relPath) {
@@ -142,11 +147,6 @@ func (dir *Local) shouldIgnore(relPath string, isDir bool) bool {
 			}
 		}
 		return true
-	}
-	for _, pattern = range dir.Ignore {
-		if pattern.MatchString(relPath) {
-			return true
-		}
 	}
 	return false
 }
