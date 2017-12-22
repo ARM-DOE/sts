@@ -57,6 +57,7 @@ type Broker struct {
 	cleanSome bool
 	statLock  sync.Mutex
 	statSince time.Time
+	sendTimes [][2]int64
 	bytesOut  int64
 
 	// Channels
@@ -522,8 +523,7 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 	var sendable sts.Sendable
 	var current sts.Binnable
 	var ok bool
-	var timeout <-chan time.Time
-	wait := time.Second * 1
+	var wait <-chan time.Time
 	in := broker.chQueued
 	out := broker.chTransmit
 	for {
@@ -531,9 +531,9 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 			if payload == nil {
 				log.Debug("Bin blocking ...")
 				// Just block if we don't have anything waiting
-				timeout = nil
+				wait = nil
 			} else {
-				timeout = time.After(wait)
+				wait = time.After(time.Second * 1)
 			}
 			select {
 			case sendable, ok = <-in:
@@ -552,7 +552,7 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 					}
 					return
 				}
-			case <-timeout:
+			case <-wait:
 				log.Debug("Bin waited")
 				if payload != nil && payload.GetSize() > 0 {
 					out <- payload
@@ -643,17 +643,30 @@ func (broker *Broker) stat(payload sts.Payload) {
 	broker.statLock.Lock()
 	defer broker.statLock.Unlock()
 	if broker.statSince.IsZero() {
-		// Start the stats after the first payload
-		broker.statSince = time.Now()
-		return
+		broker.statSince = payload.GetStarted()
 	}
+	broker.sendTimes = append(broker.sendTimes, [2]int64{
+		payload.GetStarted().UnixNano(),
+		payload.GetCompleted().UnixNano(),
+	})
 	broker.bytesOut += payload.GetSize()
-	d := time.Now().Sub(broker.statSince)
-	if d > broker.Conf.StatInterval {
-		s := d.Seconds()
+	d := payload.GetCompleted().Sub(broker.statSince)
+	if d > broker.Conf.StatInterval && len(broker.sendTimes) > 0 {
+		// Attempt to remove times where nothing was being sent
+		var t int64
+		active := d
+		for i, r := range broker.sendTimes[1:] {
+			// i is actually the real index - 1 since we are slicing at 1
+			t = broker.sendTimes[i][1]
+			if r[0] > t {
+				active -= time.Nanosecond * time.Duration(r[0]-t)
+			}
+		}
 		mb := float64(broker.bytesOut) / float64(1024) / float64(1024)
+		s := d.Seconds()
 		log.Info(fmt.Sprintf(
-			"TOTAL Throughput: %.2fMB, %.2fs, %.2f MB/s", mb, s, mb/s))
+			"TOTAL Throughput: %.2fMB, %.2fs, %.2f MB/s (%d%% idle)",
+			mb, s, mb/s, int(100*(d-active)/d)))
 		broker.bytesOut = 0
 		broker.statSince = time.Now()
 	}
@@ -718,8 +731,7 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 	defer log.Debug("Validator done")
 	in := broker.chValidate
 	poll := make(map[string]*progressFile)
-	wait := broker.Conf.PollDelay
-	var timeout <-chan time.Time
+	var wait <-chan time.Time
 	var pollTime time.Time
 	var sent sts.Pollable
 	var ready []sts.Pollable
@@ -734,9 +746,9 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 				return
 			}
 			// If there's nothing in our Q, just block until we get a file
-			timeout = nil
+			wait = nil
 		} else {
-			timeout = time.After(wait)
+			wait = time.After(broker.Conf.PollDelay)
 		}
 		select {
 		case sent, ok = <-in:
@@ -747,7 +759,7 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 				in = nil
 			}
 			break
-		case <-timeout:
+		case <-wait:
 			break
 		}
 		if sent != nil {
@@ -756,7 +768,7 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 		}
 		// Make sure it's been long enough to send another poll
 		if !pollTime.IsZero() &&
-			time.Now().Sub(pollTime) < broker.Conf.PollInterval {
+			time.Since(pollTime) < broker.Conf.PollInterval {
 			continue
 		}
 		// Build the list of pollable files
