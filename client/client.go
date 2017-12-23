@@ -170,8 +170,6 @@ func (broker *Broker) recover() (
 			log.Error("Stale companion on target host:", p.Name)
 		}
 	}
-	// TODO: handle old-style cache where MD5s weren't included?  If not, we
-	// need to remove the cache file when migrating from a pre-1.0 release.
 	store := broker.Conf.Store
 	cache := broker.Conf.Cache
 	cache.Iterate(func(f sts.Cached) bool {

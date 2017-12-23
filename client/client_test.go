@@ -1,7 +1,6 @@
 package client
 
 import (
-	"fmt"
 	"testing"
 
 	"code.arm.gov/dataflow/sts/log"
@@ -20,6 +19,6 @@ func TestScan(t *testing.T) {
 	}
 	hashed := broker.scan()
 	if len(hashed) != n {
-		t.Error(fmt.Sprintf("Expected %d but got %d", n, len(hashed)))
+		t.Errorf("Expected %d but got %d", n, len(hashed))
 	}
 }
