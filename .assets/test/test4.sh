@@ -8,8 +8,8 @@ if [ -z ${STS_HOME+x} ]; then
 fi
 
 bin="$GOPATH/bin/sts"
-cmd_server="$bin $args --mode=in"
-cmd_client="$bin $args --mode=out"
+cmd_server="$bin $args --debug --mode=in"
+cmd_client="$bin $args --debug --mode=out"
 
 echo "Cleaning last run..."
 rm -rf $STS_HOME
@@ -18,11 +18,11 @@ cp $basedir/test4.server.yaml $STS_HOME/conf/sts.in.yaml
 cp $basedir/test4.client.yaml $STS_HOME/conf/sts.out.yaml
 
 sim=(
-    "stsin-1 xl 100000000     4  60"
-    "stsin-1 xs       100  1000 120"
-    "stsin-2 lg   1000000   200  45"
-    "stsin-2 sm     10000   500  60"
-    "stsin-2 md    100000   100  30"
+    "stsin-1 xl 100000000     4  600"
+    "stsin-1 xs       100  1000 1200"
+    "stsin-2 lg   1000000   200  450"
+    "stsin-2 md    100000   100  300"
+    "stsin-2 sm     10000   500  600"
 )
 cmds=()
 for args in "${sim[@]}"; do
