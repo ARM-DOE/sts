@@ -26,17 +26,16 @@ export GOPATH
 rm -rf $GOPATH
 mkdir -p $GOPATH
 
-# Download dependencies
-go get -u github.com/alecthomas/units
-go get -u github.com/davecgh/go-spew
-go get -u gopkg.in/yaml.v2
-
 src=$GOPATH/src/code.arm.gov/dataflow
 mkdir -p $src
 ln -s $proj $src/sts
 
 # Build
 $root/build.sh
+if [ ! -f $GOPATH/bin/sts ]; then
+    echo "Build failed"
+    exit 1
+fi
 
 # Run all tests
 cd $root; go test ../../...

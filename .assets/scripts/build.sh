@@ -16,10 +16,9 @@ echo "-- Preparing"
 mkdir -p $GOPATH/bin
 
 echo "-- Building Dependencies"
-go install gopkg.in/yaml.v2
-go install github.com/alecthomas/units
-go install github.com/davecgh/go-spew/spew
-go install github.com/stackimpact/stackimpact-go
+go get gopkg.in/yaml.v2
+go get github.com/alecthomas/units
+go get github.com/stackimpact/stackimpact-go
 
 date=`date -u '+%Y-%m-%d %H:%M:%S'`
 vers=$APR_VERSION
