@@ -661,7 +661,7 @@ func (broker *Broker) stat(payload sts.Payload) {
 			}
 		}
 		mb := float64(broker.bytesOut) / float64(1024) / float64(1024)
-		s := d.Seconds()
+		s := active.Seconds()
 		log.Info(fmt.Sprintf(
 			"TOTAL Throughput: %.2fMB, %.2fs, %.2f MB/s (%d%% idle)",
 			mb, s, mb/s, int(100*(d-active)/d)))
