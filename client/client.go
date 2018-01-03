@@ -649,7 +649,7 @@ func (broker *Broker) stat(payload sts.Payload) {
 	})
 	broker.bytesOut += payload.GetSize()
 	d := payload.GetCompleted().Sub(broker.statSince)
-	if d > broker.Conf.StatInterval && len(broker.sendTimes) > 0 {
+	if d > broker.Conf.StatInterval {
 		// Attempt to remove times where nothing was being sent
 		var t int64
 		active := d
@@ -667,6 +667,7 @@ func (broker *Broker) stat(payload sts.Payload) {
 			mb, s, mb/s, int(100*(d-active)/d)))
 		broker.bytesOut = 0
 		broker.statSince = time.Now()
+		broker.sendTimes = nil
 	}
 }
 
