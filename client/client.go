@@ -653,9 +653,13 @@ func (broker *Broker) stat(payload sts.Payload) {
 		// Attempt to remove times where nothing was being sent
 		var t int64
 		active := d
-		for i, r := range broker.sendTimes[1:] {
-			// i is actually the real index - 1 since we are slicing at 1
-			t = broker.sendTimes[i][1]
+		ranges := append([][2]int64{{
+			int64(0),
+			broker.statSince.UnixNano(),
+		}}, broker.sendTimes...)
+		for i, r := range ranges[1:] {
+			// i is actually the real index minus 1 since we are slicing at 1
+			t = ranges[i][1]
 			if r[0] > t {
 				active -= time.Nanosecond * time.Duration(r[0]-t)
 			}
