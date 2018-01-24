@@ -702,6 +702,7 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 					name:    binned.GetName(),
 					size:    binned.GetFileSize(),
 					started: payload.GetStarted(),
+					hash:    binned.GetFileHash(),
 				}
 				pFile = progress[key]
 			}
