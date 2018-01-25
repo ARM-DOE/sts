@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/fileutil"
@@ -28,8 +29,25 @@ type Server struct {
 	Keys        []string
 	Compression int
 
-	DecoderFactory sts.PayloadDecoderFactory
-	GateKeeper     sts.GateKeeper
+	GateKeepers       map[string]sts.GateKeeper
+	GateKeeperFactory sts.GateKeeperFactory
+	DecoderFactory    sts.PayloadDecoderFactory
+
+	lock sync.RWMutex
+}
+
+func (s *Server) getGateKeeper(source string) sts.GateKeeper {
+	s.lock.RLock()
+	if gk, ok := s.GateKeepers[source]; ok {
+		s.lock.RUnlock()
+		return gk
+	}
+	s.lock.RUnlock()
+	gk := s.GateKeeperFactory(source)
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.GateKeepers[source] = gk
+	return gk
 }
 
 func (s *Server) isValid(src, key string) bool {
@@ -175,7 +193,8 @@ func (s *Server) routePartials(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	partials, err := s.GateKeeper.Scan(source)
+	gateKeeper := s.getGateKeeper(source)
+	partials, err := gateKeeper.Scan()
 	if err != nil {
 		s.handleError(w, err)
 		return
@@ -216,13 +235,13 @@ func (s *Server) routeValidate(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	gateKeeper := s.getGateKeeper(source)
 	respMap := make(map[string]int, len(files))
 	for _, f := range files {
 		if sep != "" {
 			f.Name = filepath.Join(strings.Split(f.Name, sep)...)
 		}
-		respMap[f.Name] = s.GateKeeper.GetFileStatus(
-			source, f.GetName(), f.GetStarted())
+		respMap[f.Name] = gateKeeper.GetFileStatus(f.GetName(), f.GetStarted())
 	}
 	respJSON, _ := json.Marshal(respMap)
 	w.Header().Set(HeaderSep, string(os.PathSeparator))
@@ -260,7 +279,8 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := decoder.GetParts()
-	s.GateKeeper.Prepare(source, parts)
+	gateKeeper := s.getGateKeeper(source)
+	gateKeeper.Prepare(parts)
 	index := 0
 	for {
 		next, eof := decoder.Next()
@@ -287,7 +307,7 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 		file.Parts = append(file.Parts, &sts.ByteRange{
 			Beg: beg, End: end,
 		})
-		err = s.GateKeeper.Receive(file, next)
+		err = gateKeeper.Receive(file, next)
 		if err != nil {
 			log.Error(err.Error())
 			w.Header().Add(HeaderPartCount, strconv.Itoa(len(parts)))

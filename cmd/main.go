@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"sync"
 
 	stackimpact "github.com/stackimpact/stackimpact-go"
@@ -181,22 +182,39 @@ func (a *app) startServer() bool {
 	}
 	dirs := conf.Dirs
 	log.Init(dirs.LogMsg, a.debug)
-	stager := stage.New(
-		dirs.Stage,
-		dirs.Final,
-		log.NewReceive(dirs.LogIn))
-	if err = stager.Recover(); err != nil {
+	newStage := func(source string) sts.GateKeeper {
+		return stage.New(
+			source,
+			filepath.Join(dirs.Stage, source),
+			filepath.Join(dirs.Final, source),
+			log.NewReceive(filepath.Join(dirs.LogIn, source)))
+	}
+	nodes, err := ioutil.ReadDir(dirs.Stage)
+	if err != nil {
 		panic(err)
 	}
+	var stager sts.GateKeeper
+	var stagers map[string]sts.GateKeeper
+	stagers = make(map[string]sts.GateKeeper)
+	for _, node := range nodes {
+		if node.IsDir() {
+			stager = newStage(node.Name())
+			if err = stager.Recover(); err != nil {
+				panic(err)
+			}
+			stagers[node.Name()] = stager
+		}
+	}
 	server := &http.Server{
-		ServeDir:       dirs.Serve,
-		Host:           conf.Server.Host,
-		Port:           conf.Server.Port,
-		Sources:        conf.Sources,
-		Keys:           conf.Keys,
-		Compression:    conf.Server.Compression,
-		DecoderFactory: payload.NewDecoder,
-		GateKeeper:     stager,
+		ServeDir:          dirs.Serve,
+		Host:              conf.Server.Host,
+		Port:              conf.Server.Port,
+		Sources:           conf.Sources,
+		Keys:              conf.Keys,
+		Compression:       conf.Server.Compression,
+		DecoderFactory:    payload.NewDecoder,
+		GateKeepers:       stagers,
+		GateKeeperFactory: newStage,
 	}
 	if conf.Server.TLSCertPath != "" && conf.Server.TLSKeyPath != "" {
 		if server.TLS, err = http.GetTLSConf(

@@ -53,12 +53,11 @@ type SendLogger interface {
 // ReceiveLogger is the interface for logging on the incoming side
 type ReceiveLogger interface {
 	Parse(
-		handler func(source, name, hash string, size int64, t time.Time) bool,
+		handler func(name, hash string, size int64, t time.Time) bool,
 		after time.Time,
 		before time.Time) bool
-	Received(source string, file Received)
+	Received(file Received)
 	WasReceived(
-		source string,
 		name string,
 		after time.Time,
 		before time.Time) bool
@@ -96,11 +95,18 @@ type FileQueue interface {
 // received on the server
 type GateKeeper interface {
 	Recover() error
-	Scan(source string) ([]*Partial, error)
-	Prepare(source string, request []Binned)
+	Scan() ([]*Partial, error)
+	Prepare(request []Binned)
 	Receive(*Partial, io.Reader) error
-	GetFileStatus(source, relPath string, sent time.Time) int
+	GetFileStatus(relPath string, sent time.Time) int
 }
+
+// GateKeeperFactory creates GateKeeper instances
+type GateKeeperFactory func(source string) GateKeeper
+
+// DecodePartials decodes the input reader into a slice of Partial instance
+// pointers
+type DecodePartials func(r io.Reader) ([]*Partial, error)
 
 // Recover is the function type for determining what partial files need to be
 // sent since previous run

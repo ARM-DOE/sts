@@ -57,13 +57,14 @@ func (c *confirmed) Received() bool {
 
 // Client is the main client struct
 type Client struct {
-	SourceName  string
-	TargetHost  string
-	TargetPort  int
-	TargetKey   string
-	Compression int
-	Timeout     time.Duration
-	TLS         *tls.Config
+	SourceName      string
+	TargetHost      string
+	TargetPort      int
+	TargetKey       string
+	Compression     int
+	Timeout         time.Duration
+	TLS             *tls.Config
+	PartialsDecoder sts.DecodePartials
 
 	root   string
 	client *http.Client
@@ -247,11 +248,6 @@ func (h *Client) Recover() (partials []*sts.Partial, err error) {
 		return
 	}
 	defer reader.Close()
-	partials = []*sts.Partial{}
-	jsonDecoder := json.NewDecoder(reader)
-	err = jsonDecoder.Decode(&partials)
-	if err != nil {
-		return
-	}
+	partials, err = h.PartialsDecoder(reader)
 	return
 }

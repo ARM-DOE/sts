@@ -15,6 +15,7 @@ import (
 	"code.arm.gov/dataflow/sts/log"
 	"code.arm.gov/dataflow/sts/payload"
 	"code.arm.gov/dataflow/sts/queue"
+	"code.arm.gov/dataflow/sts/stage"
 	"code.arm.gov/dataflow/sts/store"
 )
 
@@ -179,13 +180,14 @@ func (c *clientApp) init() (err error) {
 		}
 	}
 	httpClient := &http.Client{
-		SourceName:  c.conf.Name,
-		TargetHost:  c.host,
-		TargetPort:  c.port,
-		TargetKey:   c.conf.Target.Key,
-		Timeout:     c.conf.Timeout,
-		Compression: c.conf.Compression,
-		TLS:         c.tls,
+		SourceName:      c.conf.Name,
+		TargetHost:      c.host,
+		TargetPort:      c.port,
+		TargetKey:       c.conf.Target.Key,
+		Timeout:         c.conf.Timeout,
+		Compression:     c.conf.Compression,
+		TLS:             c.tls,
+		PartialsDecoder: stage.ReadCompanions,
 	}
 	c.broker = &client.Broker{
 		Conf: &client.Conf{

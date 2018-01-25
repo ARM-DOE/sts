@@ -3,7 +3,6 @@ package log
 import (
 	"bufio"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -54,61 +53,23 @@ func (s *Send) WasSent(relPath string, after time.Time, before time.Time) bool {
 
 // Receive implements sts.ReceiveLogger
 type Receive struct {
-	rootDir string
-	lock    *sync.Mutex
-	loggers map[string]*rollingFile
-	locks   map[string]*sync.RWMutex
+	logger *rollingFile
+	lock   sync.RWMutex
 }
 
 // NewReceive creates a new Receive logging instance
 func NewReceive(rootDir string) *Receive {
 	return &Receive{
-		rootDir: rootDir,
-		lock:    &sync.Mutex{},
-		loggers: make(map[string]*rollingFile),
-		locks:   make(map[string]*sync.RWMutex),
+		logger: newRollingFile(rootDir, "", 0),
+		lock:   sync.RWMutex{},
 	}
 }
 
-func (r *Receive) getSources() []string {
+// Received logs a file after it's been received
+func (r *Receive) Received(file sts.Received) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
-	nodes, err := ioutil.ReadDir(r.rootDir)
-	if err != nil {
-		return nil
-	}
-	var names []string
-	for _, node := range nodes {
-		if node.IsDir() {
-			names = append(names, node.Name())
-		}
-	}
-	return names
-}
-
-func (r *Receive) bySource(source string) (
-	logger *rollingFile, lock *sync.RWMutex,
-) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	var ok bool
-	if logger, ok = r.loggers[source]; !ok {
-		logger = newRollingFile(filepath.Join(r.rootDir, source), "", 0)
-		r.loggers[source] = logger
-	}
-	if lock, ok = r.locks[source]; !ok {
-		lock = &sync.RWMutex{}
-		r.locks[source] = lock
-	}
-	return
-}
-
-// Received logs a file after it's been fully received
-func (r *Receive) Received(source string, file sts.Received) {
-	logger, lock := r.bySource(source)
-	lock.Lock()
-	defer lock.Unlock()
-	logger.log(
+	r.logger.log(
 		fmt.Sprintf(
 			"%s:%s:%d:%d:",
 			file.GetName(),
@@ -118,37 +79,132 @@ func (r *Receive) Received(source string, file sts.Received) {
 }
 
 // WasReceived tries to find the path specified between the times specified
-func (r *Receive) WasReceived(
-	source string, relPath string, after time.Time, before time.Time) bool {
-
-	logger, lock := r.bySource(source)
-	lock.RLock()
-	defer lock.RUnlock()
-	return logger.search(relPath+":", after, before)
+func (r *Receive) WasReceived(relPath string, after time.Time, before time.Time) bool {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+	return r.logger.search(relPath+":", after, before)
 }
 
-// Parse reads the log files for all sources in the provided time range and
-// calls the handler on each record
+// Parse reads the log files in the provided time range and calls the handler
+// on each record
 func (r *Receive) Parse(
-	handler func(source, name, hash string, size int64, t time.Time) bool,
+	handler func(name, hash string, size int64, t time.Time) bool,
 	after time.Time, before time.Time) bool {
 
-	for _, source := range r.getSources() {
-		logger, lock := r.bySource(source)
-		lock.Lock()
-		logger.eachLine(func(line string) bool {
-			parts := strings.Split(line, ":")
-			if len(parts) < 4 {
-				return false
-			}
-			b, _ := strconv.ParseInt(parts[2], 10, 64)
-			t, _ := strconv.ParseInt(parts[3], 10, 64)
-			return handler(source, parts[0], parts[1], b, time.Unix(t, 0))
-		}, after, before)
-		lock.Unlock()
-	}
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+	r.logger.eachLine(func(line string) bool {
+		parts := strings.Split(line, ":")
+		if len(parts) < 4 {
+			return false
+		}
+		b, _ := strconv.ParseInt(parts[2], 10, 64)
+		t, _ := strconv.ParseInt(parts[3], 10, 64)
+		return handler(parts[0], parts[1], b, time.Unix(t, 0))
+	}, after, before)
 	return false
 }
+
+// // Receive implements sts.ReceiveLogger
+// type Receive struct {
+// 	rootDir string
+// 	lock    *sync.Mutex
+// 	loggers map[string]*rollingFile
+// 	locks   map[string]*sync.RWMutex
+// }
+//
+// // NewReceive creates a new Receive logging instance
+// func NewReceive(rootDir string) *Receive {
+// 	return &Receive{
+// 		rootDir: rootDir,
+// 		lock:    &sync.Mutex{},
+// 		loggers: make(map[string]*rollingFile),
+// 		locks:   make(map[string]*sync.RWMutex),
+// 	}
+// }
+//
+// func (r *Receive) getSources() []string {
+// 	r.lock.Lock()
+// 	defer r.lock.Unlock()
+// 	nodes, err := ioutil.ReadDir(r.rootDir)
+// 	if err != nil {
+// 		return nil
+// 	}
+// 	var names []string
+// 	for _, node := range nodes {
+// 		if node.IsDir() {
+// 			names = append(names, node.Name())
+// 		}
+// 	}
+// 	return names
+// }
+//
+// func (r *Receive) bySource(source string) (
+// 	logger *rollingFile, lock *sync.RWMutex,
+// ) {
+// 	r.lock.Lock()
+// 	defer r.lock.Unlock()
+// 	var ok bool
+// 	if logger, ok = r.loggers[source]; !ok {
+// 		logger = newRollingFile(filepath.Join(r.rootDir, source), "", 0)
+// 		r.loggers[source] = logger
+// 	}
+// 	if lock, ok = r.locks[source]; !ok {
+// 		lock = &sync.RWMutex{}
+// 		r.locks[source] = lock
+// 	}
+// 	return
+// }
+//
+// // Received logs a file after it's been fully received
+// func (r *Receive) Received(source string, file sts.Received) {
+// 	logger, lock := r.bySource(source)
+// 	lock.Lock()
+// 	defer lock.Unlock()
+// 	logger.log(
+// 		fmt.Sprintf(
+// 			"%s:%s:%d:%d:",
+// 			file.GetName(),
+// 			file.GetHash(),
+// 			file.GetSize(),
+// 			time.Now().Unix()))
+// }
+//
+// // WasReceived tries to find the path specified between the times specified
+// func (r *Receive) WasReceived(
+// 	source string, relPath string, after time.Time, before time.Time) bool {
+//
+// 	logger, lock := r.bySource(source)
+// 	lock.RLock()
+// 	defer lock.RUnlock()
+// 	return logger.search(relPath+":", after, before)
+// }
+//
+// // Parse reads the log files for the source specified (or all if not specified)
+// // in the provided time range and calls the handler on each record
+// func (r *Receive) Parse(
+// 	handler func(source, name, hash string, size int64, t time.Time) bool,
+// 	inputSource string, after time.Time, before time.Time) bool {
+//
+// 	for _, source := range r.getSources() {
+// 		if inputSource != "" && source != inputSource {
+// 			continue
+// 		}
+// 		logger, lock := r.bySource(source)
+// 		lock.Lock()
+// 		logger.eachLine(func(line string) bool {
+// 			parts := strings.Split(line, ":")
+// 			if len(parts) < 4 {
+// 				return false
+// 			}
+// 			b, _ := strconv.ParseInt(parts[2], 10, 64)
+// 			t, _ := strconv.ParseInt(parts[3], 10, 64)
+// 			return handler(source, parts[0], parts[1], b, time.Unix(t, 0))
+// 		}, after, before)
+// 		lock.Unlock()
+// 	}
+// 	return false
+// }
 
 // General is a rolling-file logger that implements sts.Logger
 type General struct {

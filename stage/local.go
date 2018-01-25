@@ -19,20 +19,11 @@ const (
 	compExt = ".cmp"
 	partExt = ".part"
 
-	// cacheAge is how long a file that is not part of a chain (i.e. order not
-	// important) is kept in memory
-	cacheAge = time.Hour * 24
+	// cacheAge is how long a received file is cached in memory
+	cacheAge = time.Hour * 1
 
 	// cacheCnt is the number of files after which to age the cache
 	cacheCnt = 1000
-
-	// cacheMax is the maximum number of files to be kept in the cache
-	// cacheMax = 10000
-
-	// cacheMaxAge is the amount of time any file can live in the cache (even
-	// if we think it's a predessor to some future file--we can't have it live
-	// forever)
-	cacheMaxAge = time.Hour * 24 * 30
 
 	// waitPollCount is the number of times a file can be polled before a file
 	// in waiting is released without any sign of its predecessor
@@ -46,109 +37,19 @@ const (
 	stateFailed    = 2
 	stateFinalized = 3
 	statePolled    = 4
+	stateLogged    = 4
 )
 
-func newCompanion(path string, file *sts.Partial) (cmp *sts.Partial, err error) {
-	ext := filepath.Ext(path)
-	if ext != compExt {
-		path += compExt
-	}
-	if cmp, err = readCompanion(path, file.Name); err != nil || cmp != nil {
-		return
-	}
-	cmp = &sts.Partial{
-		Name:   file.Name,
-		Prev:   file.Prev,
-		Size:   file.Size,
-		Hash:   file.Hash,
-		Source: file.Source,
-	}
-	return
-}
-
-// readCompanion deserializes a companion file based on the input path.
-func readCompanion(path, name string) (cmp *sts.Partial, err error) {
-	ext := filepath.Ext(path)
-	if ext != compExt {
-		path += compExt
-	}
-	_, err = os.Stat(path)
-	if os.IsNotExist(err) {
-		err = nil
-		return
-	}
-	cmp = &sts.Partial{}
-	err = fileutil.LoadJSON(path, cmp)
-	if err != nil {
-		// Try reading the old-style companion for backward compatibility
-		oldCmp := &oldCompanion{}
-		err = fileutil.LoadJSON(path, oldCmp)
-		if err != nil {
-			return
-		}
-		cmp.Hash = oldCmp.Hash
-		cmp.Name = oldCmp.Path
-		cmp.Prev = oldCmp.Prev
-		cmp.Size = oldCmp.Size
-		cmp.Source = oldCmp.Source
-		if name != "" {
-			// Because the old-style companion stored the full path and not
-			// the name part
-			cmp.Name = name
-		}
-		for _, p := range oldCmp.Parts {
-			cmp.Parts = append(cmp.Parts, &sts.ByteRange{
-				Beg: p.Beg, End: p.End,
-			})
-		}
-	}
-	return
-}
-
-func writeCompanion(path string, cmp *sts.Partial) error {
-	ext := filepath.Ext(path)
-	if ext != compExt {
-		path += compExt
-	}
-	return fileutil.WriteJSON(path, cmp)
-}
-
-func addCompanionPart(cmp *sts.Partial, beg, end int64) {
-	j := len(cmp.Parts)
-	for i := 0; i < j; i++ {
-		part := cmp.Parts[i]
-		if beg >= part.End || end <= part.Beg {
-			continue
-		}
-		log.Debug(fmt.Sprintf(
-			"Remove Companion Conflict: %s => %d:%d (new) %d:%d (old)",
-			cmp.Name, beg, end, part.Beg, part.End))
-		cmp.Parts[j-1], cmp.Parts[i] = cmp.Parts[i], cmp.Parts[j-1]
-		i--
-		j--
-	}
-	cmp.Parts = cmp.Parts[:j]
-	cmp.Parts = append(cmp.Parts, &sts.ByteRange{Beg: beg, End: end})
-}
-
-func isCompanionComplete(cmp *sts.Partial) bool {
-	size := int64(0)
-	for _, part := range cmp.Parts {
-		size += part.End - part.Beg
-	}
-	return size == cmp.Size
-}
-
 type finalFile struct {
-	path     string
-	name     string
-	prev     string
-	size     int64
-	hash     string
-	source   string
-	time     time.Time
-	state    int
-	nextDone bool
+	path   string
+	name   string
+	prev   string
+	size   int64
+	hash   string
+	source string
+	time   time.Time
+	logged time.Time
+	state  int
 }
 
 func (f *finalFile) GetName() string {
@@ -165,18 +66,19 @@ func (f *finalFile) GetHash() string {
 
 // Stage is the manager for all things file reception
 type Stage struct {
+	name      string
 	rootDir   string
 	targetDir string
 	logger    sts.ReceiveLogger
 
-	handlers   map[string]chan *finalFile
+	handler    chan *finalFile
 	poll       map[string]int
 	pollLock   sync.RWMutex
 	wait       map[string][]*finalFile
 	waitLock   sync.RWMutex
-	cache      map[string]*finalFile
-	cacheByAge []*finalFile
 	cacheLock  sync.RWMutex
+	cache      map[string]*finalFile
+	cacheTime  time.Time
 	writeLock  sync.RWMutex
 	writeLocks map[string]*sync.RWMutex
 }
@@ -185,8 +87,9 @@ type Stage struct {
 // for the stage area (will append {source}/), targetDir is where files
 // should be moved once validated, and logger instance for logging files
 // received
-func New(rootDir, targetDir string, logger sts.ReceiveLogger) *Stage {
+func New(name, rootDir, targetDir string, logger sts.ReceiveLogger) *Stage {
 	s := &Stage{
+		name:      name,
 		rootDir:   rootDir,
 		targetDir: targetDir,
 		logger:    logger,
@@ -195,7 +98,6 @@ func New(rootDir, targetDir string, logger sts.ReceiveLogger) *Stage {
 	s.wait = make(map[string][]*finalFile)
 	s.cache = make(map[string]*finalFile)
 	s.writeLocks = make(map[string]*sync.RWMutex)
-	s.handlers = make(map[string]chan *finalFile)
 	return s
 }
 
@@ -229,20 +131,15 @@ func (s *Stage) cmpPathToName(cmpPath string) (name string) {
 	name = cmpPath[len(s.rootDir)+len(string(os.PathSeparator)):]
 	// Trim the companion extension
 	name = strings.TrimSuffix(name, compExt)
-	// Strip the source
-	name = filepath.Join(
-		strings.Split(
-			name, string(os.PathSeparator))[1:]...)
 	return
 }
 
-// Scan walks the stage area tree (optionally restricted by source) looking
-// for companion files and returns any found
-func (s *Stage) Scan(source string) (partials []*sts.Partial, err error) {
+// Scan walks the stage area tree looking for companion files and returns any
+// found
+func (s *Stage) Scan() (partials []*sts.Partial, err error) {
 	var name string
 	var lock *sync.RWMutex
-	root := filepath.Join(s.rootDir, source)
-	err = filepath.Walk(root,
+	err = filepath.Walk(s.rootDir,
 		func(path string, info os.FileInfo, err error) error {
 			if filepath.Ext(path) == compExt {
 				name = s.cmpPathToName(path)
@@ -250,7 +147,7 @@ func (s *Stage) Scan(source string) (partials []*sts.Partial, err error) {
 				lock.RLock()
 				// Make sure it still exists.
 				if _, err := os.Stat(path); !os.IsNotExist(err) {
-					cmp, err := readCompanion(path, name)
+					cmp, err := readLocalCompanion(path, name)
 					if err == nil {
 						partials = append(partials, cmp)
 					}
@@ -291,9 +188,9 @@ func (s *Stage) initStageFile(path string, size int64) error {
 
 // Prepare is called with all binned parts of a request before each one is
 // "Receive"d (below).  We want to initialize the files in the stage area.
-func (s *Stage) Prepare(source string, parts []sts.Binned) {
+func (s *Stage) Prepare(parts []sts.Binned) {
 	for _, part := range parts {
-		path := filepath.Join(s.rootDir, source, part.GetName())
+		path := filepath.Join(s.rootDir, part.GetName())
 		lock := s.getWriteLock(path)
 		lock.Lock()
 		err := s.initStageFile(path, part.GetFileSize())
@@ -312,7 +209,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 			len(file.Parts))
 		return
 	}
-	path := filepath.Join(s.rootDir, file.Source, file.Name)
+	path := filepath.Join(s.rootDir, file.Name)
 	cached := s.fromCache(path)
 	if cached != nil && cached.state != stateFailed && cached.hash == file.Hash {
 		// This means we already received this file.  This can happen if a
@@ -347,7 +244,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 	lock.Lock()
 	defer lock.Unlock()
 
-	cmp, err := newCompanion(path, file)
+	cmp, err := newLocalCompanion(path, file)
 	if err != nil {
 		return
 	}
@@ -382,19 +279,12 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 // -> sts.ConfirmFailed: MD5 validation was unsuccessful and file should be resent
 // -> sts.ConfirmWaiting: MD5 validation was successful but waiting on predecessor
 // -> sts.ConfirmNone: No knowledge of file
-func (s *Stage) GetFileStatus(source, relPath string, sent time.Time) int {
-	log.Debug("Checking status:", source, relPath)
-	path := filepath.Join(s.rootDir, source, relPath)
+func (s *Stage) GetFileStatus(relPath string, sent time.Time) int {
+	log.Debug("Checking status:", s.name, relPath)
+	s.buildCache(sent)
+	path := filepath.Join(s.rootDir, relPath)
 	f := s.fromCache(path)
 	if f == nil {
-		if s.logger.WasReceived(source, relPath, sent, time.Now()) {
-			f = &finalFile{
-				path:   path,
-				name:   relPath,
-				source: source,
-			}
-			goto confirmPassed
-		}
 		return sts.ConfirmNone
 	}
 	switch f.state {
@@ -421,9 +311,10 @@ confirmPassed:
 // files in the stage area that should be completed from the previous server
 // run
 func (s *Stage) Recover() (err error) {
-	log.Debug("Recovering...")
-	defer log.Debug("Recovery complete")
+	log.Info("Beginning stage recovery")
+	defer log.Info("Stage recovery complete")
 	var ready []*sts.Partial
+	var oldest time.Time
 	err = filepath.Walk(s.rootDir,
 		func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -432,10 +323,13 @@ func (s *Stage) Recover() (err error) {
 			if filepath.Ext(path) != compExt {
 				return nil
 			}
-			cmp, err := readCompanion(path, s.cmpPathToName(path))
+			cmp, err := readLocalCompanion(path, s.cmpPathToName(path))
 			if err != nil {
 				log.Error("Failed to read companion:", path, err.Error())
 				return nil
+			}
+			if oldest.IsZero() || info.ModTime().Before(oldest) {
+				oldest = info.ModTime()
 			}
 			base := strings.TrimSuffix(path, compExt)
 			if _, err = os.Stat(base + partExt); !os.IsNotExist(err) {
@@ -464,25 +358,9 @@ func (s *Stage) Recover() (err error) {
 	if len(ready) == 0 {
 		return
 	}
-	// Build the cache from the log
-	s.cacheLock.Lock() // Shouldn't be necessary but just to be safe
-	s.logger.Parse(func(source, name, hash string, size int64, t time.Time) bool {
-		path := filepath.Join(s.rootDir, source, name)
-		file := &finalFile{
-			source: source,
-			path:   path,
-			name:   name,
-			hash:   hash,
-			size:   size,
-			time:   t,
-			state:  stateFinalized,
-		}
-		s.cache[path] = file
-		s.cacheByAge = append(s.cacheByAge, file)
-		log.Debug("Log to cache:", source, file.name)
-		return false
-	}, time.Now().Add(-1*cacheMaxAge), time.Now())
-	s.cacheLock.Unlock()
+	// Build the cache from the incoming log starting an hour before the oldest
+	// companion file found
+	s.buildCache(oldest.Add(-1 * time.Hour))
 	worker := func(wg *sync.WaitGroup, ch <-chan *sts.Partial) {
 		defer wg.Done()
 		for f := range ch {
@@ -508,7 +386,7 @@ func (s *Stage) Recover() (err error) {
 
 func (s *Stage) partialToFinal(file *sts.Partial) *finalFile {
 	return &finalFile{
-		path:   filepath.Join(s.rootDir, file.Source, file.Name),
+		path:   filepath.Join(s.rootDir, file.Name),
 		name:   file.Name,
 		size:   file.Size,
 		hash:   file.Hash,
@@ -547,18 +425,15 @@ func (s *Stage) process(file *finalFile) {
 }
 
 func (s *Stage) finalizeQueue(file *finalFile) {
-	var ch chan *finalFile
-	var ok bool
-	if ch, ok = s.handlers[file.source]; !ok {
-		ch = make(chan *finalFile, 100)
-		s.handlers[file.source] = ch
-		go s.finalizeHandler(ch)
+	if s.handler == nil {
+		s.handler = make(chan *finalFile, 100)
+		go s.finalizeHandler()
 	}
-	ch <- file
+	s.handler <- file
 }
 
-func (s *Stage) finalizeHandler(ch <-chan *finalFile) {
-	for f := range ch {
+func (s *Stage) finalizeHandler() {
+	for f := range s.handler {
 		s.finalizeChain(f)
 	}
 }
@@ -592,8 +467,9 @@ func (s *Stage) finalizeChain(file *finalFile) {
 func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 	// Make sure it doesn't need to wait in line.
 	if file.prev != "" {
-		stagedPrevFile := filepath.Join(s.rootDir, file.source, file.prev)
+		stagedPrevFile := filepath.Join(s.rootDir, file.prev)
 		prev := s.fromCache(stagedPrevFile)
+		removePoll := true
 		switch {
 		case prev == nil:
 			if s.hasWriteLock(stagedPrevFile) {
@@ -607,6 +483,7 @@ func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 				log.Debug(
 					"Previous file not found yet:",
 					file.name, "<-", file.prev)
+				removePoll = false
 				break
 			}
 			// If this file has been polled waitPollCount times and we still
@@ -636,18 +513,23 @@ func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 		default:
 			goto finalize
 		}
-		s.removePoll(file.path)
+		if removePoll {
+			s.removePoll(file.path)
+		}
 		s.toWait(stagedPrevFile, file)
 		return
 	}
 
 finalize:
+	s.removePoll(file.path)
+
 	log.Debug("Finalizing", file.source, file.name)
 
 	// Let's log it and update the cache before actually putting the file away
 	// in order to properly recover in case something happens between now and
 	// then.
-	s.logger.Received(file.source, file)
+	s.logger.Received(file)
+	file.logged = time.Now()
 
 	s.toCache(file, stateFinalized)
 
@@ -790,24 +672,62 @@ func (s *Stage) toCache(file *finalFile, state int) {
 	defer s.cacheLock.Unlock()
 	file.time = time.Now()
 	file.state = state
-	if f, ok := s.cache[file.path]; ok && f.nextDone && f.hash == file.hash {
-		// Only keep the nextDone value if this really is the same file just
-		// a different object in memory
-		file.nextDone = true
+	if !file.logged.IsZero() {
+		if s.cacheTime.IsZero() {
+			s.cacheTime = file.logged
+		}
 	}
 	s.cache[file.path] = file
 	if len(s.cache)%cacheCnt == 0 {
 		go s.cleanCache()
 	}
-	if state < statePolled || file.prev == "" {
+}
+
+func (s *Stage) buildCache(from time.Time) {
+	if func(mux *sync.RWMutex, t0 time.Time, t1 time.Time) bool {
+		mux.RLock()
+		defer mux.RUnlock()
+		return t0.After(t1)
+	}(&s.cacheLock, s.cacheTime, from) {
 		return
 	}
-	// If it has a previous file, mark that file to be eligible for removal
-	// from the cache since this one is the latest in the chain
-	prevPath := filepath.Join(s.rootDir, file.source, file.prev)
-	if prev, ok := s.cache[prevPath]; ok {
-		prev.nextDone = true
+	s.cacheLock.Lock()
+	defer s.cacheLock.Unlock()
+	var cacheTime time.Time
+	if s.cacheTime.IsZero() {
+		cacheTime = time.Now()
+	} else if from.After(cacheTime) {
+		return
 	}
+	log.Debug("Building cache from logs...", s.name, from)
+	var first time.Time
+	s.logger.Parse(func(name, hash string, size int64, t time.Time) bool {
+		if t.After(cacheTime) {
+			return true
+		}
+		if first.IsZero() {
+			first = t
+		}
+		path := filepath.Join(s.rootDir, name)
+		if f, ok := s.cache[path]; ok && t.Before(f.logged) {
+			// Skip it if a newer file of this name is already in the cache
+			return false
+		}
+		file := &finalFile{
+			source: s.name,
+			path:   path,
+			name:   name,
+			hash:   hash,
+			size:   size,
+			time:   time.Now(),
+			logged: t,
+			state:  stateFinalized,
+		}
+		s.cache[path] = file
+		log.Debug("Cached from log:", s.name, file.name)
+		return false
+	}, from, cacheTime)
+	s.cacheTime = first
 }
 
 func (s *Stage) cleanCache() {
@@ -815,33 +735,21 @@ func (s *Stage) cleanCache() {
 	defer s.cacheLock.Unlock()
 	log.Debug("Cleaning cache...", len(s.cache))
 	var age time.Duration
+    s.cacheTime = time.Now()
 	for _, cacheFile := range s.cache {
 		age = time.Since(cacheFile.time)
-		if age > cacheMaxAge {
-			delete(s.cache, cacheFile.path)
-			continue
+		if cacheFile.state > stateFinalized {
+			if age > cacheAge {
+				delete(s.cache, cacheFile.path)
+				log.Debug("Removed from cache:",
+					cacheFile.source, cacheFile.name)
+				continue
+			}
+			// We want the source cacheTime to be the earliest logged time of
+			// the files still in the cache
+			if cacheFile.logged.Before(s.cacheTime) {
+				s.cacheTime = cacheFile.logged
+			}
 		}
-		if cacheFile.state < statePolled {
-			continue
-		}
-		if !cacheFile.nextDone && age < cacheAge {
-			continue
-		}
-		delete(s.cache, cacheFile.path)
 	}
-}
-
-type oldCompanion struct {
-	Path   string              `json:"path"`
-	Prev   string              `json:"prev"`
-	Size   int64               `json:"size"`
-	Hash   string              `json:"hash"`
-	Source string              `json:"src"`
-	Parts  map[string]*oldPart `json:"parts"`
-}
-
-type oldPart struct {
-	Hash string `json:"hash"`
-	Beg  int64  `json:"b"`
-	End  int64  `json:"e"`
 }
