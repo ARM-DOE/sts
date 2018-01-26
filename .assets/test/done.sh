@@ -10,16 +10,16 @@ i_sorted=`cut -d ":" -f 1 $STS_HOME/data*/log/incoming_from/*/*/* | sort`
 o_sorted=`cut -d ":" -f 1 $STS_HOME/data*/log/outgoing_to/*/*/* | sort`
 echo "-------------------------------------------------------------------------"
 echo "OUT DUPLICATES:"
-echo $o_sorted | uniq -c | grep -v " 1"
+uniq -c <(cat <(echo "$o_sorted")) | grep -v " 1"
 echo "-------------------------------------------------------------------------"
 echo "IN DUPLICATES:"
-echo $i_sorted | uniq -c | grep -v " 1"
+uniq -c <(cat <(echo "$i_sorted")) | grep -v " 1"
 echo "-------------------------------------------------------------------------"
 echo "OUT DIR:"
-find $STS_HOME/data/out -type f
+find $STS_HOME/data/out -type f | sort
 echo "-------------------------------------------------------------------------"
 echo "STAGE DIR:"
-find $STS_HOME/data/stage -type f
+find $STS_HOME/data/stage -type f | sort
 echo "-------------------------------------------------------------------------"
 echo "IN DIR:"
 find $STS_HOME/data/in -type f | sort

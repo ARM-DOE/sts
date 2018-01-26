@@ -7,6 +7,7 @@ OUT: # Outgoing configuration
   sources: # Supports multiple sources where omitted entries will inherit from previous sources hierarchically
     - name          : stsout-1 # Name of the source
       threads       : 3        # Maximum number of concurrent connections
+      scan-delay    : 5s       # How long to sleep between directory scans
       min-age       : 0s       # How old a file must be before being added to the "outgoing" queue
       max-age       : 0s       # How old a file can be before getting logged as "stale" (remains in the queue)
       timeout       : 1h       # The HTTP timeout for a single request
