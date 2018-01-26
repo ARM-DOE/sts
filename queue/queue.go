@@ -331,6 +331,11 @@ func (q *Tagged) Pop() sts.Sendable {
 		offset: offset,
 		length: length,
 	}
+	if chunk.prev == chunk.Hashed.GetName() {
+		// It's possible to send the same file again and we don't want it to be
+		// dependent on itself
+		chunk.prev = ""
+	}
 	log.Debug("Q Out:", chunk.GetName(), "<-", chunk.prev)
 	if next.isAllocated() {
 		log.Debug("Q Done:", next.orig.GetName(), offset, length, next.orig.GetSize())
@@ -411,25 +416,28 @@ loop:
 		switch {
 		case order == sts.OrderAlpha || t0 == t1:
 			if n1 < n0 {
-				file.insertBefore(f)
-				break loop
+				goto before
 			}
 		case order == sts.OrderFIFO:
 			if t1 < t0 {
-				file.insertBefore(f)
-				break loop
+				goto before
 			}
 		case order == sts.OrderLIFO:
 			if t1 > t0 {
-				file.insertBefore(f)
-				break loop
+				goto before
 			}
 		}
 		if f.next == nil {
-			file.insertAfter(f)
-			break
+			goto after
 		}
 		f = f.next
+		continue
+	before:
+		file.insertBefore(f)
+		break loop
+	after:
+		file.insertAfter(f)
+		break loop
 	}
 	// Update the head file if we inserted before it or if we inserted after it
 	// and it's already allocated
