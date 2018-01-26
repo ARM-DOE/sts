@@ -174,6 +174,9 @@ func Copy(src, dst string) error {
 func Move(src, dst string) error {
 	var err error
 	if err = os.Rename(src, dst+LockExt); err != nil {
+		if _, err = os.Stat(src); err != nil {
+			return err
+		}
 		if err = Copy(src, dst+LockExt); err != nil {
 			return err
 		}

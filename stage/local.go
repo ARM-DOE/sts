@@ -32,8 +32,8 @@ const (
 	stateValidated = 1
 	stateFailed    = 2
 	stateFinalized = 3
-	statePolled    = 4
 	stateLogged    = 4
+	statePolled    = 5
 )
 
 type finalFile struct {
@@ -283,6 +283,8 @@ func (s *Stage) GetFileStatus(relPath string, sent time.Time) int {
 			s.incrementPollCount(path)
 			return sts.ConfirmWaiting
 		}
+	case stateLogged:
+		fallthrough
 	case stateFinalized:
 		goto confirmPassed
 	}
@@ -465,7 +467,7 @@ func (s *Stage) finalizeChain(file *finalFile) {
 }
 
 func (s *Stage) finalize(file *finalFile) (done bool, err error) {
-	// Make sure it doesn't need to wait in line.
+	// Make sure it doesn't need to wait in line
 	if file.prev != "" {
 		stagedPrevFile := filepath.Join(s.rootDir, file.prev)
 		prev := s.fromCache(stagedPrevFile)
@@ -527,40 +529,42 @@ func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 
 finalize:
 	s.removePoll(file.path)
-
 	log.Debug("Finalizing", file.source, file.name)
+	if err = s.putFileAway(file); err != nil {
+		return
+	}
+	log.Debug("Finalized", file.source, file.name)
+	done = true
+	return
+}
 
-	// Let's log it and update the cache before actually putting the file away
-	// in order to properly recover in case something happens between now and
-	// then.
+func (s *Stage) putFileAway(file *finalFile) (err error) {
+	// Better to log the file twice rather than receive it twice.  If we log
+	// after putting the file away, it's possible that a crash could occur
+	// after putting the file away but before logging. On restart, there would
+	// be no knowledge that the file was received and it would be sent again.
 	s.logger.Received(file)
 	file.logged = time.Now()
 
-	s.toCache(file, stateFinalized)
-
-	// Move it.
+	// Move it
 	targetPath := filepath.Join(s.targetDir, file.source, file.name)
 	os.MkdirAll(filepath.Dir(targetPath), 0775)
 	if err = fileutil.Move(file.path, targetPath); err != nil {
 		err = fmt.Errorf(
 			"Failed to move %s to %s: %s",
-			file.path,
-			targetPath+fileutil.LockExt,
-			err.Error())
+			file.path, targetPath, err.Error())
+		if os.IsNotExist(err) {
+			// If the file doesn't exist then we better get the file again
+			s.toCache(file, stateFailed)
+		}
 		return
 	}
 
-	// Clean up the companion.
-	if err = os.Remove(file.path + compExt); err != nil {
-		err = fmt.Errorf(
-			"Failed to remove companion file for %s: %s",
-			file.path, err.Error())
-		return
-	}
+	s.toCache(file, stateFinalized)
 
-	log.Debug("Finalized", file.source, file.name)
-
-	done = true
+	// Clean up the companion (no need to capture an error since it wouldn't
+	// be a deal-breaker anyway)
+	os.Remove(file.path + compExt)
 	return
 }
 
@@ -755,7 +759,7 @@ func (s *Stage) buildCache(from time.Time) {
 			size:   size,
 			time:   time.Now(),
 			logged: t,
-			state:  stateFinalized,
+			state:  stateLogged,
 		}
 		s.cache[path] = file
 		log.Debug("Cached from log:", s.name, file.name)
