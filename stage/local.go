@@ -3,7 +3,6 @@ package stage
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,9 +27,6 @@ const (
 	// waitPollCount is the number of times a file can be polled before a file
 	// in waiting is released without any sign of its predecessor
 	waitPollCount = 10
-
-	// logSearch is how far back (max) to look in the logs for a finalized file
-	logSearch = time.Duration(30 * 24 * time.Hour)
 
 	stateReceived  = 0
 	stateValidated = 1
@@ -71,6 +67,7 @@ type Stage struct {
 	targetDir string
 	logger    sts.ReceiveLogger
 
+	cleaned    time.Time
 	handler    chan *finalFile
 	poll       map[string]int
 	pollLock   sync.RWMutex
@@ -126,11 +123,13 @@ func (s *Stage) hasWriteLock(key string) bool {
 	return ok
 }
 
-func (s *Stage) cmpPathToName(cmpPath string) (name string) {
+func (s *Stage) pathToName(path, stripExt string) (name string) {
 	// Strip the root directory
-	name = cmpPath[len(s.rootDir)+len(string(os.PathSeparator)):]
-	// Trim the companion extension
-	name = strings.TrimSuffix(name, compExt)
+	name = path[len(s.rootDir)+len(string(os.PathSeparator)):]
+	if stripExt != "" {
+		// Trim the extension
+		name = strings.TrimSuffix(name, stripExt)
+	}
 	return
 }
 
@@ -142,7 +141,7 @@ func (s *Stage) Scan() (partials []*sts.Partial, err error) {
 	err = filepath.Walk(s.rootDir,
 		func(path string, info os.FileInfo, err error) error {
 			if filepath.Ext(path) == compExt {
-				name = s.cmpPathToName(path)
+				name = s.pathToName(path, compExt)
 				lock = s.getWriteLock(strings.TrimSuffix(path, compExt))
 				lock.RLock()
 				// Make sure it still exists.
@@ -210,19 +209,6 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 		return
 	}
 	path := filepath.Join(s.rootDir, file.Name)
-	cached := s.fromCache(path)
-	if cached != nil && cached.state != stateFailed && cached.hash == file.Hash {
-		// This means we already received this file.  This can happen if a
-		// request is interrupted after the last part of a file is received
-		// but the sending side doesn't know what parts were received so it
-		// sends the whole bin again.  It doesn't seem ideal to check the cache
-		// for every file part but I think we need to in order to catch this
-		// rare occurrence.
-		log.Info("Ignoring duplicate:", file.Name)
-		_, err = ioutil.ReadAll(reader)
-		return
-	}
-
 	lock := s.getWriteLock(path)
 
 	// Read the part and write it to the right place in the staged "partial"
@@ -323,7 +309,7 @@ func (s *Stage) Recover() (err error) {
 			if filepath.Ext(path) != compExt {
 				return nil
 			}
-			cmp, err := readLocalCompanion(path, s.cmpPathToName(path))
+			cmp, err := readLocalCompanion(path, s.pathToName(path, compExt))
 			if err != nil {
 				log.Error("Failed to read companion:", path, err.Error())
 				return nil
@@ -433,8 +419,22 @@ func (s *Stage) finalizeQueue(file *finalFile) {
 }
 
 func (s *Stage) finalizeHandler() {
-	for f := range s.handler {
-		s.finalizeChain(f)
+	d := time.Second * 10
+	t := time.NewTimer(d)
+	for {
+		select {
+		case f := <-s.handler:
+			t.Stop()
+			s.finalizeChain(f)
+		case <-t.C:
+			// If there's not an active channel and it's been long enough
+			// since our last directory cleaning, kick one off
+			if s.cleaned.IsZero() || time.Since(s.cleaned) > cacheAge {
+				s.cleaned = time.Now()
+				go s.cleanDir()
+			}
+		}
+		t.Reset(d)
 	}
 }
 
@@ -769,7 +769,7 @@ func (s *Stage) cleanCache() {
 	defer s.cacheLock.Unlock()
 	log.Debug("Cleaning cache...", len(s.cache))
 	var age time.Duration
-    s.cacheTime = time.Now()
+	s.cacheTime = time.Now()
 	for _, cacheFile := range s.cache {
 		age = time.Since(cacheFile.time)
 		if cacheFile.state > stateFinalized {
@@ -783,6 +783,60 @@ func (s *Stage) cleanCache() {
 			// the files still in the cache
 			if cacheFile.logged.Before(s.cacheTime) {
 				s.cacheTime = cacheFile.logged
+			}
+		}
+	}
+}
+
+// cleanDir scans the staging directory looking for stale files that can be
+// cleaned up.  There is at least one legitimate reason for files to become
+// stale in the staging area: a request is interrupted after the last
+// remaining part of a file is received but before the sending end can be
+// notified which part(s) were properly received and the sending side merely
+// sends the whole request again and at least part of a file is created in the
+// staging area redundantly and never picked up by the stage.
+func (s *Stage) cleanDir() {
+	t := time.Now()
+	aged := make(map[string][]string)
+	filepath.Walk(s.rootDir,
+		func(path string, info os.FileInfo, err error) error {
+			if time.Now().Add(-1 * cacheAge).Before(info.ModTime()) {
+				return nil
+			}
+			if info.ModTime().Before(t) {
+				t = info.ModTime()
+			}
+			p := path
+			ext := filepath.Ext(path)
+			switch ext {
+			case compExt:
+				fallthrough
+			case partExt:
+				p = strings.TrimSuffix(path, ext)
+			}
+			if _, ok := aged[p]; !ok {
+				aged[p] = []string{path}
+				return nil
+			}
+			aged[p] = append(aged[p], path)
+			return nil
+		})
+	if len(aged) == 0 {
+		return
+	}
+	s.buildCache(t)
+	for key, paths := range aged {
+		f := s.fromCache(key)
+		if f == nil {
+			continue
+		}
+		if f.state > stateFinalized {
+			for _, p := range paths {
+				log.Info("Removing stale stage file:", p)
+				if err := os.Remove(p); err != nil {
+					log.Error("Failed to remove stale stage file:",
+						err.Error())
+				}
 			}
 		}
 	}
