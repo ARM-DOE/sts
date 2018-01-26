@@ -506,10 +506,15 @@ func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 			if s.isWaiting(stagedPrevFile) {
 				log.Debug("Previous file waiting:",
 					file.name, "<-", file.prev)
-			} else {
-				log.Debug("Previous file finalizing:",
-					file.name, "<-", file.prev)
+				if s.isWaitLoop(stagedPrevFile) {
+					log.Debug("Wait loop detected:",
+						file.name, "<-", file.prev)
+					goto finalize
+				}
+				break
 			}
+			log.Debug("Previous file finalizing:",
+				file.name, "<-", file.prev)
 		default:
 			goto finalize
 		}
@@ -592,6 +597,35 @@ func (s *Stage) removePoll(path string) {
 
 func (s *Stage) isWaiting(path string) bool {
 	return s.getWaiting(path) != nil
+}
+
+// isWaitLoop recurses through the wait tree to see if there is a file that
+// points back to the original, thus indicating a loop
+func (s *Stage) isWaitLoop(prevPath string) bool {
+	s.waitLock.RLock()
+	defer s.waitLock.RUnlock()
+	paths := []string{prevPath}
+	var next []string
+	for {
+		for _, p := range paths {
+			ff, ok := s.wait[p]
+			if !ok {
+				continue
+			}
+			for _, f := range ff {
+				if f.path == prevPath {
+					return true
+				}
+				next = append(next, f.path)
+			}
+		}
+		if next == nil {
+			break
+		}
+		paths = next
+		next = nil
+	}
+	return false
 }
 
 // getWaiting returns a finalFile instance currently waiting on its predecessor
