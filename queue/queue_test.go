@@ -3,6 +3,7 @@ package queue
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,107 @@ import (
 	"code.arm.gov/dataflow/sts/log"
 	"code.arm.gov/dataflow/sts/mock"
 )
+
+var (
+	groupBy *regexp.Regexp
+	grouper sts.Translate
+	tagger  sts.Translate
+)
+
+func q(tags []*Tag) *Tagged {
+	groupBy = regexp.MustCompile(`^([^\.]*)`)
+	grouper = func(name string) (group string) {
+		m := groupBy.FindStringSubmatch(name)
+		if len(m) == 0 {
+			return
+		}
+		group = m[1]
+		return
+	}
+	tagger = func(group string) (tag string) {
+		for _, t := range tags {
+			if regexp.MustCompile(t.Name).MatchString(group) {
+				tag = t.Name
+				return
+			}
+		}
+		return
+	}
+	return NewTagged(tags, tagger, grouper)
+}
+
+func TestRecover(t *testing.T) {
+	log.InitExternal(&mock.Logger{DebugMode: true})
+	tags := []*Tag{
+		&Tag{
+			Name:  "^g1",
+			Order: sts.OrderFIFO,
+		},
+	}
+	q := q(tags)
+	now := time.Now()
+	files := []sts.Hashed{
+		&mock.RecoveredFile{
+			Hashed: &mock.File{
+				Name: "g1.f20",
+				Size: 10,
+				Time: now,
+			},
+		},
+		&mock.File{
+			Name: "g1.f04",
+			Size: 10,
+			Time: now,
+		},
+		&mock.File{
+			Name: "g1.f07",
+			Size: 10,
+			Time: now,
+		},
+		&mock.File{
+			Name: "g1.f05",
+			Size: 10,
+			Time: now,
+		},
+		&mock.File{
+			Name: "g1.f06",
+			Size: 10,
+			Time: now,
+		},
+		&mock.RecoveredFile{
+			Hashed: &mock.File{
+				Name: "g1.f03",
+				Size: 10,
+				Time: now,
+			},
+		},
+		&mock.File{
+			Name: "g1.f01",
+			Size: 10,
+			Time: now,
+		},
+		&mock.File{
+			Name: "g1.f02",
+			Size: 10,
+			Time: now,
+		},
+	}
+	q.Push(files)
+	var names []string
+	for {
+		f := q.Pop()
+		if f == nil {
+			break
+		}
+		names = append(names, f.GetName())
+	}
+	s1 := strings.Join(names, ":")
+	sort.Strings(names)
+	s2 := strings.Join(names, ":")
+	if s1 != s2 {
+		t.Fatal("Incorrect order")
+	}
+}
 
 func TestGeneral(t *testing.T) {
 	log.InitExternal(&mock.Logger{DebugMode: true})
@@ -32,25 +134,7 @@ func TestGeneral(t *testing.T) {
 		},
 	}
 	n := 1000
-	groupBy := regexp.MustCompile(`^([^\.]*)`)
-	grouper := func(name string) (group string) {
-		m := groupBy.FindStringSubmatch(name)
-		if len(m) == 0 {
-			return
-		}
-		group = m[1]
-		return
-	}
-	tagger := func(group string) (tag string) {
-		for _, t := range tags {
-			if regexp.MustCompile(t.Name).MatchString(group) {
-				tag = t.Name
-				return
-			}
-		}
-		return
-	}
-	queue := NewTagged(tags, tagger, grouper)
+	queue := q(tags)
 	var files []sts.Hashed
 	for i := n; i > 0; i-- {
 		g := 1

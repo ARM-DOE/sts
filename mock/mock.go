@@ -11,7 +11,7 @@ import (
 	"code.arm.gov/dataflow/sts"
 )
 
-// File is meant to implement as many o the file-typed interfaces as possible
+// File is meant to implement as many of the file-typed interfaces as possible
 type File struct {
 	Name     string
 	Path     string
@@ -62,6 +62,27 @@ func (f *File) TimeMs() int64 {
 // IsDone is obvious
 func (f *File) IsDone() bool {
 	return f.Done
+}
+
+// RecoveredFile is meant to be a recovered and fully allocated file
+type RecoveredFile struct {
+	sts.Hashed
+	Prev string
+}
+
+// GetPrev returns any configured previous file
+func (f *RecoveredFile) GetPrev() string {
+	return f.Prev
+}
+
+// Allocate does nothing
+func (f *RecoveredFile) Allocate(int64) (int64, int64) {
+	return 0, 0
+}
+
+// IsAllocated is always true
+func (f *RecoveredFile) IsAllocated() bool {
+	return true
 }
 
 // Readable mocks sts.Readable using a generic bytes reader

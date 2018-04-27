@@ -64,6 +64,7 @@ type Broker struct {
 	chStop        chan bool
 	chScanned     chan []sts.Hashed
 	chQueued      chan sts.Sendable
+	chRetry       chan sts.Polled
 	chTransmit    chan sts.Payload
 	chTransmitted chan sts.Payload
 	chValidate    chan sts.Pollable
@@ -83,6 +84,7 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 	broker.chStop = make(chan bool)
 	broker.chScanned = make(chan []sts.Hashed, 1)
 	broker.chQueued = make(chan sts.Sendable, broker.Conf.Threads*2)
+	broker.chRetry = make(chan sts.Polled, broker.Conf.Threads*2)
 	broker.chTransmit = make(chan sts.Payload, broker.Conf.Threads*2)
 	broker.chTransmitted = make(chan sts.Payload, broker.Conf.Threads*2)
 	broker.chValidate = make(chan sts.Pollable, broker.Conf.Threads*2)
@@ -114,6 +116,7 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 
 	var wgScanned,
 		wgQueued,
+		wgFailed,
 		wgTransmit,
 		wgTransmitted,
 		wgValidate,
@@ -121,6 +124,7 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 
 	start(broker.startScan, &wgScanned, 1)
 	start(broker.startQueue, &wgQueued, 1)
+	start(broker.startRetry, &wgFailed, broker.Conf.Threads)
 	start(broker.startBin, &wgTransmit, 1)
 	start(broker.startSend, &wgTransmitted, broker.Conf.Threads)
 	start(broker.startTrack, &wgValidate, 1)
@@ -144,15 +148,20 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 	wgValidate.Wait()
 	close(broker.chValidate)
 
+	wgFailed.Wait()
+	close(broker.chRetry)
+
 	wgValidated.Wait()
 	done <- true
 }
 
 func (broker *Broker) recover() (
-	send []sts.Hashed, poll []sts.Pollable, err error) {
+	send []sts.Hashed, poll []sts.Pollable, err error,
+) {
 	var partials []*sts.Partial
 	nErr := 0
 	for {
+		log.Info("RECOVERY: Requesting information from target host ...")
 		partials, err = broker.Conf.Recoverer()
 		if err != nil {
 			log.Error("Recovery request failed:", err.Error())
@@ -163,6 +172,10 @@ func (broker *Broker) recover() (
 		}
 		break
 	}
+	log.Info(fmt.Sprintf(
+		"RECOVERY: Found %d partially sent files on target host",
+		len(partials),
+	))
 	lookup := make(map[string]*sts.Partial)
 	for _, p := range partials {
 		lookup[p.Name] = p
@@ -220,7 +233,7 @@ func (broker *Broker) recover() (
 				})
 			}
 			if len(missing) > 0 {
-				send = append(send, &recovered{
+				send = append(send, &recoverFile{
 					Cached: f,
 					prev:   partial.Prev,
 					left:   missing,
@@ -239,11 +252,16 @@ func (broker *Broker) recover() (
 		return false
 	})
 	if len(poll) > 0 {
+		log.Info(fmt.Sprintf(
+			"RECOVERY: Asking target host if %d files were fully sent ...",
+			len(poll),
+		))
 		var polled []sts.Polled
 		if polled, err = broker.Conf.Validator(poll); err != nil {
 			return
 		}
 		poll = nil
+		log.Info("RECOVERY: Processing response ...")
 		for _, f := range polled {
 			cached := broker.Conf.Cache.Get(f.GetName())
 			switch {
@@ -255,6 +273,10 @@ func (broker *Broker) recover() (
 					completed: time.Unix(cached.GetTime(), 0),
 					size:      cached.GetSize(),
 					hash:      cached.GetHash(),
+				})
+				// We're putting it in the send Q only to get the right order
+				send = append(send, &recoverFile{
+					Cached: cached,
 				})
 			case f.Failed():
 				send = append(send, cached)
@@ -268,6 +290,10 @@ func (broker *Broker) recover() (
 						hash:      cached.GetHash(),
 					})
 				}
+				// We're putting it in the send Q only to get the right order
+				send = append(send, &recoverFile{
+					Cached: cached,
+				})
 				broker.finish(f)
 			}
 		}
@@ -276,6 +302,7 @@ func (broker *Broker) recover() (
 			log.Error(err.Error())
 		}
 	}
+	log.Info(fmt.Sprintf("RECOVERY: Done (%d files to send)", len(send)))
 	err = nil
 	return
 }
@@ -321,9 +348,6 @@ func (broker *Broker) scan() []sts.Hashed {
 		log.Error(err)
 		return nil
 	}
-	if len(files) == 0 {
-		return nil
-	}
 	age := cache.Boundary()
 
 	// Wrap the scanned file objects in type that can have hash added
@@ -350,7 +374,7 @@ func (broker *Broker) scan() []sts.Hashed {
 			}
 		}
 		wrapped[i] = &hashFile{
-			orig: file,
+			File: file,
 		}
 		i++
 	}
@@ -359,7 +383,7 @@ func (broker *Broker) scan() []sts.Hashed {
 		switch {
 		// Add any that might have failed the hash calculation last time
 		case cached.GetHash() == "":
-			wrapped = append(wrapped, cached)
+			wrapped = append(wrapped, &hashFile{File: cached})
 			return false
 		case !cached.IsDone():
 			return false
@@ -411,7 +435,7 @@ func (broker *Broker) scan() []sts.Hashed {
 	return ready
 }
 
-func hashFiles(opener sts.Open, in <-chan []sts.Hashed, wg *sync.WaitGroup) {
+func (broker *Broker) hashFiles(opener sts.Open, in <-chan []sts.Hashed, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for files := range in {
 		log.Debug(fmt.Sprintf("HASHing %d files...", len(files)))
@@ -429,6 +453,7 @@ func hashFiles(opener sts.Open, in <-chan []sts.Hashed, wg *sync.WaitGroup) {
 				log.Error(err)
 			}
 			fh.Close()
+			log.Debug(fmt.Sprintf("HASHed %s : %s", file.GetName(), file.(*hashFile).hash))
 		}
 	}
 }
@@ -442,7 +467,7 @@ func (broker *Broker) hash(
 	ch := make(chan []sts.Hashed, nWorkers*2)
 	opener := broker.Conf.Store.GetOpener()
 	for i := 0; i < nWorkers; i++ {
-		go hashFiles(opener, ch, &wg)
+		go broker.hashFiles(opener, ch, &wg)
 	}
 	j := 0
 	count := 1
@@ -706,6 +731,7 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 				}
 				pFile = progress[key]
 			}
+			pFile.prev = binned.GetPrev()
 			offset, n := binned.GetSlice()
 			pFile.sent += n
 			if pFile.sent >= pFile.size {
@@ -844,40 +870,58 @@ func (broker *Broker) finish(file sts.Polled) {
 		broker.Conf.Cache.Done(file.GetName())
 	default:
 		log.Debug("Trying again:", file.GetName())
-		broker.Conf.Cache.Reset(file.GetName())
+		broker.chRetry <- file
+	}
+}
+
+func (broker *Broker) startRetry(wg *sync.WaitGroup) {
+	defer wg.Done()
+	defer log.Debug("Retry-er done")
+	store := broker.Conf.Store
+	cache := broker.Conf.Cache
+	opener := store.GetOpener()
+	var err error
+	var hashed *hashFile
+	var cached sts.Cached
+	var fh sts.Readable
+	for file := range broker.chRetry {
+		log.Debug(fmt.Sprintf("Re-HASHing %s ...", file.GetName()))
+		hashed = &hashFile{File: cache.Get(file.GetName())}
+		fh, err = opener(hashed)
+		if err != nil {
+			log.Error(err)
+			if store.IsNotExist(err) {
+				cache.Remove(file.GetName())
+			}
+			continue
+		}
+		hashed.hash, err = fileutil.ReadableMD5(fh)
+		if err != nil {
+			log.Error(err)
+		}
+		fh.Close()
+		cache.Add(hashed)
+		log.Debug(fmt.Sprintf("Re-HASHed %s : %s", file.GetName(), hashed.hash))
+		cached = cache.Get(file.GetName())
+		// Use a "recovered" file in order to keep the "prev" intact
+		broker.chScanned <- []sts.Hashed{&recoverFile{
+			Cached: cached,
+			prev:   file.GetPrev(),
+			left:   []*sts.ByteRange{&sts.ByteRange{Beg: 0, End: cached.GetSize()}},
+		}}
 	}
 }
 
 type hashFile struct {
-	orig sts.File
+	sts.File
 	hash string
-}
-
-func (f *hashFile) GetPath() string {
-	return f.orig.GetPath()
-}
-
-func (f *hashFile) GetName() string {
-	return f.orig.GetName()
-}
-
-func (f *hashFile) GetSize() int64 {
-	return f.orig.GetSize()
-}
-
-func (f *hashFile) GetTime() int64 {
-	return f.orig.GetTime()
-}
-
-func (f *hashFile) GetMeta() []byte {
-	return f.orig.GetMeta()
 }
 
 func (f *hashFile) GetHash() string {
 	return f.hash
 }
 
-type recovered struct {
+type recoverFile struct {
 	sts.Cached
 	prev string
 	left []*sts.ByteRange
@@ -885,7 +929,11 @@ type recovered struct {
 	used int64
 }
 
-func (f *recovered) Allocate(desired int64) (offset int64, length int64) {
+func (f *recoverFile) GetPrev() string {
+	return f.prev
+}
+
+func (f *recoverFile) Allocate(desired int64) (offset int64, length int64) {
 	offset = f.left[f.part].Beg + f.used
 	length = desired
 	f.used = offset + length
@@ -897,7 +945,7 @@ func (f *recovered) Allocate(desired int64) (offset int64, length int64) {
 	return
 }
 
-func (f *recovered) IsAllocated() bool {
+func (f *recoverFile) IsAllocated() bool {
 	return f.part == len(f.left)
 }
 
@@ -941,6 +989,7 @@ func (f *binnable) IsAllocated() bool {
 
 type progressFile struct {
 	name      string
+	prev      string
 	started   time.Time
 	completed time.Time
 	sent      int64
@@ -951,6 +1000,10 @@ type progressFile struct {
 
 func (f *progressFile) GetName() string {
 	return f.name
+}
+
+func (f *progressFile) GetPrev() string {
+	return f.prev
 }
 
 func (f *progressFile) GetSize() int64 {

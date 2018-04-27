@@ -32,11 +32,16 @@ func (c *confirmable) GetStarted() time.Time {
 
 type confirmed struct {
 	name string
+	prev string
 	code int
 }
 
 func (c *confirmed) GetName() string {
 	return c.name
+}
+
+func (c *confirmed) GetPrev() string {
+	return c.prev
 }
 
 func (c *confirmed) NotFound() bool {
@@ -218,6 +223,7 @@ func (h *Client) Validate(sent []sts.Pollable) (polled []sts.Polled, err error) 
 		orig := fmap[path]
 		polled = append(polled, &confirmed{
 			name: orig.GetName(),
+			prev: orig.GetPrev(),
 			code: code,
 		})
 	}

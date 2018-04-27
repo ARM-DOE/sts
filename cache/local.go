@@ -156,6 +156,7 @@ func (j *JSON) Reset(key string) {
 	j.mutex.Lock()
 	defer j.mutex.Unlock()
 	f.(*cacheFile).Hash = ""
+	j.dirty = true
 }
 
 // Remove removes the file by the specified key from the in-memory cache

@@ -152,13 +152,6 @@ type sortedGroup struct {
 	prev *sortedGroup
 }
 
-func newSortedGroup(name string, conf *Tag) *sortedGroup {
-	g := &sortedGroup{}
-	g.name = name
-	g.conf = conf
-	return g
-}
-
 func (g *sortedGroup) getNext() link {
 	return g.next
 }
@@ -267,31 +260,21 @@ func (q *Tagged) Push(files []sts.Hashed) {
 			orig.unlink()
 		}
 		groupName := q.grouper(file.GetName())
-		group, exists := q.byGroup[groupName]
-		if !exists {
-			group = &sortedGroup{
-				name: groupName,
-			}
-			tagName := q.tagger(groupName)
-			for _, tag := range q.tags {
-				if tag.Name == tagName {
-					group.conf = tag
-					break
-				}
-			}
-			if group.conf == nil {
-				log.Info(fmt.Sprintf("Q: No matching tag found: %s",
-					file.GetName()))
-				continue
-			}
-			q.addGroup(group)
-			q.byGroup[groupName] = group
+		group := q.getGroup(groupName)
+		if group == nil {
+			log.Info(fmt.Sprintf("Q: No matching tag found: %s",
+				file.GetName()))
+			continue
 		}
 		fileWrapper := &sortedFile{
 			orig:  file,
 			group: group,
 		}
-		log.Debug("Q Add:", file.GetName())
+		_, isRecovered := file.(sts.Recovered)
+		log.Debug(
+			"Q Add:", file.GetName(),
+			"Recovered?", isRecovered,
+			"Allocated?", fileWrapper.isAllocated())
 		q.addFile(fileWrapper)
 	}
 }
@@ -301,11 +284,26 @@ func (q *Tagged) Pop() sts.Sendable {
 	q.mux.Lock()
 	defer q.mux.Unlock()
 	g := q.headGroup
+	var prev *sortedFile
 	var next *sortedFile
 	for g != nil {
 		next = q.headFile[g.name]
-		if next == nil || next.isAllocated() {
-			next = nil
+		for next != nil && next.isAllocated() {
+			if next.next == nil {
+				// The head file should stay
+				next = nil
+				break
+			}
+			// Remove allocated files that may have been inserted simply for
+			// getting files in the right order
+			q.removeFile(next)
+			prev = next.prev
+			next = next.next
+			if prev != nil {
+				prev.unlink()
+			}
+		}
+		if next == nil {
 			g = g.next
 			continue
 		}
@@ -332,8 +330,8 @@ func (q *Tagged) Pop() sts.Sendable {
 		length: length,
 	}
 	if chunk.prev == chunk.Hashed.GetName() {
-		// It's possible to send the same file again and we don't want it to be
-		// dependent on itself
+		// It's possible to send a file by the same name again and we don't want
+		// it to be dependent on itself
 		chunk.prev = ""
 	}
 	log.Debug("Q Out:", chunk.GetName(), "<-", chunk.prev)
@@ -374,6 +372,28 @@ func (q *Tagged) delayGroup(group *sortedGroup) {
 		q.headGroup = group.next
 	}
 	group.insertAfter(n)
+}
+
+func (q *Tagged) getGroup(groupName string) *sortedGroup {
+	group, exists := q.byGroup[groupName]
+	if !exists {
+		group = &sortedGroup{
+			name: groupName,
+		}
+		tagName := q.tagger(groupName)
+		for _, tag := range q.tags {
+			if tag.Name == tagName {
+				group.conf = tag
+				break
+			}
+		}
+		if group.conf == nil {
+			return nil
+		}
+		q.addGroup(group)
+		q.byGroup[groupName] = group
+	}
+	return group
 }
 
 func (q *Tagged) addGroup(group *sortedGroup) {
@@ -433,15 +453,18 @@ loop:
 		f = f.next
 		continue
 	before:
+		log.Debug("Q Insert:", file.orig.GetName(), "->", f.orig.GetName())
 		file.insertBefore(f)
 		break loop
 	after:
+		log.Debug("Q Insert:", file.orig.GetName(), "<-", f.orig.GetName())
 		file.insertAfter(f)
 		break loop
 	}
 	// Update the head file if we inserted before it or if we inserted after it
 	// and it's already allocated
 	if f == head && (f.prev == file || f.isAllocated()) {
+		log.Debug("Q Head:", file.orig.GetName())
 		q.headFile[file.group.name] = file
 	}
 }

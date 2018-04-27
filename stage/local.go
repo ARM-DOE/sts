@@ -509,8 +509,6 @@ func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 				log.Debug("Previous file waiting:",
 					file.name, "<-", file.prev)
 				if s.isWaitLoop(stagedPrevFile) {
-					log.Debug("Wait loop detected:",
-						file.name, "<-", file.prev)
 					goto finalize
 				}
 				break
@@ -547,7 +545,7 @@ func (s *Stage) putFileAway(file *finalFile) (err error) {
 	file.logged = time.Now()
 
 	// Move it
-	targetPath := filepath.Join(s.targetDir, file.source, file.name)
+	targetPath := filepath.Join(s.targetDir, file.name)
 	os.MkdirAll(filepath.Dir(targetPath), 0775)
 	if err = fileutil.Move(file.path, targetPath); err != nil {
 		err = fmt.Errorf(
@@ -618,6 +616,7 @@ func (s *Stage) isWaitLoop(prevPath string) bool {
 			}
 			for _, f := range ff {
 				if f.path == prevPath {
+					log.Debug("Wait loop detected:", prevPath, "<-", p)
 					return true
 				}
 				next = append(next, f.path)
