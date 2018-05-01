@@ -417,6 +417,7 @@ func (q *Tagged) addGroup(group *sortedGroup) {
 	}
 	for g != nil {
 		if group.conf.Priority > g.conf.Priority {
+			log.Debug("Q Group Add:", group.name, "->", g.name)
 			group.addBefore(g)
 			if g == q.headGroup {
 				q.headGroup = group
@@ -424,6 +425,7 @@ func (q *Tagged) addGroup(group *sortedGroup) {
 			break
 		}
 		if g.next == nil {
+			log.Debug("Q Group Add:", group.name, "<-", g.name)
 			group.addAfter(g)
 			break
 		}

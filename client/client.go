@@ -29,7 +29,7 @@ type Conf struct {
 	Tagger sts.Translate // Takes a file name and provides a tag name
 
 	// Options
-	CacheAge     time.Duration    // How long to keep files in the cache after being sent (only applies to files that aren't deleted after being sent)
+	CacheAge     time.Duration    // How long to keep files in the cache after being sent
 	ScanDelay    time.Duration    // How long to wait between scans of the store (0 means only once and we're done)
 	Threads      int              // How many go routines for sending data
 	PayloadSize  units.Base2Bytes // How large a single transmission payload should be (before any compression by the transmitter)
@@ -173,12 +173,17 @@ func (broker *Broker) recover() (
 		break
 	}
 	log.Info(fmt.Sprintf(
-		"RECOVERY: Found %d partially sent files on target host",
+		"RECOVERY: Found %d at least partially sent files on target host",
 		len(partials),
 	))
 	lookup := make(map[string]*sts.Partial)
 	for _, p := range partials {
 		lookup[p.Name] = p
+		if p.Prev != "" {
+			// Add the previous file to the lookup so it can also be included
+			// in the reconstruction of the Q in order to maintain order
+			lookup[p.Prev] = nil
+		}
 		if broker.Conf.Cache.Get(p.Name) == nil {
 			log.Error("Stale companion on target host:", p.Name)
 		}
@@ -186,26 +191,31 @@ func (broker *Broker) recover() (
 	store := broker.Conf.Store
 	cache := broker.Conf.Cache
 	cache.Iterate(func(f sts.Cached) bool {
-		var file sts.File
-		file, err = store.Sync(f)
-		if store.IsNotExist(err) {
-			if !f.IsDone() {
-				// This should really only happen in rare scenarios when the
-				// file is removed before the cache is updated (and later
-				// persisted).
-				log.Info("File disappeared:", f.GetPath())
+		if !f.IsDone() {
+			var file sts.File
+			file, err = store.Sync(f)
+			if store.IsNotExist(err) {
+				cache.Done(f.GetName())
+				return false
+			} else if err != nil {
+				log.Error("Failed to stat cached file:", f.GetPath(), err.Error())
+				return false
+			} else if file != nil {
+				log.Debug("Ignore changed file:", f.GetPath())
+				return false
 			}
-			cache.Remove(f.GetName())
-			return false
-		} else if err != nil {
-			log.Error("Failed to stat cached file:", f.GetPath(), err.Error())
-			return false
-		} else if file != nil {
-			log.Debug("Ignore changed file:", f.GetPath())
+		}
+		partial, staged := lookup[f.GetName()]
+		if f.IsDone() {
+			if staged {
+				// We're putting it in the send Q only to get the right order
+				send = append(send, &recoverFile{
+					Cached: f,
+				})
+			}
 			return false
 		}
-		partial, exists := lookup[f.GetName()]
-		if exists {
+		if partial != nil {
 			log.Debug("Found partial:", f.GetName())
 			// Partially sent; need to gracefully recover
 			parts := make(chunks, len(partial.Parts))
@@ -267,20 +277,9 @@ func (broker *Broker) recover() (
 			switch {
 			case f.NotFound():
 				send = append(send, cached)
-			case f.Waiting():
-				poll = append(poll, &progressFile{
-					name:      cached.GetName(),
-					completed: time.Unix(cached.GetTime(), 0),
-					size:      cached.GetSize(),
-					hash:      cached.GetHash(),
-				})
-				// We're putting it in the send Q only to get the right order
-				send = append(send, &recoverFile{
-					Cached: cached,
-				})
 			case f.Failed():
 				send = append(send, cached)
-			case f.Received():
+			case f.Waiting() || f.Received():
 				if !broker.Conf.Logger.WasSent(
 					f.GetName(), time.Unix(cached.GetTime(), 0), time.Now()) {
 					broker.Conf.Logger.Sent(&progressFile{
@@ -387,21 +386,11 @@ func (broker *Broker) scan() []sts.Hashed {
 			return false
 		case !cached.IsDone():
 			return false
-		// Clean the cache while we're at it
-		case !broker.cleanAll:
-			check := true
-			if broker.cleanSome {
-				tagName := broker.Conf.Tagger(cached.GetName())
-				if tag, ok := broker.tagMap[tagName]; ok && !tag.Delete {
-					check = true
-				}
-			}
-			if check && cached.GetTime() > age.Unix() {
-				return false
-			}
+		case cached.GetTime() > age.Unix():
+			// Clean the cache while we're at it
+			log.Debug("Cleaned:", cached.GetName())
+			cache.Remove(cached.GetName())
 		}
-		log.Debug("Cleaned:", cached.GetName())
-		cache.Remove(cached.GetName())
 		return false
 	})
 	var ready []sts.Hashed
@@ -614,8 +603,8 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 			return
 		}
 		for _, p := range payload.GetParts() {
-			beg, end := p.GetSlice()
-			log.Debug("Sending:", p.GetName(), beg, end)
+			beg, len := p.GetSlice()
+			log.Debug("Sending:", p.GetName(), beg, beg+len)
 		}
 		for {
 			n, err := broker.Conf.Transmitter(payload)
@@ -837,12 +826,11 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 					broker.finish(f)
 					delete(poll, f.GetName())
 				}
-			case f.Waiting():
-				// Nothing to do with "waiting" files. They should continue to
-				// be polled since eventually they will be released on the
-				// receiving end
 			case f.Failed():
 				log.Error("Failed validation:", f.GetName())
+				fallthrough
+			case f.Waiting():
+				// Files "waiting" have been validated and can be cleaned up
 				fallthrough
 			case f.Received():
 				broker.finish(f)
@@ -858,8 +846,8 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 
 func (broker *Broker) finish(file sts.Polled) {
 	switch {
-	case file.Received():
-		log.Debug("Received:", file.GetName())
+	case file.Waiting() || file.Received():
+		log.Debug("Validated:", file.GetName())
 		cached := broker.Conf.Cache.Get(file.GetName())
 		tagName := broker.Conf.Tagger(file.GetName())
 		tag := broker.tagMap[tagName]
@@ -891,7 +879,7 @@ func (broker *Broker) startRetry(wg *sync.WaitGroup) {
 		if err != nil {
 			log.Error(err)
 			if store.IsNotExist(err) {
-				cache.Remove(file.GetName())
+				cache.Done(file.GetName())
 			}
 			continue
 		}

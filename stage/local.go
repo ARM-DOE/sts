@@ -17,6 +17,8 @@ import (
 const (
 	compExt = ".cmp"
 	partExt = ".part"
+	fullExt = ".full"
+	waitExt = ".wait"
 
 	// cacheAge is how long a received file is cached in memory
 	cacheAge = time.Hour * 1
@@ -24,16 +26,11 @@ const (
 	// cacheCnt is the number of files after which to age the cache
 	cacheCnt = 1000
 
-	// waitPollCount is the number of times a file can be polled before a file
-	// in waiting is released without any sign of its predecessor
-	waitPollCount = 10
-
 	stateReceived  = 0
 	stateValidated = 1
 	stateFailed    = 2
 	stateFinalized = 3
 	stateLogged    = 4
-	statePolled    = 5
 )
 
 type finalFile struct {
@@ -46,6 +43,8 @@ type finalFile struct {
 	time   time.Time
 	logged time.Time
 	state  int
+	wait   *time.Timer
+	nErr   int
 }
 
 func (f *finalFile) GetName() string {
@@ -69,8 +68,6 @@ type Stage struct {
 
 	cleaned    time.Time
 	handler    chan *finalFile
-	poll       map[string]int
-	pollLock   sync.RWMutex
 	wait       map[string][]*finalFile
 	waitLock   sync.RWMutex
 	cacheLock  sync.RWMutex
@@ -91,7 +88,6 @@ func New(name, rootDir, targetDir string, logger sts.ReceiveLogger) *Stage {
 		targetDir: targetDir,
 		logger:    logger,
 	}
-	s.poll = make(map[string]int)
 	s.wait = make(map[string][]*finalFile)
 	s.cache = make(map[string]*finalFile)
 	s.writeLocks = make(map[string]*sync.RWMutex)
@@ -245,8 +241,8 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 	if done {
 		final := s.partialToFinal(file)
 		s.toCache(final, stateReceived)
-		if err = os.Rename(path+partExt, path); err != nil {
-			err = fmt.Errorf("Failed to drop \"partial\" extension: %s",
+		if err = os.Rename(path+partExt, path+fullExt); err != nil {
+			err = fmt.Errorf("Failed to swap in the \"full\" extension: %s",
 				err.Error())
 			return
 		}
@@ -266,33 +262,34 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 // -> sts.ConfirmWaiting: MD5 validation was successful but waiting on predecessor
 // -> sts.ConfirmNone: No knowledge of file
 func (s *Stage) GetFileStatus(relPath string, sent time.Time) int {
-	log.Debug("Checking status:", s.name, relPath)
 	s.buildCache(sent)
 	path := filepath.Join(s.rootDir, relPath)
 	f := s.fromCache(path)
 	if f == nil {
+		log.Debug("STAGE:", s.name, relPath, "(not found)")
 		return sts.ConfirmNone
 	}
 	switch f.state {
 	case stateFailed:
+		log.Debug("STAGE:", s.name, relPath, "(failed)")
 		return sts.ConfirmFailed
 	case stateValidated:
 		file := s.getWaiting(path)
 		if file != nil {
-			go s.finalizeQueue(file)
-			s.incrementPollCount(path)
+			log.Debug("STAGE:", s.name, relPath, "(waiting)")
 			return sts.ConfirmWaiting
 		}
+		log.Debug("STAGE:", s.name, relPath, "(done)")
+		return sts.ConfirmPassed
 	case stateLogged:
-		fallthrough
+		log.Debug("STAGE:", s.name, relPath, "(logged)")
+		return sts.ConfirmPassed
 	case stateFinalized:
-		goto confirmPassed
+		log.Debug("STAGE:", s.name, relPath, "(done)")
+		return sts.ConfirmPassed
 	}
+	log.Debug("STAGE:", s.name, relPath, "(not found)")
 	return sts.ConfirmNone
-confirmPassed:
-	s.removePoll(path)
-	s.toCache(f, statePolled)
-	return sts.ConfirmPassed
 }
 
 // Recover is meant to be run while the server is not so it can cleanly address
@@ -301,8 +298,9 @@ confirmPassed:
 func (s *Stage) Recover() (err error) {
 	log.Info("Beginning stage recovery")
 	defer log.Info("Stage recovery complete")
-	var ready []*sts.Partial
-	var oldest time.Time
+	var validate []*sts.Partial
+	var finalize []*sts.Partial
+	oldest := time.Now()
 	err = filepath.Walk(s.rootDir,
 		func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -316,21 +314,31 @@ func (s *Stage) Recover() (err error) {
 				log.Error("Failed to read companion:", path, err.Error())
 				return nil
 			}
-			if oldest.IsZero() || info.ModTime().Before(oldest) {
+			if info.ModTime().Before(oldest) {
 				oldest = info.ModTime()
 			}
 			base := strings.TrimSuffix(path, compExt)
-			if _, err = os.Stat(base + partExt); !os.IsNotExist(err) {
+			if _, err = os.Stat(base + waitExt); !os.IsNotExist(err) {
+				// .wait
+				log.Debug("Found ready to finalize:", cmp.Name)
+				finalize = append(finalize, cmp)
+			} else if _, err = os.Stat(base + fullExt); !os.IsNotExist(err) {
+				// .full
+				log.Debug("Found ready to validate:", cmp.Name)
+				validate = append(validate, cmp)
+			} else if _, err = os.Stat(base + partExt); !os.IsNotExist(err) {
+				// .part
 				if isCompanionComplete(cmp) {
-					if err = os.Rename(base+partExt, base); err != nil {
-						log.Error("Failed to drop \"partial\" extension:",
+					if err = os.Rename(base+partExt, base+fullExt); err != nil {
+						log.Error("Failed to swap in \"full\" extension:",
 							err.Error())
 						return nil
 					}
 					log.Debug("Found already done:", cmp.Name)
-					ready = append(ready, cmp)
+					validate = append(validate, cmp)
 				}
 			} else if _, err = os.Stat(base); os.IsNotExist(err) {
+				// Not found
 				if err = os.Remove(path); err != nil {
 					log.Error("Failed to remove orphaned companion:",
 						path, err.Error())
@@ -338,37 +346,50 @@ func (s *Stage) Recover() (err error) {
 				}
 				log.Info("Removed orphaned companion:", path)
 			} else if isCompanionComplete(cmp) {
-				log.Debug("Found already done:", cmp.Name)
-				ready = append(ready, cmp)
+				// No extension (backward compatibility)
+				if err = os.Rename(base, base+fullExt); err != nil {
+					log.Error("Failed to add \"full\" extension:",
+						err.Error())
+					return nil
+				}
+				log.Debug("Found ready to validate:", cmp.Name)
+				validate = append(validate, cmp)
 			}
 			return nil
 		})
-	if len(ready) == 0 {
+	if len(validate) == 0 && len(finalize) == 0 {
 		return
 	}
 	// Build the cache from the incoming log starting an hour before the oldest
 	// companion file found
 	s.buildCache(oldest.Add(-1 * time.Hour))
-	worker := func(wg *sync.WaitGroup, ch <-chan *sts.Partial) {
-		defer wg.Done()
-		for f := range ch {
-			s.process(s.partialToFinal(f))
+	if len(validate) > 0 {
+		worker := func(wg *sync.WaitGroup, ch <-chan *sts.Partial) {
+			defer wg.Done()
+			for f := range ch {
+				s.process(s.partialToFinal(f))
+			}
 		}
+		wg := sync.WaitGroup{}
+		ch := make(chan *sts.Partial)
+		// 32 workers is somewhat arbitrary--we just want some notion of doing
+		// things concurrently.  We don't want to just have them all go off because
+		// we could bump against the OS's threshold for max files open at once.
+		for i := 0; i < 32; i++ {
+			wg.Add(1)
+			go worker(&wg, ch)
+		}
+		for _, file := range validate {
+			ch <- file
+		}
+		close(ch)
+		wg.Wait()
 	}
-	wg := sync.WaitGroup{}
-	ch := make(chan *sts.Partial)
-	// 16 workers is somewhat arbitrary--we just want some notion of doing
-	// things concurrently.  We don't want to just have them all go off because
-	// we could bump against the OS's threshold for max files open at once.
-	for i := 0; i < 16; i++ {
-		wg.Add(1)
-		go worker(&wg, ch)
+	for _, file := range finalize {
+		finalFile := s.partialToFinal(file)
+		s.toCache(finalFile, stateValidated)
+		s.finalizeQueue(finalFile)
 	}
-	for _, file := range ready {
-		ch <- file
-	}
-	close(ch)
-	wg.Wait()
 	return
 }
 
@@ -387,10 +408,10 @@ func (s *Stage) process(file *finalFile) {
 	log.Debug("Validating:", file.name)
 
 	// Validate checksum.
-	hash, err := fileutil.FileMD5(file.path)
+	hash, err := fileutil.FileMD5(file.path + fullExt)
 	if err != nil {
 		os.Remove(file.path + compExt)
-		os.Remove(file.path)
+		os.Remove(file.path + fullExt)
 		log.Error(fmt.Sprintf(
 			"Failed to calculate MD5 of %s: %s",
 			file.name, err.Error()))
@@ -402,6 +423,13 @@ func (s *Stage) process(file *finalFile) {
 	if !valid {
 		log.Error(fmt.Sprintf("Failed validation: %s (%s => %s)",
 			file.path, file.hash, hash))
+		s.toCache(file, stateFailed)
+		return
+	}
+
+	if err = os.Rename(file.path+fullExt, file.path+waitExt); err != nil {
+		err = fmt.Errorf("Failed to swap in \"wait\" extension: %s",
+			err.Error())
 		s.toCache(file, stateFailed)
 		return
 	}
@@ -471,7 +499,6 @@ func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 	if file.prev != "" {
 		stagedPrevFile := filepath.Join(s.rootDir, file.prev)
 		prev := s.fromCache(stagedPrevFile)
-		removePoll := true
 		switch {
 		case prev == nil:
 			if s.hasWriteLock(stagedPrevFile) {
@@ -480,21 +507,6 @@ func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 					file.name, "<-", file.prev)
 				break
 			}
-			pollCount := s.getPollCount(file.path)
-			if pollCount <= waitPollCount {
-				log.Debug(
-					"Previous file not found yet:",
-					file.name, "<-", file.prev)
-				removePoll = false
-				break
-			}
-			// If this file has been polled waitPollCount times and we still
-			// can't find any trace of its predecessor (which is the case
-			// if we get here) then release it anyway at the risk of
-			// getting data out of order. We can only do so much.
-			log.Info("Done Waiting:", file.name, "<-", file.prev)
-			s.doneWaiting(stagedPrevFile, file)
-			goto finalize
 
 		case prev.state == stateReceived:
 			log.Debug("Waiting for previous file:",
@@ -518,15 +530,21 @@ func (s *Stage) finalize(file *finalFile) (done bool, err error) {
 		default:
 			goto finalize
 		}
-		if removePoll {
-			s.removePoll(file.path)
-		}
 		s.toWait(stagedPrevFile, file)
+		// Set a timer to check this file again in case there is a wait loop
+		file.wait = time.AfterFunc(time.Second*30, func() {
+			log.Debug("Attempting finalize again:", file.name)
+			s.finalizeQueue(file)
+		})
 		return
 	}
 
 finalize:
-	s.removePoll(file.path)
+	if file.wait != nil {
+		file.wait.Stop()
+		file.wait = nil
+	}
+
 	log.Debug("Finalizing", file.source, file.name)
 	if err = s.putFileAway(file); err != nil {
 		return
@@ -547,13 +565,22 @@ func (s *Stage) putFileAway(file *finalFile) (err error) {
 	// Move it
 	targetPath := filepath.Join(s.targetDir, file.name)
 	os.MkdirAll(filepath.Dir(targetPath), 0775)
-	if err = fileutil.Move(file.path, targetPath); err != nil {
+	if err = fileutil.Move(file.path+waitExt, targetPath); err != nil {
 		err = fmt.Errorf(
 			"Failed to move %s to %s: %s",
-			file.path, targetPath, err.Error())
-		if os.IsNotExist(err) {
-			// If the file doesn't exist then we better get the file again
-			s.toCache(file, stateFailed)
+			file.path+waitExt, targetPath, err.Error())
+		// If the file doesn't exist then something is really wrong.
+		// Either we somehow have two instances running that are stepping
+		// on each other or we have an illusive and critical bug.  Regardless,
+		// it's not good.
+		if !os.IsNotExist(err) {
+			// If the file is there but we still got an error, let's just try
+			// it again later.
+			file.nErr++
+			time.AfterFunc(time.Second*time.Duration(file.nErr), func() {
+				log.Debug("Attempting finalize again after failure:", file.name)
+				s.finalizeQueue(file)
+			})
 		}
 		return
 	}
@@ -564,37 +591,6 @@ func (s *Stage) putFileAway(file *finalFile) (err error) {
 	// be a deal-breaker anyway)
 	os.Remove(file.path + compExt)
 	return
-}
-
-func (s *Stage) getPollCount(path string) int {
-	s.pollLock.RLock()
-	defer s.pollLock.RUnlock()
-	if count, ok := s.poll[path]; ok {
-		return count
-	}
-	return 0
-}
-
-func (s *Stage) incrementPollCount(path string) (c int) {
-	s.pollLock.Lock()
-	defer s.pollLock.Unlock()
-	var ok bool
-	if c, ok = s.poll[path]; ok {
-		c++
-		s.poll[path] = c
-		return
-	}
-	c = 1
-	s.poll[path] = c
-	return
-}
-
-func (s *Stage) removePoll(path string) {
-	s.pollLock.Lock()
-	defer s.pollLock.Unlock()
-	if _, ok := s.poll[path]; ok {
-		delete(s.poll, path)
-	}
 }
 
 func (s *Stage) isWaiting(path string) bool {
@@ -815,6 +811,10 @@ func (s *Stage) cleanDir() {
 			case compExt:
 				fallthrough
 			case partExt:
+				fallthrough
+			case fullExt:
+				fallthrough
+			case waitExt:
 				p = strings.TrimSuffix(path, ext)
 			}
 			if _, ok := aged[p]; !ok {

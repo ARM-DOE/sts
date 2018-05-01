@@ -107,12 +107,23 @@ while true; do
     out=`find $STS_HOME/data/out -type f 2>/dev/null | sort`
     if [ "$out" ]; then
         lines=($out)
-        echo "${#lines[@]} files left ..."
+        echo "${#lines[@]} outgoing files left ..."
         continue
     fi
     kill $pid_client
-    kill $pid_server
     kill $monkey_pid > /dev/null 2>&1
+    break
+done
+
+while true; do
+    sleep 1
+    out=`find $STS_HOME/data/stage -type f 2>/dev/null | sort`
+    if [ "$out" ]; then
+        lines=($out)
+        echo "${#lines[@]} stage files ..."
+        continue
+    fi
+    kill $pid_server
     echo "Done!"
     break
 done
@@ -141,14 +152,6 @@ uniqd=`uniq -c <(cat <(echo "$sortd")) | grep -v " 1"`
 if [ "$uniqd" ]; then
     echo "Incoming Duplicates:"
     cat <(echo "$uniqd")
-    echo "FAILED!"
-    exit 0
-fi
-
-stagd=`find $STS_HOME/data/stage -type f | sort`
-if [ "$stagd" ]; then
-    echo "Stage Area Mess:"
-    cat <(echo "$stagd")
     echo "FAILED!"
     exit 0
 fi
