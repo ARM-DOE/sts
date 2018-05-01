@@ -725,7 +725,7 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 			if !ok {
 				progress[key] = &progressFile{
 					name:    binned.GetName(),
-					size:    binned.GetFileSize(),
+					size:    binned.GetSendSize(),
 					started: payload.GetStarted(),
 					hash:    binned.GetFileHash(),
 				}
@@ -947,6 +947,14 @@ func (f *recoverFile) Allocate(desired int64) (offset int64, length int64) {
 
 func (f *recoverFile) IsAllocated() bool {
 	return f.part == len(f.left)
+}
+
+func (f *recoverFile) GetSendSize() int64 {
+	size := int64(0)
+	for _, p := range f.left {
+		size += p.End - p.Beg
+	}
+	return size
 }
 
 type chunks []*sts.ByteRange

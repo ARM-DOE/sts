@@ -145,6 +145,13 @@ func (f *sortedFile) isAllocated() bool {
 	return f.allocated == f.orig.GetSize()
 }
 
+func (f *sortedFile) getSendSize() int64 {
+	if r, ok := f.orig.(sts.Recovered); ok {
+		return r.GetSendSize()
+	}
+	return f.orig.GetSize()
+}
+
 type sortedGroup struct {
 	name string
 	conf *Tag
@@ -203,6 +210,7 @@ type sendable struct {
 	prev   string
 	offset int64
 	length int64
+	send   int64
 }
 
 func (s *sendable) GetPrev() string {
@@ -211,6 +219,10 @@ func (s *sendable) GetPrev() string {
 
 func (s *sendable) GetSlice() (int64, int64) {
 	return s.offset, s.length
+}
+
+func (s *sendable) GetSendSize() int64 {
+	return s.send
 }
 
 // Tag is the struct for defining the configuration for a set of groups.
@@ -328,6 +340,7 @@ func (q *Tagged) Pop() sts.Sendable {
 		prev:   next.getPrevName(),
 		offset: offset,
 		length: length,
+		send:   next.getSendSize(),
 	}
 	if chunk.prev == chunk.Hashed.GetName() {
 		// It's possible to send a file by the same name again and we don't want

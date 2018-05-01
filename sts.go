@@ -170,6 +170,7 @@ type Cached interface {
 type Recovered interface {
 	Hashed
 	GetPrev() string
+	GetSendSize() int64
 	Allocate(int64) (int64, int64)
 	IsAllocated() bool
 }
@@ -179,6 +180,7 @@ type Sendable interface {
 	Hashed
 	GetPrev() string
 	GetSlice() (int64, int64)
+	GetSendSize() int64
 }
 
 // Binnable is the interface a file must implement to have a chunk be part of
@@ -196,6 +198,10 @@ type Binned interface {
 	GetPrev() string
 	GetFileHash() string
 	GetFileSize() int64
+	// GetSendSize will almost always be the same as GetFileSize.  The one
+	// exception is for files recovered where some portion of the file was
+	// sent earlier.
+	GetSendSize() int64
 	GetSlice() (int64, int64)
 }
 

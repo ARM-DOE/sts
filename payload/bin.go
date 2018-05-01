@@ -22,6 +22,7 @@ type fileMeta struct {
 	Size int64  `json:"s"`
 	Beg  int64  `json:"b"`
 	End  int64  `json:"e"`
+	send int64
 }
 
 func (f *fileMeta) GetName() string {
@@ -42,6 +43,10 @@ func (f *fileMeta) GetFileSize() int64 {
 
 func (f *fileMeta) GetSlice() (int64, int64) {
 	return f.Beg, f.End
+}
+
+func (f *fileMeta) GetSendSize() int64 {
+	return f.send
 }
 
 type part struct {
@@ -211,6 +216,7 @@ func (bin *Bin) EncodeHeader() (byteMeta []byte, err error) {
 			Prev: part.GetPrev(),
 			Hash: part.GetFileHash(),
 			Size: part.GetFileSize(),
+			send: part.GetSendSize(),
 			Beg:  part.beg,
 			End:  part.end,
 		}
