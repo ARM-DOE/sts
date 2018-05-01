@@ -148,10 +148,10 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 	wgValidate.Wait()
 	close(broker.chValidate)
 
-	wgFailed.Wait()
+	wgValidated.Wait()
 	close(broker.chRetry)
 
-	wgValidated.Wait()
+	wgFailed.Wait()
 	done <- true
 }
 
