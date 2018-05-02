@@ -65,9 +65,11 @@ type Stage struct {
 	rootDir   string
 	targetDir string
 	logger    sts.ReceiveLogger
+	nPipe     int
 
 	cleaned    time.Time
-	handler    chan *finalFile
+	validateCh chan *finalFile
+	finalizeCh chan *finalFile
 	wait       map[string][]*finalFile
 	waitLock   sync.RWMutex
 	cacheLock  sync.RWMutex
@@ -248,7 +250,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 		}
 		log.Debug("File transmitted:", path)
 		s.delWriteLock(path)
-		go s.process(final)
+		go s.processQueue(final)
 	}
 	return
 }
@@ -393,6 +395,19 @@ func (s *Stage) Recover() (err error) {
 	return
 }
 
+// Stop waits for the number of files in the pipe to be zero and then signals
+func (s *Stage) Stop(wg *sync.WaitGroup) {
+	defer wg.Done()
+	log.Debug("Stage shutting down ...")
+	for {
+		if s.inPipe() > 0 {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		break
+	}
+}
+
 func (s *Stage) partialToFinal(file *sts.Partial) *finalFile {
 	return &finalFile{
 		path:   filepath.Join(s.rootDir, file.Name),
@@ -401,6 +416,23 @@ func (s *Stage) partialToFinal(file *sts.Partial) *finalFile {
 		hash:   file.Hash,
 		prev:   file.Prev,
 		source: file.Source,
+	}
+}
+
+func (s *Stage) processQueue(file *finalFile) {
+	if s.validateCh == nil {
+		s.validateCh = make(chan *finalFile, 100)
+		// Let's not have too many files processed at once
+		for i := 0; i < 16; i++ {
+			go s.processHandler()
+		}
+	}
+	s.validateCh <- file
+}
+
+func (s *Stage) processHandler() {
+	for f := range s.validateCh {
+		s.process(f)
 	}
 }
 
@@ -441,11 +473,11 @@ func (s *Stage) process(file *finalFile) {
 }
 
 func (s *Stage) finalizeQueue(file *finalFile) {
-	if s.handler == nil {
-		s.handler = make(chan *finalFile, 100)
+	if s.finalizeCh == nil {
+		s.finalizeCh = make(chan *finalFile, 100)
 		go s.finalizeHandler()
 	}
-	s.handler <- file
+	s.finalizeCh <- file
 }
 
 func (s *Stage) finalizeHandler() {
@@ -453,7 +485,7 @@ func (s *Stage) finalizeHandler() {
 	t := time.NewTimer(d)
 	for {
 		select {
-		case f := <-s.handler:
+		case f := <-s.finalizeCh:
 			t.Stop()
 			s.finalizeChain(f)
 		case <-t.C:
@@ -700,10 +732,24 @@ func (s *Stage) fromCache(path string) *finalFile {
 	return file
 }
 
+func (s *Stage) inPipe() int {
+	s.cacheLock.RLock()
+	defer s.cacheLock.RUnlock()
+	return s.nPipe
+}
+
 func (s *Stage) toCache(file *finalFile, state int) {
 	s.cacheLock.Lock()
 	defer s.cacheLock.Unlock()
 	file.time = time.Now()
+	if state != stateLogged {
+		// This is to keep track of how many files are in the "pipe"
+		if _, ok := s.cache[file.path]; !ok {
+			s.nPipe++
+		} else if state == stateFinalized {
+			s.nPipe--
+		}
+	}
 	file.state = state
 	if !file.logged.IsZero() {
 		if s.cacheTime.IsZero() {

@@ -50,6 +50,17 @@ func (s *Server) getGateKeeper(source string) sts.GateKeeper {
 	return gk
 }
 
+func (s *Server) stopGateKeepers() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	wg := sync.WaitGroup{}
+	wg.Add(len(s.GateKeepers))
+	for _, gk := range s.GateKeepers {
+		gk.Stop(&wg)
+	}
+	wg.Wait()
+}
+
 func (s *Server) isValid(src, key string) bool {
 	if src != "" {
 		if matched, err := regexp.MatchString(`^[a-z0-9\.\-]+$`, src); err != nil || !matched {
@@ -87,6 +98,7 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 		if err != http.ErrServerClosed {
 			log.Error(err.Error())
 		}
+		s.stopGateKeepers()
 		done <- true
 	}(done, s.Host, s.Port, s.TLS)
 	<-stop

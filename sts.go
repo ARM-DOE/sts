@@ -2,6 +2,7 @@ package sts
 
 import (
 	"io"
+	"sync"
 	"time"
 )
 
@@ -99,6 +100,7 @@ type GateKeeper interface {
 	Prepare(request []Binned)
 	Receive(*Partial, io.Reader) error
 	GetFileStatus(relPath string, sent time.Time) int
+	Stop(*sync.WaitGroup)
 }
 
 // GateKeeperFactory creates GateKeeper instances

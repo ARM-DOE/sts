@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# This test should be updated since the crash capture includes a cache that does
+# not include file hashes.  The newer logic will try to send these even though
+# they don't exist.
+
 basedir=$(dirname $0)
 export STS_HOME=$PWD/$basedir/run
 
