@@ -19,6 +19,7 @@ type fileMeta struct {
 	Name string `json:"n"`
 	Prev string `json:"p"`
 	Hash string `json:"f"`
+	Time int64  `json:"t"`
 	Size int64  `json:"s"`
 	Beg  int64  `json:"b"`
 	End  int64  `json:"e"`
@@ -41,6 +42,10 @@ func (f *fileMeta) GetFileSize() int64 {
 	return f.Size
 }
 
+func (f *fileMeta) GetFileTime() int64 {
+	return f.Time
+}
+
 func (f *fileMeta) GetSlice() (int64, int64) {
 	return f.Beg, f.End
 }
@@ -57,6 +62,10 @@ type part struct {
 
 func (p *part) GetFileSize() int64 {
 	return p.Binnable.GetSize()
+}
+
+func (p *part) GetFileTime() int64 {
+	return p.Binnable.GetTime()
 }
 
 func (p *part) GetFileHash() string {
@@ -215,6 +224,7 @@ func (bin *Bin) EncodeHeader() (byteMeta []byte, err error) {
 			Name: part.GetName(),
 			Prev: part.GetPrev(),
 			Hash: part.GetFileHash(),
+			Time: part.GetFileTime(),
 			Size: part.GetFileSize(),
 			send: part.GetSendSize(),
 			Beg:  part.beg,

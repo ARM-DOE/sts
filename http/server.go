@@ -308,6 +308,7 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 			Name:   parts[index].GetName(),
 			Prev:   parts[index].GetPrev(),
 			Size:   parts[index].GetFileSize(),
+			Time:   parts[index].GetFileTime(),
 			Hash:   parts[index].GetFileHash(),
 			Source: source,
 		}

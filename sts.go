@@ -198,6 +198,7 @@ type Binnable interface {
 type Binned interface {
 	GetName() string
 	GetPrev() string
+	GetFileTime() int64
 	GetFileHash() string
 	GetFileSize() int64
 	// GetSendSize will almost always be the same as GetFileSize.  The one
@@ -233,6 +234,7 @@ type PayloadDecoder interface {
 type Partial struct {
 	Name   string       `json:"path"`
 	Prev   string       `json:"prev"`
+	Time   int64        `json:"time"`
 	Size   int64        `json:"size"`
 	Hash   string       `json:"hash"`
 	Source string       `json:"src"`
@@ -258,7 +260,7 @@ type Sent interface {
 // for whether or not the server received the file successfully
 type Pollable interface {
 	GetName() string
-	GetPrev() string
+	GetPrev() string // Needed in case the file needs to be resent
 	GetStarted() time.Time
 }
 

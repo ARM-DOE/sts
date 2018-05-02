@@ -176,46 +176,49 @@ func (broker *Broker) recover() (
 		"RECOVERY: Found %d at least partially sent files on target host",
 		len(partials),
 	))
-	lookup := make(map[string]*sts.Partial)
-	for _, p := range partials {
-		lookup[p.Name] = p
-		if p.Prev != "" {
-			// Add the previous file to the lookup so it can also be included
-			// in the reconstruction of the Q in order to maintain order
-			lookup[p.Prev] = nil
-		}
-		if broker.Conf.Cache.Get(p.Name) == nil {
-			log.Error("Stale companion on target host:", p.Name)
-		}
-	}
 	store := broker.Conf.Store
 	cache := broker.Conf.Cache
-	cache.Iterate(func(f sts.Cached) bool {
-		if !f.IsDone() {
-			var file sts.File
-			file, err = store.Sync(f)
-			if store.IsNotExist(err) {
-				cache.Done(f.GetName())
-				return false
-			} else if err != nil {
-				log.Error("Failed to stat cached file:", f.GetPath(), err.Error())
-				return false
-			} else if file != nil {
-				log.Debug("Ignore changed file:", f.GetPath())
-				return false
-			}
+	lookup := make(map[string]*sts.Partial)
+	for _, p := range partials {
+		cached := cache.Get(p.Name)
+		if cached == nil {
+			// We're putting it in the send Q only to get the right order
+			send = append(send, &recoverFile{
+				Cached: &placeholderFile{
+					name: p.Name,
+					size: p.Size,
+					time: p.Time,
+					hash: p.Hash,
+				},
+			})
+			continue
 		}
-		partial, staged := lookup[f.GetName()]
+		if cached.IsDone() {
+			// We're putting it in the send Q only to get the right order
+			send = append(send, &recoverFile{
+				Cached: cached,
+			})
+			continue
+		}
+		lookup[p.Name] = p
+	}
+	cache.Iterate(func(f sts.Cached) bool {
 		if f.IsDone() {
-			if staged {
-				// We're putting it in the send Q only to get the right order
-				send = append(send, &recoverFile{
-					Cached: f,
-				})
-			}
 			return false
 		}
-		if partial != nil {
+		var file sts.File
+		file, err = store.Sync(f)
+		if store.IsNotExist(err) {
+			cache.Done(f.GetName())
+			return false
+		} else if err != nil {
+			log.Error("Failed to stat cached file:", f.GetPath(), err.Error())
+			return false
+		} else if file != nil {
+			log.Debug("Ignore changed file:", f.GetPath())
+			return false
+		}
+		if partial, ok := lookup[f.GetName()]; ok {
 			log.Debug("Found partial:", f.GetName())
 			// Partially sent; need to gracefully recover
 			parts := make(chunks, len(partial.Parts))
@@ -273,12 +276,26 @@ func (broker *Broker) recover() (
 		poll = nil
 		log.Info("RECOVERY: Processing response ...")
 		for _, f := range polled {
-			cached := broker.Conf.Cache.Get(f.GetName())
+			cached := cache.Get(f.GetName())
 			switch {
 			case f.NotFound():
 				send = append(send, cached)
 			case f.Failed():
-				send = append(send, cached)
+				log.Debug("Recovering previous failure:", f.GetName())
+				if partial, ok := lookup[f.GetName()]; ok {
+					send = append(send, &recoverFile{
+						Cached: cached,
+						prev:   partial.Prev,
+						left: chunks{
+							&sts.ByteRange{
+								Beg: 0,
+								End: cached.GetSize(),
+							},
+						},
+					})
+				} else {
+					send = append(send, cached)
+				}
 			case f.Waiting() || f.Received():
 				if !broker.Conf.Logger.WasSent(
 					f.GetName(), time.Unix(cached.GetTime(), 0), time.Now()) {
@@ -898,6 +915,41 @@ func (broker *Broker) startRetry(wg *sync.WaitGroup) {
 			left:   []*sts.ByteRange{&sts.ByteRange{Beg: 0, End: cached.GetSize()}},
 		}}
 	}
+}
+
+type placeholderFile struct {
+	name string
+	size int64
+	time int64
+	hash string
+}
+
+func (f *placeholderFile) GetPath() string {
+	return f.name
+}
+
+func (f *placeholderFile) GetName() string {
+	return f.name
+}
+
+func (f *placeholderFile) GetSize() int64 {
+	return f.size
+}
+
+func (f *placeholderFile) GetTime() int64 {
+	return f.time
+}
+
+func (f *placeholderFile) GetMeta() []byte {
+	return nil
+}
+
+func (f *placeholderFile) GetHash() string {
+	return f.hash
+}
+
+func (f *placeholderFile) IsDone() bool {
+	return true
 }
 
 type hashFile struct {
