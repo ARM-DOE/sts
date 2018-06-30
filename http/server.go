@@ -206,19 +206,21 @@ func (s *Server) routePartials(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	gateKeeper := s.getGateKeeper(source)
-	partials, err := gateKeeper.Scan()
-	if err != nil {
-		s.handleError(w, err)
-		return
+	// Starting with v1, this API is versioned in order to allow for changes to
+	// the underlying structure of the partials.
+	version := ""
+	vers := r.URL.Query()["v"]
+	if len(vers) > 0 {
+		version = vers[0]
 	}
-	respJSON, err := json.Marshal(partials)
+	jsonBytes, err := gateKeeper.Scan(version)
 	if err != nil {
 		s.handleError(w, err)
 		return
 	}
 	w.Header().Set(HeaderSep, string(os.PathSeparator))
 	w.Header().Set(HeaderContentType, HeaderJSON)
-	if err := s.respond(w, http.StatusOK, respJSON); err != nil {
+	if err := s.respond(w, http.StatusOK, jsonBytes); err != nil {
 		s.handleError(w, err)
 	}
 }

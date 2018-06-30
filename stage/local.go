@@ -1,6 +1,7 @@
 package stage
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -132,10 +133,11 @@ func (s *Stage) pathToName(path, stripExt string) (name string) {
 }
 
 // Scan walks the stage area tree looking for companion files and returns any
-// found
-func (s *Stage) Scan() (partials []*sts.Partial, err error) {
+// found in the form of a JSON-encoded byte array
+func (s *Stage) Scan(version string) (jsonBytes []byte, err error) {
 	var name string
 	var lock *sync.RWMutex
+	var partials []*sts.Partial
 	err = filepath.Walk(s.rootDir,
 		func(path string, info os.FileInfo, err error) error {
 			if filepath.Ext(path) == compExt {
@@ -153,6 +155,15 @@ func (s *Stage) Scan() (partials []*sts.Partial, err error) {
 			}
 			return nil
 		})
+	if err != nil {
+		return
+	}
+	switch version {
+	case "":
+		jsonBytes, err = json.Marshal(toLegacyCompanions(partials))
+	default:
+		jsonBytes, err = json.Marshal(partials)
+	}
 	return
 }
 

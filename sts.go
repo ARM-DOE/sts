@@ -96,7 +96,7 @@ type FileQueue interface {
 // received on the server
 type GateKeeper interface {
 	Recover() error
-	Scan() ([]*Partial, error)
+	Scan(version string) ([]byte, error)
 	Prepare(request []Binned)
 	Receive(*Partial, io.Reader) error
 	GetFileStatus(relPath string, sent time.Time) int

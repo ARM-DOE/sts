@@ -90,13 +90,13 @@ func ReadCompanions(r io.Reader) (cmps []*sts.Partial, err error) {
 }
 
 func upgradeCompanion(old *oldCompanion) (cmp *sts.Partial) {
-    cmp = &sts.Partial{
-	    Hash: old.Hash,
-		Name: old.Path,
-		Prev: old.Prev,
-		Size: old.Size,
+	cmp = &sts.Partial{
+		Hash:   old.Hash,
+		Name:   old.Path,
+		Prev:   old.Prev,
+		Size:   old.Size,
 		Source: old.Source,
-    }
+	}
 	for _, p := range old.Parts {
 		cmp.Parts = append(cmp.Parts, &sts.ByteRange{
 			Beg: p.Beg, End: p.End,
@@ -152,4 +152,30 @@ type oldPart struct {
 	Hash string `json:"hash"`
 	Beg  int64  `json:"b"`
 	End  int64  `json:"e"`
+}
+
+func toLegacyCompanions(partials []*sts.Partial) []*oldCompanion {
+	comps := make([]*oldCompanion, len(partials))
+	for i, partial := range partials {
+		comps[i] = toLegacyCompanion(partial)
+	}
+	return comps
+}
+
+func toLegacyCompanion(partial *sts.Partial) *oldCompanion {
+	cmp := &oldCompanion{
+		Path:   partial.Name,
+		Prev:   partial.Prev,
+		Size:   partial.Size,
+		Hash:   partial.Hash,
+		Source: partial.Source,
+		Parts:  make(map[string]*oldPart),
+	}
+	for _, part := range partial.Parts {
+		cmp.Parts[fmt.Sprintf("%d:%d", part.Beg, part.End)] = &oldPart{
+			Beg: part.Beg,
+			End: part.End,
+		}
+	}
+	return cmp
 }

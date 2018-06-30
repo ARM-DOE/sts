@@ -17,6 +17,8 @@ import (
 	"code.arm.gov/dataflow/sts"
 )
 
+const apiVersion = 1
+
 type confirmable struct {
 	Name    string `json:"n"`
 	Started int64  `json:"t"` // Expects Unix
@@ -130,7 +132,7 @@ func (h *Client) Transmit(payload sts.Payload) (n int, err error) {
 		}
 		pw.Close()
 	}()
-	url := fmt.Sprintf("%s/data", h.rootURL())
+	url := fmt.Sprintf("%s/data?v=%d", h.rootURL(), apiVersion)
 	req, err := http.NewRequest("PUT", url, pr)
 	if err != nil {
 		return
@@ -178,7 +180,7 @@ func (h *Client) Validate(sent []sts.Pollable) (polled []sts.Polled, err error) 
 		})
 		fmap[f.GetName()] = f
 	}
-	url := fmt.Sprintf("%s/validate", h.rootURL())
+	url := fmt.Sprintf("%s/validate?v=%d", h.rootURL(), apiVersion)
 	r, err := GetJSONReader(cf, h.Compression)
 	if err != nil {
 		return
@@ -239,7 +241,7 @@ func (h *Client) Recover() (partials []*sts.Partial, err error) {
 	var req *http.Request
 	var resp *http.Response
 	var reader io.ReadCloser
-	url := fmt.Sprintf("%s/partials", h.rootURL())
+	url := fmt.Sprintf("%s/partials?v=%d", h.rootURL(), apiVersion)
 	if req, err = http.NewRequest("GET", url, bytes.NewReader([]byte(""))); err != nil {
 		return
 	}
