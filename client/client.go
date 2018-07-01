@@ -194,38 +194,6 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 		}
 		lookup[p.Name] = p
 	}
-	// Look for files in the cache without a hash and compute those before
-	// going on.  If not, we may end up sending the same file out twice and
-	// one of them would have an empty hash that would never validate and
-	// would get in an infinite loop.  We really shouldn't ever have this
-	// except when initially migrating from an old version that did not store
-	// computed hashes in the cache.
-	var needHash []sts.Hashed
-	cache.Iterate(func(f sts.Cached) bool {
-		if f.IsDone() {
-			return false
-		}
-		if f.GetHash() == "" {
-			needHash = append(needHash, &hashFile{
-				File: f,
-			})
-		}
-		return false
-	})
-	if len(needHash) > 0 {
-		if _, err = broker.hash(needHash,
-			broker.Conf.Threads,
-			int64(broker.Conf.PayloadSize)); err != nil {
-			log.Error(err)
-		}
-		for _, file := range needHash {
-			log.Debug("Hash [re]computed:", file.GetName(), file.GetHash())
-			cache.Add(file)
-		}
-		if err = broker.Conf.Cache.Persist(time.Time{}); err != nil {
-			log.Error(err.Error())
-		}
-	}
 	cache.Iterate(func(f sts.Cached) bool {
 		if f.IsDone() {
 			return false
