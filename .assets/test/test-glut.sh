@@ -8,8 +8,11 @@ if [ -z ${STS_HOME+x} ]; then
 fi
 
 bin="$GOPATH/bin/sts"
-cmd_server="$bin $args --debug --mode=in"
-cmd_client="$bin $args --debug --mode=out --loop"
+cmd_server1="$bin$VSERVER1 --debug --mode=in"
+cmd_client1="$bin$VCLIENT1 --debug --mode=out --loop"
+
+cmd_server2="$bin$VSERVER2 --debug --mode=in"
+cmd_client2="$bin$VCLIENT2 --debug --mode=out --loop"
 
 echo "Cleaning last run..."
 rm -rf $STS_HOME
@@ -30,9 +33,9 @@ for args in "${sim[@]}"; do
 done
 
 echo "Running ..."
-$cmd_server > /dev/null &
+$cmd_server1 > /dev/null &
 pid_server=$!
-$cmd_client > /dev/null &
+$cmd_client1 > /dev/null &
 pid_client=$!
 pids=( "$pid_client" "$pid_server" )
 
@@ -84,13 +87,13 @@ for args in "${sim[@]}"; do
 done
 
 echo "Restarting server ..."
-$cmd_server > /dev/null &
+$cmd_server2 > /dev/null &
 pid_server=$!
 # Give the server some time to clean up the stage area
 sleep 10
 
 echo "Restarting client ..."
-$cmd_client > /dev/null &
+$cmd_client2 > /dev/null &
 pid_client=$!
 
 echo "Restarting monkey ..."
