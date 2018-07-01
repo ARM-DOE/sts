@@ -42,29 +42,29 @@ func readLocalCompanion(path, name string) (cmp *sts.Partial, err error) {
 		return
 	}
 	defer r.Close()
-	if cmp, err = readCompanion(r); err != nil {
+	var b []byte
+	if b, err = ioutil.ReadAll(r); err != nil {
 		return
+	}
+	cmp = &sts.Partial{}
+	var oldCmp *oldCompanion
+	if err = json.Unmarshal(b, cmp); err != nil {
+		oldCmp = &oldCompanion{}
+		if err = json.Unmarshal(b, oldCmp); err != nil {
+			return
+		}
+		cmp = upgradeCompanion(oldCmp)
+		log.Debug("Upgraded Companion:", name)
 	}
 	if cmp != nil && name != "" {
 		// Because the old-style companion stored the full path and not
 		// the name part
 		cmp.Name = name
 	}
-	return
-}
-
-func readCompanion(r io.Reader) (cmp *sts.Partial, err error) {
-	var b []byte
-	if b, err = ioutil.ReadAll(r); err != nil {
-		return
-	}
-	cmp = &sts.Partial{}
-	if err = json.Unmarshal(b, cmp); err != nil {
-		oldCmp := &oldCompanion{}
-		if err = json.Unmarshal(b, oldCmp); err != nil {
-			return
-		}
-		cmp = upgradeCompanion(oldCmp)
+	if oldCmp != nil {
+		// Replace the old with the new
+		err = writeCompanion(path, cmp)
+		log.Debug("Replaced Legacy Companion:", name)
 	}
 	return
 }
