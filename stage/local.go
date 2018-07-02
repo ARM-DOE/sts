@@ -504,7 +504,14 @@ func (s *Stage) finalizeHandler() {
 			// since our last directory cleaning, kick one off
 			if s.cleaned.IsZero() || time.Since(s.cleaned) > cacheAge {
 				s.cleaned = time.Now()
-				go s.cleanDir()
+				// Not comfortable enough yet to enable automatic stage area
+				// cleaning.  I don't like that a file gets logged as received
+				// before moving it because in theory it means that a file
+				// could be waiting in the stage area but the fact that it was
+				// read from the received log could potentially mean that a
+				// file could be deleted that wasn't yet moved.  Better safe
+				// than sorry.
+				// go s.cleanDir()
 			}
 		}
 		t.Reset(d)
