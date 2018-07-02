@@ -309,8 +309,8 @@ func (s *Stage) GetFileStatus(relPath string, sent time.Time) int {
 // files in the stage area that should be completed from the previous server
 // run
 func (s *Stage) Recover() (err error) {
-	log.Info("Beginning stage recovery")
-	defer log.Info("Stage recovery complete")
+	log.Info("Beginning stage recovery:", s.name)
+	defer log.Info("Stage recovery complete:", s.name)
 	var validate []*sts.Partial
 	var finalize []*sts.Partial
 	oldest := time.Now()
@@ -376,6 +376,11 @@ func (s *Stage) Recover() (err error) {
 	// Build the cache from the incoming log starting an hour before the oldest
 	// companion file found
 	s.buildCache(oldest.Add(-1 * time.Hour))
+	for _, file := range finalize {
+		finalFile := s.partialToFinal(file)
+		s.toCache(finalFile, stateValidated)
+		go s.finalizeQueue(finalFile)
+	}
 	if len(validate) > 0 {
 		worker := func(wg *sync.WaitGroup, ch <-chan *sts.Partial) {
 			defer wg.Done()
@@ -385,10 +390,10 @@ func (s *Stage) Recover() (err error) {
 		}
 		wg := sync.WaitGroup{}
 		ch := make(chan *sts.Partial)
-		// 32 workers is somewhat arbitrary--we just want some notion of doing
-		// things concurrently.  We don't want to just have them all go off because
+		// 8 workers is arbitrary--we just want some notion of doing things
+		// concurrently.  We don't want to just have them all go off because
 		// we could bump against the OS's threshold for max files open at once.
-		for i := 0; i < 32; i++ {
+		for i := 0; i < 8; i++ {
 			wg.Add(1)
 			go worker(&wg, ch)
 		}
@@ -398,18 +403,13 @@ func (s *Stage) Recover() (err error) {
 		close(ch)
 		wg.Wait()
 	}
-	for _, file := range finalize {
-		finalFile := s.partialToFinal(file)
-		s.toCache(finalFile, stateValidated)
-		s.finalizeQueue(finalFile)
-	}
 	return
 }
 
 // Stop waits for the number of files in the pipe to be zero and then signals
 func (s *Stage) Stop(wg *sync.WaitGroup) {
 	defer wg.Done()
-	log.Debug("Stage shutting down ...")
+	log.Debug("Stage shutting down ...", s.name)
 	for {
 		if s.inPipe() > 0 {
 			time.Sleep(100 * time.Millisecond)
@@ -830,7 +830,7 @@ func (s *Stage) buildCache(from time.Time) {
 func (s *Stage) cleanCache() {
 	s.cacheLock.Lock()
 	defer s.cacheLock.Unlock()
-	log.Debug("Cleaning cache...", len(s.cache))
+	log.Debug("Cleaning cache...", s.name, len(s.cache))
 	var age time.Duration
 	s.cacheTime = time.Now()
 	for _, cacheFile := range s.cache {
