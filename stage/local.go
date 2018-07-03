@@ -27,6 +27,9 @@ const (
 	// cacheCnt is the number of files after which to age the cache
 	cacheCnt = 1000
 
+	// nValidators is the number of concurrent goroutines doing hash validation
+	nValidators = 8
+
 	stateReceived  = 0
 	stateValidated = 1
 	stateFailed    = 2
@@ -390,10 +393,7 @@ func (s *Stage) Recover() (err error) {
 		}
 		wg := sync.WaitGroup{}
 		ch := make(chan *sts.Partial)
-		// 8 workers is arbitrary--we just want some notion of doing things
-		// concurrently.  We don't want to just have them all go off because
-		// we could bump against the OS's threshold for max files open at once.
-		for i := 0; i < 8; i++ {
+		for i := 0; i < nValidators; i++ {
 			wg.Add(1)
 			go worker(&wg, ch)
 		}
@@ -434,7 +434,7 @@ func (s *Stage) processQueue(file *finalFile) {
 	if s.validateCh == nil {
 		s.validateCh = make(chan *finalFile, 100)
 		// Let's not have too many files processed at once
-		for i := 0; i < 16; i++ {
+		for i := 0; i < nValidators; i++ {
 			go s.processHandler()
 		}
 	}
