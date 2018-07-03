@@ -736,10 +736,12 @@ func (s *Stage) toWait(prevPath string, next *finalFile) {
 	if next.wait != nil {
 		next.wait.Stop()
 	}
-	next.wait = time.AfterFunc(wait, func() {
-		log.Debug("Attempting finalize again:", next.name)
-		s.finalizeQueue(next)
-	})
+	next.wait = time.AfterFunc(wait, func(f *finalFile) func() {
+		return func() {
+			log.Debug("Attempting finalize again:", next.name)
+			s.finalizeQueue(next)
+		}
+	}(next))
 	files, ok := s.wait[prevPath]
 	if ok {
 		for _, waiting := range files {
