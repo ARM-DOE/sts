@@ -12,6 +12,10 @@ import (
 	"github.com/alecthomas/units"
 )
 
+const (
+	maxPoll = 1000
+)
+
 // Conf is the struct for storing all the settable components and options for
 // this client to manage the outgoing data flow
 type Conf struct {
@@ -259,13 +263,18 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 		})
 		return false
 	})
-	if len(poll) > 0 {
+	for len(poll) > 0 {
+		pollNow := poll
+		if len(poll) > maxPoll {
+			pollNow = poll[:maxPoll]
+			poll = poll[maxPoll:]
+		}
 		log.Info(fmt.Sprintf(
 			"RECOVERY: Asking target host if %d files were fully sent ...",
-			len(poll),
+			len(pollNow),
 		))
 		var polled []sts.Polled
-		if polled, err = broker.Conf.Validator(poll); err != nil {
+		if polled, err = broker.Conf.Validator(pollNow); err != nil {
 			return
 		}
 		log.Info("RECOVERY: Processing response ...")
@@ -312,7 +321,7 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 			log.Error(err.Error())
 		}
 	}
-	log.Info(fmt.Sprintf("RECOVERY: Done (%d files to send)", len(send)))
+	log.Info(fmt.Sprintf("RECOVERY: Done (%d files to be queued)", len(send)))
 	err = nil
 	return
 }
@@ -807,6 +816,10 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 			if time.Now().Sub(f.completed) >= broker.Conf.PollDelay {
 				log.Debug("Polling:", f.GetName())
 				ready = append(ready, f)
+				// Let's limit the number of files polled in a single request
+				if len(ready) == maxPoll {
+					break
+				}
 			}
 		}
 		if len(ready) == 0 {
