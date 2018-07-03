@@ -268,6 +268,8 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 		if len(poll) > maxPoll {
 			pollNow = poll[:maxPoll]
 			poll = poll[maxPoll:]
+		} else {
+			poll = nil
 		}
 		log.Info(fmt.Sprintf(
 			"RECOVERY: Asking target host if %d files were fully sent ...",
