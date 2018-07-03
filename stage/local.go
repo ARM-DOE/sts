@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -281,28 +282,26 @@ func (s *Stage) GetFileStatus(relPath string, sent time.Time) int {
 	s.buildCache(sent)
 	path := filepath.Join(s.rootDir, relPath)
 	f := s.fromCache(path)
-	if f == nil {
-		log.Debug("STAGE:", s.name, relPath, "(not found)")
-		return sts.ConfirmNone
-	}
-	switch f.state {
-	case stateFailed:
-		log.Debug("STAGE:", s.name, relPath, "(failed)")
-		return sts.ConfirmFailed
-	case stateValidated:
-		file := s.getWaiting(path)
-		if file != nil {
-			log.Debug("STAGE:", s.name, relPath, "(waiting)")
-			return sts.ConfirmWaiting
+	if f != nil {
+		switch f.state {
+		case stateFailed:
+			log.Debug("STAGE:", s.name, relPath, "(failed)")
+			return sts.ConfirmFailed
+		case stateValidated:
+			file := s.getWaiting(path)
+			if file != nil {
+				log.Debug("STAGE:", s.name, relPath, "(waiting)")
+				return sts.ConfirmWaiting
+			}
+			log.Debug("STAGE:", s.name, relPath, "(done)")
+			return sts.ConfirmPassed
+		case stateLogged:
+			log.Debug("STAGE:", s.name, relPath, "(logged)")
+			return sts.ConfirmPassed
+		case stateFinalized:
+			log.Debug("STAGE:", s.name, relPath, "(done)")
+			return sts.ConfirmPassed
 		}
-		log.Debug("STAGE:", s.name, relPath, "(done)")
-		return sts.ConfirmPassed
-	case stateLogged:
-		log.Debug("STAGE:", s.name, relPath, "(logged)")
-		return sts.ConfirmPassed
-	case stateFinalized:
-		log.Debug("STAGE:", s.name, relPath, "(done)")
-		return sts.ConfirmPassed
 	}
 	log.Debug("STAGE:", s.name, relPath, "(not found)")
 	return sts.ConfirmNone
@@ -498,7 +497,63 @@ func (s *Stage) finalizeHandler() {
 		select {
 		case f := <-s.finalizeCh:
 			t.Stop()
-			s.finalizeChain(f)
+			// Attempt to find the root file before going through the
+			// finalizing chain.  That way, if we have a huge list of files,
+			// we don't waste time attempting to finalize files that we can
+			// easily identify as not being ready.
+		findRoot:
+			for {
+				if f == nil {
+					break
+				}
+				if f.prev == "" {
+					s.finalize(f)
+					break
+				}
+				stagedPrevFile := filepath.Join(s.rootDir, f.prev)
+				prev := s.fromCache(stagedPrevFile)
+				switch {
+				case prev == nil:
+					if s.hasWriteLock(stagedPrevFile) {
+						log.Debug(
+							"Previous file in progress:",
+							f.name, "<-", f.prev)
+					}
+					s.toWait(stagedPrevFile, f)
+					break findRoot
+
+				case prev.state == stateReceived:
+					log.Debug("Waiting for previous file:",
+						f.name, "<-", f.prev)
+					s.toWait(stagedPrevFile, f)
+					break findRoot
+
+				case prev.state == stateFailed:
+					log.Debug("Previous file failed:",
+						f.name, "<-", f.prev)
+					s.toWait(stagedPrevFile, f)
+					break findRoot
+
+				case prev.state == stateValidated:
+					if s.isWaiting(stagedPrevFile) {
+						log.Debug("Previous file waiting:",
+							f.name, "<-", f.prev)
+						if s.isWaitLoop(stagedPrevFile) {
+							s.finalize(f)
+							break findRoot
+						}
+					} else {
+						log.Debug("Previous file validated:",
+							f.name, "<-", f.prev)
+					}
+					s.toWait(stagedPrevFile, f)
+
+				default:
+					s.finalize(f)
+					break findRoot
+				}
+				f = prev
+			}
 		case <-t.C:
 			// If there's not an active channel and it's been long enough
 			// since our last directory cleaning, kick one off
@@ -518,7 +573,7 @@ func (s *Stage) finalizeHandler() {
 	}
 }
 
-func (s *Stage) finalizeChain(file *finalFile) {
+func (s *Stage) finalize(file *finalFile) {
 	log.Debug("Finalize chain:", file.name)
 
 	// It's possible to get duplicates so we can use the cache to identify
@@ -530,78 +585,23 @@ func (s *Stage) finalizeChain(file *finalFile) {
 		}
 	}
 
-	done, err := s.finalize(file)
-	if err != nil {
-		log.Error(err)
-		return
-	}
-	if done {
-		waiting := s.fromWait(file.path)
-		for _, waitFile := range waiting {
-			log.Debug("Stage found waiting:", waitFile.name, "<-", file.name)
-			go s.finalizeQueue(waitFile)
-		}
-	}
-}
-
-func (s *Stage) finalize(file *finalFile) (done bool, err error) {
-	// Make sure it doesn't need to wait in line
-	if file.prev != "" {
-		stagedPrevFile := filepath.Join(s.rootDir, file.prev)
-		prev := s.fromCache(stagedPrevFile)
-		switch {
-		case prev == nil:
-			if s.hasWriteLock(stagedPrevFile) {
-				log.Debug(
-					"Previous file in progress:",
-					file.name, "<-", file.prev)
-				break
-			}
-
-		case prev.state == stateReceived:
-			log.Debug("Waiting for previous file:",
-				file.name, "<-", file.prev)
-
-		case prev.state == stateFailed:
-			log.Debug("Previous file failed:",
-				file.name, "<-", file.prev)
-
-		case prev.state == stateValidated:
-			if s.isWaiting(stagedPrevFile) {
-				log.Debug("Previous file waiting:",
-					file.name, "<-", file.prev)
-				if s.isWaitLoop(stagedPrevFile) {
-					goto finalize
-				}
-				break
-			}
-			log.Debug("Previous file finalizing:",
-				file.name, "<-", file.prev)
-		default:
-			goto finalize
-		}
-		s.toWait(stagedPrevFile, file)
-		// Set a timer to check this file again in case there is a wait loop
-		file.wait = time.AfterFunc(time.Second*30, func() {
-			log.Debug("Attempting finalize again:", file.name)
-			s.finalizeQueue(file)
-		})
-		return
-	}
-
-finalize:
 	if file.wait != nil {
 		file.wait.Stop()
 		file.wait = nil
 	}
 
 	log.Debug("Finalizing", file.source, file.name)
-	if err = s.putFileAway(file); err != nil {
+	if err := s.putFileAway(file); err != nil {
+		log.Error(err)
 		return
 	}
 	log.Debug("Finalized", file.source, file.name)
-	done = true
-	return
+
+	waiting := s.fromWait(file.path)
+	for _, waitFile := range waiting {
+		log.Debug("Stage found waiting:", waitFile.name, "<-", file.name)
+		go s.finalizeQueue(waitFile)
+	}
 }
 
 func (s *Stage) putFileAway(file *finalFile) (err error) {
@@ -729,6 +729,17 @@ func (s *Stage) fromWait(prevPath string) []*finalFile {
 func (s *Stage) toWait(prevPath string, next *finalFile) {
 	s.waitLock.Lock()
 	defer s.waitLock.Unlock()
+	// Set a timer to check this file again in case there is a wait loop.
+	// Wait longer the more files we have that are waiting.
+	wait := time.Second * time.Duration(
+		math.Max(float64(len(s.wait)), 30))
+	if next.wait != nil {
+		next.wait.Stop()
+	}
+	next.wait = time.AfterFunc(wait, func() {
+		log.Debug("Attempting finalize again:", next.name)
+		s.finalizeQueue(next)
+	})
 	files, ok := s.wait[prevPath]
 	if ok {
 		for _, waiting := range files {
