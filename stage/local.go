@@ -23,7 +23,7 @@ const (
 	waitExt = ".wait"
 
 	// cacheAge is how long a received file is cached in memory
-	cacheAge = time.Hour * 1
+	cacheAge = time.Minute * 60
 
 	// cacheCnt is the number of files after which to age the cache
 	cacheCnt = 1000
@@ -117,6 +117,7 @@ func (s *Stage) delWriteLock(path string) {
 	s.writeLock.Lock()
 	defer s.writeLock.Unlock()
 	delete(s.writeLocks, path)
+	log.Debug("Write Locks:", s.name, len(s.writeLocks))
 }
 
 func (s *Stage) hasWriteLock(key string) bool {
@@ -691,29 +692,6 @@ func (s *Stage) getWaiting(path string) *finalFile {
 	return nil
 }
 
-// doneWaiting removes a file from the wait cache that is waiting on its
-// predessor
-func (s *Stage) doneWaiting(prevPath string, next *finalFile) {
-	s.waitLock.Lock()
-	defer s.waitLock.Unlock()
-	files, ok := s.wait[prevPath]
-	if !ok {
-		return
-	}
-	var rest []*finalFile
-	for _, file := range files {
-		if file.path == next.path {
-			continue
-		}
-		rest = append(rest, file)
-	}
-	if len(rest) > 0 {
-		s.wait[prevPath] = rest
-		return
-	}
-	delete(s.wait, prevPath)
-}
-
 // fromWait returns the file(s) currently waiting on the file indicated by path
 func (s *Stage) fromWait(prevPath string) []*finalFile {
 	s.waitLock.Lock()
@@ -721,6 +699,7 @@ func (s *Stage) fromWait(prevPath string) []*finalFile {
 	files, ok := s.wait[prevPath]
 	if ok {
 		delete(s.wait, prevPath)
+		log.Debug("Waiting:", s.name, len(s.wait))
 		return files
 	}
 	return nil
@@ -843,12 +822,11 @@ func (s *Stage) buildCache(from time.Time) {
 func (s *Stage) cleanCache() {
 	s.cacheLock.Lock()
 	defer s.cacheLock.Unlock()
-	log.Debug("Cleaning cache...", s.name, len(s.cache))
 	var age time.Duration
 	s.cacheTime = time.Now()
 	for _, cacheFile := range s.cache {
 		age = time.Since(cacheFile.time)
-		if cacheFile.state > stateFinalized {
+		if cacheFile.state >= stateFinalized {
 			if age > cacheAge {
 				delete(s.cache, cacheFile.path)
 				log.Debug("Removed from cache:",
@@ -862,6 +840,7 @@ func (s *Stage) cleanCache() {
 			}
 		}
 	}
+	log.Debug("Cached:", s.name, len(s.cache))
 }
 
 // cleanDir scans the staging directory looking for stale files that can be
@@ -910,7 +889,7 @@ func (s *Stage) cleanDir() {
 		if f == nil {
 			continue
 		}
-		if f.state > stateFinalized {
+		if f.state >= stateFinalized {
 			for _, p := range paths {
 				log.Info("Removing stale stage file:", p)
 				if err := os.Remove(p); err != nil {
