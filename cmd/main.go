@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"runtime"
 	"sync"
 
 	stackimpact "github.com/stackimpact/stackimpact-go"
@@ -76,7 +77,7 @@ func newApp() *app {
 	}
 
 	if *vers {
-		fmt.Printf("%s @ %s\n", Version, BuildTime)
+		fmt.Printf("%s (%s) @ %s\n", Version, runtime.Version(), BuildTime)
 		os.Exit(0)
 	}
 
