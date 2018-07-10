@@ -29,7 +29,7 @@ const (
 	cacheCnt = 1000
 
 	// nValidators is the number of concurrent goroutines doing hash validation
-	nValidators = 8
+	nValidators = 24
 
 	stateReceived  = 0
 	stateValidated = 1
@@ -285,26 +285,29 @@ func (s *Stage) GetFileStatus(relPath string, sent time.Time) int {
 	f := s.fromCache(path)
 	if f != nil {
 		switch f.state {
+		case stateReceived:
+			log.Debug("Stage:", s.name, relPath, "(received)")
+			return sts.ConfirmNone
 		case stateFailed:
-			log.Debug("STAGE:", s.name, relPath, "(failed)")
+			log.Debug("Stage:", s.name, relPath, "(failed)")
 			return sts.ConfirmFailed
 		case stateValidated:
 			file := s.getWaiting(path)
 			if file != nil {
-				log.Debug("STAGE:", s.name, relPath, "(waiting)")
+				log.Debug("Stage:", s.name, relPath, "(waiting)")
 				return sts.ConfirmWaiting
 			}
-			log.Debug("STAGE:", s.name, relPath, "(done)")
+			log.Debug("Stage:", s.name, relPath, "(done)")
 			return sts.ConfirmPassed
 		case stateLogged:
-			log.Debug("STAGE:", s.name, relPath, "(logged)")
+			log.Debug("Stage:", s.name, relPath, "(logged)")
 			return sts.ConfirmPassed
 		case stateFinalized:
-			log.Debug("STAGE:", s.name, relPath, "(done)")
+			log.Debug("Stage:", s.name, relPath, "(done)")
 			return sts.ConfirmPassed
 		}
 	}
-	log.Debug("STAGE:", s.name, relPath, "(not found)")
+	log.Debug("Stage:", s.name, relPath, "(not found)")
 	return sts.ConfirmNone
 }
 
@@ -825,8 +828,8 @@ func (s *Stage) cleanCache() {
 	var age time.Duration
 	s.cacheTime = time.Now()
 	for _, cacheFile := range s.cache {
-		age = time.Since(cacheFile.time)
 		if cacheFile.state >= stateFinalized {
+			age = time.Since(cacheFile.time)
 			if age > cacheAge {
 				delete(s.cache, cacheFile.path)
 				log.Debug("Removed from cache:",
