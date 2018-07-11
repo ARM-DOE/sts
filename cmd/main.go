@@ -41,16 +41,19 @@ func main() {
 }
 
 type app struct {
-	debug      bool
-	loop       bool
-	mode       string
-	root       string
-	confPath   string
-	conf       *sts.Conf
-	clients    []*clientApp
-	serverStop chan<- bool
-	serverDone <-chan bool
-	clientStop map[chan<- bool]<-chan bool
+	debug       bool
+	loop        bool
+	mode        string
+	root        string
+	confPath    string
+	conf        *sts.Conf
+	clients     []*clientApp
+	serverStop  chan<- bool
+	serverDone  <-chan bool
+	clientStop  map[chan<- bool]<-chan bool
+	iServerStop chan<- bool
+	iServerDone <-chan bool
+	iPort       int
 }
 
 func newApp() *app {
@@ -66,6 +69,8 @@ func newApp() *app {
 	loop := flag.Bool("loop", false,
 		"Run in a loop, i.e. don't exit until interrupted")
 	confPath := flag.String("conf", "", "Configuration file path")
+	internalPort := flag.Int("iport", 0,
+		"TCP port for internal command server")
 
 	// Parse command line
 	flag.Parse()
@@ -87,6 +92,7 @@ func newApp() *app {
 		loop:     *loop,
 		confPath: *confPath,
 		root:     os.Getenv("STS_HOME"),
+		iPort:    *internalPort,
 	}
 
 	// Parse configuration
@@ -137,6 +143,7 @@ func (a *app) run() {
 		span := agent.Profile()
 		defer span.Stop()
 	}
+	a.startInternalServer()
 	i := a.startServer()
 	o := a.startClients()
 	if !i && !o {
@@ -162,6 +169,7 @@ func (a *app) run() {
 	}
 	a.stopClients()
 	a.stopServer()
+	a.stopInternalServer()
 }
 
 func (a *app) startServer() bool {
@@ -302,4 +310,26 @@ func (a *app) stopClients() {
 		}(stop, done, &wg)
 	}
 	wg.Wait()
+}
+
+func (a *app) startInternalServer() {
+	if a.iPort == 0 {
+		return
+	}
+	server := &http.Internal{
+		Port: a.iPort,
+	}
+	stop := make(chan bool)
+	done := make(chan bool)
+	a.iServerStop = make(chan bool)
+	a.iServerDone = make(chan bool)
+	go server.Serve(stop, done)
+}
+
+func (a *app) stopInternalServer() {
+	if a.iServerStop == nil {
+		return
+	}
+	a.iServerStop <- true
+	<-a.iServerDone
 }

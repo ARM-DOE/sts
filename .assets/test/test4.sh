@@ -8,8 +8,8 @@ if [ -z ${STS_HOME+x} ]; then
 fi
 
 bin="$GOPATH/bin/sts"
-cmd_server="$bin $args --debug --mode=in"
-cmd_client="$bin $args --debug --mode=out"
+cmd_server="$bin $args --iport=12345 --debug --mode=in"
+cmd_client="$bin $args --iport=54321 --debug --mode=out"
 
 echo "Cleaning last run..."
 rm -rf $STS_HOME

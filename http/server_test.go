@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"testing"
 
+	"code.arm.gov/dataflow/sts/log"
+	"code.arm.gov/dataflow/sts/mock"
 	"github.com/alecthomas/units"
 )
 
@@ -86,6 +88,8 @@ func request(method, url string, data io.Reader, respData ...interface{}) error 
 }
 
 func TestCRUD(t *testing.T) {
+	log.InitExternal(&mock.Logger{DebugMode: true})
+
 	fsize := units.KiB
 	tearDown()
 	stageFiles(10, fsize)
