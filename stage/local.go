@@ -22,7 +22,7 @@ const (
 	fullExt = ".full"
 	waitExt = ".wait"
 
-	// cacheAge is how long a received file is cached in memory
+	// cacheAge is how long a non-ordered received file is cached in memory
 	cacheAge = time.Minute * 60
 
 	// cacheCnt is the number of files after which to age the cache
@@ -39,17 +39,18 @@ const (
 )
 
 type finalFile struct {
-	path   string
-	name   string
-	prev   string
-	size   int64
-	hash   string
-	source string
-	time   time.Time
-	logged time.Time
-	state  int
-	wait   *time.Timer
-	nErr   int
+	path      string
+	name      string
+	prev      string
+	size      int64
+	hash      string
+	source    string
+	time      time.Time
+	logged    time.Time
+	state     int
+	wait      *time.Timer
+	nErr      int
+	nextFinal bool
 }
 
 func (f *finalFile) GetName() string {
@@ -179,8 +180,13 @@ func (s *Stage) initStageFile(path string, size int64) error {
 		return nil
 	}
 	if _, err = os.Stat(path + compExt); !os.IsNotExist(err) {
-		log.Debug("Removing Stale Companion:", path+compExt)
-		os.Remove(path + compExt)
+		cached := s.fromCache(path)
+		// In case some catastrophe causes the sender to keep sending the same
+		// file, at least we won't be clobbering legitimate companion files.
+		if cached == nil || cached.state == stateFailed {
+			log.Debug("Removing Stale Companion:", path+compExt)
+			os.Remove(path + compExt)
+		}
 	}
 	log.Debug("Making Directory:", filepath.Dir(path))
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
@@ -258,14 +264,25 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 	done := isCompanionComplete(cmp)
 	if done {
 		final := s.partialToFinal(file)
-		s.toCache(final, stateReceived)
+		existing := s.fromCache(final.path)
+		if existing != nil &&
+			existing.state != stateFailed &&
+			existing.hash == final.hash {
+			log.Info("Ignoring duplicate (receive):", final.source, final.path)
+			os.Remove(path + partExt)
+			if existing.state >= stateFinalized {
+				os.Remove(path + compExt)
+			}
+			return
+		}
 		if err = os.Rename(path+partExt, path+fullExt); err != nil {
 			err = fmt.Errorf("Failed to swap in the \"full\" extension: %s",
 				err.Error())
+			s.toCache(final, stateFailed)
 			return
 		}
+		s.toCache(final, stateReceived)
 		log.Debug("File transmitted:", path)
-		s.delWriteLock(path)
 		go s.processQueue(final)
 	}
 	return
@@ -391,7 +408,9 @@ func (s *Stage) Recover() (err error) {
 		worker := func(wg *sync.WaitGroup, ch <-chan *sts.Partial) {
 			defer wg.Done()
 			for f := range ch {
-				s.process(s.partialToFinal(f))
+				finalFile := s.partialToFinal(f)
+				s.toCache(finalFile, stateReceived)
+				s.process(finalFile)
 			}
 		}
 		wg := sync.WaitGroup{}
@@ -441,6 +460,8 @@ func (s *Stage) processQueue(file *finalFile) {
 			go s.processHandler()
 		}
 	}
+	log.Debug("Pushing onto validate chan:", file.name)
+	defer log.Debug("Pushed onto validate chan:", file.name)
 	s.validateCh <- file
 }
 
@@ -453,6 +474,16 @@ func (s *Stage) processHandler() {
 func (s *Stage) process(file *finalFile) {
 	log.Debug("Validating:", file.name)
 
+	fileLock := s.getWriteLock(file.path)
+	fileLock.Lock()
+	defer fileLock.Unlock()
+
+	existing := s.fromCache(file.path)
+	if existing == nil || existing.state != stateReceived {
+		log.Debug("Ignoring invalid (process):", file.source, file.name)
+		return
+	}
+
 	// Validate checksum.
 	hash, err := fileutil.FileMD5(file.path + fullExt)
 	if err != nil {
@@ -461,6 +492,7 @@ func (s *Stage) process(file *finalFile) {
 		log.Error(fmt.Sprintf(
 			"Failed to calculate MD5 of %s: %s",
 			file.name, err.Error()))
+		s.toCache(file, stateFailed)
 		return
 	}
 
@@ -505,6 +537,7 @@ func (s *Stage) finalizeHandler() {
 			// finalizing chain.  That way, if we have a huge list of files,
 			// we don't waste time attempting to finalize files that we can
 			// easily identify as not being ready.
+			log.Debug("Finalize chain:", f.source, f.name)
 		findRoot:
 			for {
 				if f == nil {
@@ -523,6 +556,26 @@ func (s *Stage) finalizeHandler() {
 							"Previous file in progress:",
 							f.name, "<-", f.prev)
 					}
+					// Check the log -- this should be very rare but is
+					// theoretically possible shortly after a sersver restart
+					// if the "prev" is farther back in time than the default
+					// log loading of an hour as part of the recovery.  Also,
+					// when a sender restarts, the first file in a series won't
+					// have a "prev" and will therefore age out possibly sooner
+					// than its follower arrives.  The longer this file has,
+					// been waiting, the farther back in the logs we're willing
+					// to look for the predecessor.
+					ago := time.Duration(
+						int64(time.Now().Sub(f.time) * time.Second))
+					ago *= time.Hour * 24
+					if s.logger.WasReceived(f.prev, f.time.Add(-1*ago), f.time) {
+						log.Debug("Previous file found in log:",
+							f.name, "<-", f.prev)
+						s.finalize(f)
+						break findRoot
+					}
+					log.Debug("Previous file not found anywhere:",
+						f.name, "<-", f.prev)
 					s.toWait(stagedPrevFile, f)
 					break findRoot
 
@@ -578,15 +631,15 @@ func (s *Stage) finalizeHandler() {
 }
 
 func (s *Stage) finalize(file *finalFile) {
-	log.Debug("Finalize chain:", file.name)
+	fileLock := s.getWriteLock(file.path)
+	fileLock.Lock()
+	defer s.delWriteLock(file.path)
+	defer fileLock.Unlock()
 
-	// It's possible to get duplicates so we can use the cache to identify
-	// those and safely ignore them.
-	if f := s.fromCache(file.path); f != nil && f.state == stateFinalized {
-		if file.hash == f.hash {
-			log.Debug("File already finalized:", file.name)
-			return
-		}
+	existing := s.fromCache(file.path)
+	if existing == nil || existing.state != stateValidated {
+		log.Debug("Ignoring invalid (final):", file.source, file.name, existing.state)
+		return
 	}
 
 	if file.wait != nil {
@@ -639,6 +692,7 @@ func (s *Stage) putFileAway(file *finalFile) (err error) {
 		return
 	}
 
+	// Only change the state once the file has been successfully moved
 	s.toCache(file, stateFinalized)
 
 	// Clean up the companion (no need to capture an error since it wouldn't
@@ -770,6 +824,12 @@ func (s *Stage) toCache(file *finalFile, state int) {
 		}
 	}
 	s.cache[file.path] = file
+	if file.prev != "" && file.state == stateFinalized {
+		prevPath := filepath.Join(s.rootDir, file.prev)
+		if prev, ok := s.cache[prevPath]; ok {
+			prev.nextFinal = true
+		}
+	}
 	if len(s.cache)%cacheCnt == 0 {
 		go s.cleanCache()
 	}
@@ -801,8 +861,8 @@ func (s *Stage) buildCache(from time.Time) {
 			first = t
 		}
 		path := filepath.Join(s.rootDir, name)
-		if f, ok := s.cache[path]; ok && t.Before(f.logged) {
-			// Skip it if a newer file of this name is already in the cache
+		if _, ok := s.cache[path]; ok {
+			// Skip it if the file is already in the cache
 			return false
 		}
 		file := &finalFile{
@@ -829,6 +889,9 @@ func (s *Stage) cleanCache() {
 	s.cacheTime = time.Now()
 	for _, cacheFile := range s.cache {
 		if cacheFile.state >= stateFinalized {
+			if cacheFile.prev != "" && !cacheFile.nextFinal {
+				continue
+			}
 			age = time.Since(cacheFile.time)
 			if age > cacheAge {
 				delete(s.cache, cacheFile.path)
@@ -837,7 +900,7 @@ func (s *Stage) cleanCache() {
 				continue
 			}
 			// We want the source cacheTime to be the earliest logged time of
-			// the files still in the cache
+			// the files still in the cache (except the ones we keep around)
 			if cacheFile.logged.Before(s.cacheTime) {
 				s.cacheTime = cacheFile.logged
 			}
