@@ -22,8 +22,8 @@ const (
 	fullExt = ".full"
 	waitExt = ".wait"
 
-	// cacheAge is how long a non-ordered received file is cached in memory
-	cacheAge = time.Minute * 60
+	// cacheAge is at least how long a received file is cached in memory
+	cacheAge = time.Hour * 24
 
 	// cacheCnt is the number of files after which to age the cache
 	cacheCnt = 1000
@@ -73,7 +73,6 @@ type Stage struct {
 	logger    sts.ReceiveLogger
 	nPipe     int
 
-	cleaned    time.Time
 	validateCh chan *finalFile
 	finalizeCh chan *finalFile
 	wait       map[string][]*finalFile
@@ -396,9 +395,9 @@ func (s *Stage) Recover() (err error) {
 	if len(validate) == 0 && len(finalize) == 0 {
 		return
 	}
-	// Build the cache from the incoming log starting an hour before the oldest
-	// companion file found
-	s.buildCache(oldest.Add(-1 * time.Hour))
+	// Build the cache from the incoming log starting at the time of the oldest
+	// companion file found minus the cache age
+	s.buildCache(oldest.Add(-1 * cacheAge))
 	for _, file := range finalize {
 		finalFile := s.partialToFinal(file)
 		s.toCache(finalFile, stateValidated)
@@ -515,7 +514,7 @@ func (s *Stage) process(file *finalFile) {
 	s.toCache(file, stateValidated)
 
 	log.Debug("Validated:", file.name)
-	s.finalizeQueue(file)
+	go s.finalizeQueue(file)
 }
 
 func (s *Stage) finalizeQueue(file *finalFile) {
@@ -527,106 +526,71 @@ func (s *Stage) finalizeQueue(file *finalFile) {
 }
 
 func (s *Stage) finalizeHandler() {
-	d := time.Second * 10
-	t := time.NewTimer(d)
-	for {
-		select {
-		case f := <-s.finalizeCh:
-			t.Stop()
-			// Attempt to find the root file before going through the
-			// finalizing chain.  That way, if we have a huge list of files,
-			// we don't waste time attempting to finalize files that we can
-			// easily identify as not being ready.
-			log.Debug("Finalize chain:", f.source, f.name)
-		findRoot:
-			for {
-				if f == nil {
-					break
+	for f := range s.finalizeCh {
+		// Attempt to find the root file before going through the
+		// finalizing chain.  That way, if we have a huge list of files,
+		// we don't waste time attempting to finalize files that we can
+		// easily identify as not being ready.
+		log.Debug("Finalize chain:", f.source, f.name)
+	findRoot:
+		for {
+			if f == nil {
+				break
+			}
+			if f.prev == "" {
+				s.finalize(f)
+				break
+			}
+			if cached := s.fromCache(f.path); cached != nil &&
+				cached.state == stateFinalized {
+				// Skip redundancies in the pipe
+				log.Debug("Already finalized:", f.source, f.name)
+				break
+			}
+			prevPath := filepath.Join(s.rootDir, f.prev)
+			prev := s.fromCache(prevPath)
+			switch {
+			case prev == nil:
+				if s.hasWriteLock(prevPath) {
+					log.Debug(
+						"Previous file in progress:",
+						f.name, "<-", f.prev)
 				}
-				if f.prev == "" {
-					s.finalize(f)
-					break
-				}
-				stagedPrevFile := filepath.Join(s.rootDir, f.prev)
-				prev := s.fromCache(stagedPrevFile)
-				switch {
-				case prev == nil:
-					if s.hasWriteLock(stagedPrevFile) {
-						log.Debug(
-							"Previous file in progress:",
-							f.name, "<-", f.prev)
-					}
-					// Check the log -- this should be very rare but is
-					// theoretically possible shortly after a sersver restart
-					// if the "prev" is farther back in time than the default
-					// log loading of an hour as part of the recovery.  Also,
-					// when a sender restarts, the first file in a series won't
-					// have a "prev" and will therefore age out possibly sooner
-					// than its follower arrives.  The longer this file has,
-					// been waiting, the farther back in the logs we're willing
-					// to look for the predecessor.
-					ago := time.Duration(
-						int64(time.Now().Sub(f.time) * time.Second))
-					ago *= time.Hour * 24
-					if s.logger.WasReceived(f.prev, f.time.Add(-1*ago), f.time) {
-						log.Debug("Previous file found in log:",
-							f.name, "<-", f.prev)
+				s.toWait(prevPath, f)
+				break findRoot
+
+			case prev.state == stateReceived:
+				log.Debug("Waiting for previous file:",
+					f.name, "<-", f.prev)
+				s.toWait(prevPath, f)
+				break findRoot
+
+			case prev.state == stateFailed:
+				log.Debug("Previous file failed:",
+					f.name, "<-", f.prev)
+				s.toWait(prevPath, f)
+				break findRoot
+
+			case prev.state == stateValidated:
+				if s.isWaiting(prevPath) {
+					log.Debug("Previous file waiting:",
+						f.name, "<-", f.prev)
+					if s.isWaitLoop(prevPath) {
 						s.finalize(f)
 						break findRoot
 					}
-					log.Debug("Previous file not found anywhere:",
+				} else {
+					log.Debug("Previous file validated:",
 						f.name, "<-", f.prev)
-					s.toWait(stagedPrevFile, f)
-					break findRoot
-
-				case prev.state == stateReceived:
-					log.Debug("Waiting for previous file:",
-						f.name, "<-", f.prev)
-					s.toWait(stagedPrevFile, f)
-					break findRoot
-
-				case prev.state == stateFailed:
-					log.Debug("Previous file failed:",
-						f.name, "<-", f.prev)
-					s.toWait(stagedPrevFile, f)
-					break findRoot
-
-				case prev.state == stateValidated:
-					if s.isWaiting(stagedPrevFile) {
-						log.Debug("Previous file waiting:",
-							f.name, "<-", f.prev)
-						if s.isWaitLoop(stagedPrevFile) {
-							s.finalize(f)
-							break findRoot
-						}
-					} else {
-						log.Debug("Previous file validated:",
-							f.name, "<-", f.prev)
-					}
-					s.toWait(stagedPrevFile, f)
-
-				default:
-					s.finalize(f)
-					break findRoot
 				}
-				f = prev
+				s.toWait(prevPath, f)
+
+			default:
+				s.finalize(f)
+				break findRoot
 			}
-		case <-t.C:
-			// If there's not an active channel and it's been long enough
-			// since our last directory cleaning, kick one off
-			if s.cleaned.IsZero() || time.Since(s.cleaned) > cacheAge {
-				s.cleaned = time.Now()
-				// Not comfortable enough yet to enable automatic stage area
-				// cleaning.  I don't like that a file gets logged as received
-				// before moving it because in theory it means that a file
-				// could be waiting in the stage area but the fact that it was
-				// read from the received log could potentially mean that a
-				// file could be deleted that wasn't yet moved.  Better safe
-				// than sorry.
-				// go s.cleanDir()
-			}
+			f = prev
 		}
-		t.Reset(d)
 	}
 }
 
@@ -686,7 +650,7 @@ func (s *Stage) putFileAway(file *finalFile) (err error) {
 			file.nErr++
 			time.AfterFunc(time.Second*time.Duration(file.nErr), func() {
 				log.Debug("Attempting finalize again after failure:", file.name)
-				s.finalizeQueue(file)
+				go s.finalizeQueue(file)
 			})
 		}
 		return
@@ -907,62 +871,4 @@ func (s *Stage) cleanCache() {
 		}
 	}
 	log.Debug("Cached:", s.name, len(s.cache))
-}
-
-// cleanDir scans the staging directory looking for stale files that can be
-// cleaned up.  There is at least one legitimate reason for files to become
-// stale in the staging area: a request is interrupted after the last
-// remaining part of a file is received but before the sending end can be
-// notified which part(s) were properly received and the sending side merely
-// sends the whole request again and at least part of a file is created in the
-// staging area redundantly and never picked up by the stage.
-func (s *Stage) cleanDir() {
-	t := time.Now()
-	aged := make(map[string][]string)
-	filepath.Walk(s.rootDir,
-		func(path string, info os.FileInfo, err error) error {
-			if time.Now().Add(-1 * cacheAge).Before(info.ModTime()) {
-				return nil
-			}
-			if info.ModTime().Before(t) {
-				t = info.ModTime()
-			}
-			p := path
-			ext := filepath.Ext(path)
-			switch ext {
-			case compExt:
-				fallthrough
-			case partExt:
-				fallthrough
-			case fullExt:
-				fallthrough
-			case waitExt:
-				p = strings.TrimSuffix(path, ext)
-			}
-			if _, ok := aged[p]; !ok {
-				aged[p] = []string{path}
-				return nil
-			}
-			aged[p] = append(aged[p], path)
-			return nil
-		})
-	if len(aged) == 0 {
-		return
-	}
-	s.buildCache(t)
-	for key, paths := range aged {
-		f := s.fromCache(key)
-		if f == nil {
-			continue
-		}
-		if f.state >= stateFinalized {
-			for _, p := range paths {
-				log.Info("Removing stale stage file:", p)
-				if err := os.Remove(p); err != nil {
-					log.Error("Failed to remove stale stage file:",
-						err.Error())
-				}
-			}
-		}
-	}
 }
