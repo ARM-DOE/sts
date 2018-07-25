@@ -405,10 +405,7 @@ func (broker *Broker) scan() []sts.Hashed {
 		// Add any that might have failed the hash calculation last time
 		case cached.GetHash() == "":
 			wrapped = append(wrapped, &hashFile{File: cached})
-			return false
-		case !cached.IsDone():
-			return false
-		case cached.GetTime() > age.Unix():
+		case cached.IsDone() && cached.GetTime() < age.Unix():
 			// Clean the cache while we're at it
 			log.Debug("Cleaned:", cached.GetName())
 			cache.Remove(cached.GetName())
