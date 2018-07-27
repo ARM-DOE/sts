@@ -589,10 +589,8 @@ func (s *Stage) isReady(file *finalFile, prev *finalFile) bool {
 			if t.IsZero() || t.Before(s.getLastIn()) {
 				file.prevScan = time.Now()
 				len := time.Duration(time.Since(file.time).Minutes()) * time.Hour * 6
-				end := file.time
-				if !file.prevScanBeg.IsZero() {
-					end = file.prevScanBeg
-				} else if end.IsZero() {
+				end := file.prevScanBeg
+				if end.IsZero() {
 					end = s.getCacheStartTime()
 				}
 				beg := end.Add(-1 * len)
