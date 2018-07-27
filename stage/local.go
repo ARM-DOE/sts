@@ -39,18 +39,20 @@ const (
 )
 
 type finalFile struct {
-	path      string
-	name      string
-	prev      string
-	size      int64
-	hash      string
-	source    string
-	time      time.Time
-	logged    time.Time
-	state     int
-	wait      *time.Timer
-	nErr      int
-	nextFinal bool
+	path        string
+	name        string
+	prev        string
+	size        int64
+	hash        string
+	source      string
+	time        time.Time
+	logged      time.Time
+	state       int
+	wait        *time.Timer
+	nErr        int
+	prevScan    time.Time
+	prevScanBeg time.Time
+	nextFinal   bool
 }
 
 func (f *finalFile) GetName() string {
@@ -72,6 +74,7 @@ type Stage struct {
 	targetDir string
 	logger    sts.ReceiveLogger
 	nPipe     int
+	lastIn    time.Time
 
 	validateCh chan *finalFile
 	finalizeCh chan *finalFile
@@ -98,6 +101,7 @@ func New(name, rootDir, targetDir string, logger sts.ReceiveLogger) *Stage {
 	s.wait = make(map[string][]*finalFile)
 	s.cache = make(map[string]*finalFile)
 	s.writeLocks = make(map[string]*sync.RWMutex)
+	s.lastIn = time.Now()
 	return s
 }
 
@@ -117,6 +121,7 @@ func (s *Stage) delWriteLock(path string) {
 	s.writeLock.Lock()
 	defer s.writeLock.Unlock()
 	delete(s.writeLocks, path)
+	s.lastIn = time.Now()
 	log.Debug("Write Locks:", s.name, len(s.writeLocks))
 }
 
@@ -125,6 +130,12 @@ func (s *Stage) hasWriteLock(key string) bool {
 	defer s.writeLock.RUnlock()
 	_, ok := s.writeLocks[key]
 	return ok
+}
+
+func (s *Stage) getLastIn() time.Time {
+	s.writeLock.RLock()
+	defer s.writeLock.RUnlock()
+	return s.lastIn
 }
 
 func (s *Stage) pathToName(path, stripExt string) (name string) {
@@ -267,7 +278,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 		if existing != nil &&
 			existing.state != stateFailed &&
 			existing.hash == final.hash {
-			log.Info("Ignoring duplicate (receive):", final.source, final.path)
+			log.Info("Ignoring duplicate (receive):", final.source, final.name)
 			os.Remove(path + partExt)
 			if existing.state >= stateFinalized {
 				os.Remove(path + compExt)
@@ -392,12 +403,13 @@ func (s *Stage) Recover() (err error) {
 			}
 			return nil
 		})
+	// Build the cache from the incoming log starting at the time of the oldest
+	// companion file found (or "now" if none exists) minus the cache age. Even
+	// if no files are found on the stage, we still want to build the cache.
+	s.buildCache(oldest.Add(-1 * cacheAge))
 	if len(validate) == 0 && len(finalize) == 0 {
 		return
 	}
-	// Build the cache from the incoming log starting at the time of the oldest
-	// companion file found minus the cache age
-	s.buildCache(oldest.Add(-1 * cacheAge))
 	for _, file := range finalize {
 		finalFile := s.partialToFinal(file)
 		s.toCache(finalFile, stateValidated)
@@ -532,7 +544,6 @@ func (s *Stage) finalizeHandler() {
 		// we don't waste time attempting to finalize files that we can
 		// easily identify as not being ready.
 		log.Debug("Finalize chain:", f.source, f.name)
-	findRoot:
 		for {
 			if f == nil {
 				break
@@ -542,56 +553,86 @@ func (s *Stage) finalizeHandler() {
 				break
 			}
 			if cached := s.fromCache(f.path); cached != nil &&
-				cached.state == stateFinalized {
-				// Skip redundancies in the pipe
-				log.Debug("Already finalized:", f.source, f.name)
+				cached.state != stateValidated {
+				// Skip redundancies or mistakes in the pipe
+				log.Debug("Already finalized or not ready:",
+					f.source, f.name, cached.state)
 				break
 			}
 			prevPath := filepath.Join(s.rootDir, f.prev)
 			prev := s.fromCache(prevPath)
-			switch {
-			case prev == nil:
-				if s.hasWriteLock(prevPath) {
-					log.Debug(
-						"Previous file in progress:",
-						f.name, "<-", f.prev)
-				}
-				s.toWait(prevPath, f)
-				break findRoot
-
-			case prev.state == stateReceived:
-				log.Debug("Waiting for previous file:",
-					f.name, "<-", f.prev)
-				s.toWait(prevPath, f)
-				break findRoot
-
-			case prev.state == stateFailed:
-				log.Debug("Previous file failed:",
-					f.name, "<-", f.prev)
-				s.toWait(prevPath, f)
-				break findRoot
-
-			case prev.state == stateValidated:
-				if s.isWaiting(prevPath) {
-					log.Debug("Previous file waiting:",
-						f.name, "<-", f.prev)
-					if s.isWaitLoop(prevPath) {
-						s.finalize(f)
-						break findRoot
-					}
-				} else {
-					log.Debug("Previous file validated:",
-						f.name, "<-", f.prev)
-				}
-				s.toWait(prevPath, f)
-
-			default:
+			if s.isReady(f, prev) {
 				s.finalize(f)
-				break findRoot
+				break
 			}
 			f = prev
 		}
 	}
+}
+
+func (s *Stage) isReady(file *finalFile, prev *finalFile) bool {
+	fileLock := s.getWriteLock(file.path)
+	fileLock.Lock()
+	defer fileLock.Unlock()
+
+	prevPath := filepath.Join(s.rootDir, file.prev)
+	switch {
+	case prev == nil:
+		if s.hasWriteLock(prevPath) {
+			log.Debug("Previous file in progress:", file.name, "<-", file.prev)
+		}
+		// If this file has been waiting for more than 10 minutes...
+		if time.Since(file.time) > time.Minute*10 {
+			t := file.prevScan
+			// ...and if this is the first time here or there has been file
+			// reception activity since the last time we were here...
+			if t.IsZero() || t.Before(s.getLastIn()) {
+				file.prevScan = time.Now()
+				len := time.Duration(time.Since(file.time).Minutes()) * time.Hour * 6
+				end := file.time
+				if !file.prevScanBeg.IsZero() {
+					end = file.prevScanBeg
+				}
+				beg := end.Add(-1 * len)
+				file.prevScanBeg = beg
+				// ...then check the log increasingly farther back each time we
+				// get here to try to find this file's predecessor
+				if s.logger.WasReceived(file.prev, beg, end) {
+					log.Info("Found previous in log:",
+						file.name, "<-", file.prev, "--", beg, "-", end)
+					return true
+				}
+				log.Info("Previous file not found in log:",
+					file.name, "<-", file.prev, "--", beg, "-", end)
+			}
+		}
+
+	case prev.state == stateReceived:
+		log.Debug("Waiting for previous file:",
+			file.name, "<-", file.prev)
+
+	case prev.state == stateFailed:
+		log.Debug("Previous file failed:",
+			file.name, "<-", file.prev)
+
+	case prev.state == stateValidated:
+		if s.isWaiting(prevPath) {
+			log.Debug("Previous file waiting:",
+				file.name, "<-", file.prev)
+			if s.isWaitLoop(prevPath) {
+				return true
+			}
+		} else {
+			log.Debug("Previous file validated:",
+				file.name, "<-", file.prev)
+		}
+
+	default:
+		return true
+	}
+
+	s.toWait(prevPath, file)
+	return false
 }
 
 func (s *Stage) finalize(file *finalFile) {
