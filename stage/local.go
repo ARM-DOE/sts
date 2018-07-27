@@ -580,6 +580,7 @@ func (s *Stage) isReady(file *finalFile, prev *finalFile) bool {
 	case prev == nil:
 		if s.hasWriteLock(prevPath) {
 			log.Debug("Previous file in progress:", file.name, "<-", file.prev)
+			break
 		}
 		// If this file has been waiting for more than a minute...
 		if time.Since(file.time) > time.Minute {
