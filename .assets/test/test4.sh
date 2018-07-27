@@ -105,6 +105,14 @@ function check() {
             ctrl_c
         fi
 
+        # Check for duplicates
+        dups=`grep "INFO Ignoring duplicate (receive):" $STS_HOME/data/log/messages/*/*`
+        if [ "$dups" ]; then
+            echo "Detected duplicate!"
+            cat <(echo "$dups")
+            ctrl_c
+        fi
+
         # Check for out-of-order delivery
         for host in "${hosts[@]}"; do
             for type in "${types[@]}"; do
