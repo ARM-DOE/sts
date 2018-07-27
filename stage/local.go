@@ -581,8 +581,8 @@ func (s *Stage) isReady(file *finalFile, prev *finalFile) bool {
 		if s.hasWriteLock(prevPath) {
 			log.Debug("Previous file in progress:", file.name, "<-", file.prev)
 		}
-		// If this file has been waiting for more than 10 minutes...
-		if time.Since(file.time) > time.Minute*10 {
+		// If this file has been waiting for more than a minute...
+		if time.Since(file.time) > time.Minute {
 			t := file.prevScan
 			// ...and if this is the first time here or there has been file
 			// reception activity since the last time we were here...
@@ -592,6 +592,8 @@ func (s *Stage) isReady(file *finalFile, prev *finalFile) bool {
 				end := file.time
 				if !file.prevScanBeg.IsZero() {
 					end = file.prevScanBeg
+				} else if end.IsZero() {
+					end = s.getCacheStartTime()
 				}
 				beg := end.Add(-1 * len)
 				file.prevScanBeg = beg
@@ -885,6 +887,12 @@ func (s *Stage) buildCache(from time.Time) {
 		return false
 	}, from, cacheTime)
 	s.cacheTime = first
+}
+
+func (s *Stage) getCacheStartTime() time.Time {
+	s.cacheLock.RLock()
+	defer s.cacheLock.RUnlock()
+	return s.cacheTime
 }
 
 func (s *Stage) cleanCache() {
