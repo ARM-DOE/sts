@@ -347,9 +347,9 @@ func (q *Tagged) Pop() sts.Sendable {
 		// it to be dependent on itself
 		chunk.prev = ""
 	}
-	log.Debug("Q Out:", chunk.GetName(), "<-", chunk.prev)
+	log.Debug("Q Out:", chunk.GetName(), "<-", chunk.prev, ":", offset, "-", offset+length)
 	if next.isAllocated() {
-		log.Debug("Q Done:", next.orig.GetName(), offset, length, next.orig.GetSize())
+		log.Debug("Q Done:", next.orig.GetName(), ":", next.orig.GetSize())
 		// File is fully allocated and can be removed from the Q
 		q.removeFile(next)
 		for next.prev != nil {

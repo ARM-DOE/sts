@@ -982,7 +982,7 @@ func (f *recoverFile) GetPrev() string {
 func (f *recoverFile) Allocate(desired int64) (offset int64, length int64) {
 	offset = f.left[f.part].Beg + f.used
 	length = desired
-	f.used = offset + length
+	f.used += length
 	if offset+length >= f.left[f.part].End {
 		length = f.left[f.part].End - offset
 		f.part++
