@@ -59,7 +59,6 @@ type Broker struct {
 	tagMap    map[string]*FileTag
 	cleanAll  bool
 	cleanSome bool
-	statLock  sync.Mutex
 	statSince time.Time
 	sendTimes [][2]int64
 	bytesOut  int64
@@ -71,6 +70,7 @@ type Broker struct {
 	chRetry       chan sts.Polled
 	chTransmit    chan sts.Payload
 	chTransmitted chan sts.Payload
+	chStats       chan sts.Payload
 	chValidate    chan sts.Pollable
 }
 
@@ -91,6 +91,7 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 	broker.chRetry = make(chan sts.Polled, broker.Conf.Threads*2)
 	broker.chTransmit = make(chan sts.Payload, broker.Conf.Threads*2)
 	broker.chTransmitted = make(chan sts.Payload, broker.Conf.Threads*2)
+	broker.chStats = make(chan sts.Payload, broker.Conf.Threads*2)
 	broker.chValidate = make(chan sts.Pollable, broker.Conf.Threads*2)
 
 	send, err := broker.recover()
@@ -116,6 +117,7 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 		wgFailed,
 		wgTransmit,
 		wgTransmitted,
+		wgStats,
 		wgValidate,
 		wgValidated sync.WaitGroup
 
@@ -124,6 +126,7 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 	start(broker.startRetry, &wgFailed, broker.Conf.Threads)
 	start(broker.startBin, &wgTransmit, 1)
 	start(broker.startSend, &wgTransmitted, broker.Conf.Threads)
+	start(broker.startStats, &wgStats, 1)
 	start(broker.startTrack, &wgValidate, 1)
 	start(broker.startValidate, &wgValidated, 1)
 
@@ -144,6 +147,8 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 
 	wgValidate.Wait()
 	close(broker.chValidate)
+	close(broker.chStats)
+	wgStats.Wait()
 
 	wgValidated.Wait()
 	close(broker.chRetry)
@@ -257,6 +262,7 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 		// Either fully sent or not at all; need to poll to find out which
 		poll = append(poll, &progressFile{
 			name:      f.GetName(),
+			started:   time.Unix(f.GetTime(), 0),
 			completed: time.Unix(f.GetTime(), 0),
 			size:      f.GetSize(),
 			hash:      f.GetHash(),
@@ -306,6 +312,7 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 					f.GetName(), time.Unix(cached.GetTime(), 0), time.Now()) {
 					broker.Conf.Logger.Sent(&progressFile{
 						name:      cached.GetName(),
+						started:   time.Unix(cached.GetTime(), 0),
 						completed: time.Unix(cached.GetTime(), 0),
 						size:      cached.GetSize(),
 						hash:      cached.GetHash(),
@@ -671,40 +678,46 @@ func (broker *Broker) stat(payload sts.Payload) {
 	if broker.Conf.StatInterval == time.Duration(0) {
 		return
 	}
-	broker.statLock.Lock()
-	defer broker.statLock.Unlock()
-	if broker.statSince.IsZero() {
-		broker.statSince = payload.GetStarted()
-	}
-	broker.sendTimes = append(broker.sendTimes, [2]int64{
-		payload.GetStarted().UnixNano(),
-		payload.GetCompleted().UnixNano(),
-	})
-	broker.bytesOut += payload.GetSize()
-	d := payload.GetCompleted().Sub(broker.statSince)
-	if d > broker.Conf.StatInterval {
-		// Attempt to remove times where nothing was being sent
-		var t int64
-		active := d
-		ranges := append([][2]int64{{
-			int64(0),
-			broker.statSince.UnixNano(),
-		}}, broker.sendTimes...)
-		for i, r := range ranges[1:] {
-			// i is actually the real index minus 1 since we are slicing at 1
-			t = ranges[i][1]
-			if r[0] > t {
-				active -= time.Nanosecond * time.Duration(r[0]-t)
-			}
+	broker.chStats <- payload
+}
+
+func (broker *Broker) startStats(wg *sync.WaitGroup) {
+	defer wg.Done()
+	defer log.Debug("Stats done")
+	for payload := range broker.chStats {
+		if broker.statSince.IsZero() {
+			broker.statSince = payload.GetStarted()
 		}
-		mb := float64(broker.bytesOut) / float64(1024) / float64(1024)
-		s := active.Seconds()
-		log.Info(fmt.Sprintf(
-			"TOTAL Throughput: %.2fMB, %.2fs, %.2f MB/s (%d%% idle)",
-			mb, s, mb/s, int(100*(d-active)/d)))
-		broker.bytesOut = 0
-		broker.statSince = time.Now()
-		broker.sendTimes = nil
+		broker.sendTimes = append(broker.sendTimes, [2]int64{
+			payload.GetStarted().UnixNano(),
+			payload.GetCompleted().UnixNano(),
+		})
+		broker.bytesOut += payload.GetSize()
+		d := payload.GetCompleted().Sub(broker.statSince)
+		if d > broker.Conf.StatInterval {
+			// Attempt to remove times where nothing was being sent
+			var t int64
+			active := d
+			ranges := append([][2]int64{{
+				int64(0),
+				broker.statSince.UnixNano(),
+			}}, broker.sendTimes...)
+			for i, r := range ranges[1:] {
+				// i is actually the real index minus 1 since we are slicing at 1
+				t = ranges[i][1]
+				if r[0] > t {
+					active -= time.Nanosecond * time.Duration(r[0]-t)
+				}
+			}
+			mb := float64(broker.bytesOut) / float64(1024) / float64(1024)
+			s := active.Seconds()
+			log.Info(fmt.Sprintf(
+				"TOTAL Throughput: %.2fMB, %.2fs, %.2f MB/s (%d%% idle)",
+				mb, s, mb/s, int(100*(d-active)/d)))
+			broker.bytesOut = 0
+			broker.statSince = time.Now()
+			broker.sendTimes = nil
+		}
 	}
 }
 
