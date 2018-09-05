@@ -307,6 +307,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 // -> sts.ConfirmWaiting: MD5 validation was successful but waiting on predecessor
 // -> sts.ConfirmNone: No knowledge of file
 func (s *Stage) GetFileStatus(relPath string, sent time.Time) int {
+	log.Debug("Stage polled:", sent, relPath)
 	s.buildCache(sent)
 	path := filepath.Join(s.rootDir, relPath)
 	f := s.fromCache(path)
@@ -406,6 +407,7 @@ func (s *Stage) Recover() (err error) {
 	// Build the cache from the incoming log starting at the time of the oldest
 	// companion file found (or "now" if none exists) minus the cache age. Even
 	// if no files are found on the stage, we still want to build the cache.
+	log.Debug("Stage recovery cache build:", oldest.Add(-1*cacheAge))
 	s.buildCache(oldest.Add(-1 * cacheAge))
 	if len(validate) == 0 && len(finalize) == 0 {
 		return
@@ -442,6 +444,7 @@ func (s *Stage) Recover() (err error) {
 // Stop waits for the number of files in the pipe to be zero and then signals
 func (s *Stage) Stop(wg *sync.WaitGroup) {
 	defer wg.Done()
+	defer log.Debug("Stage shut down:", s.name)
 	log.Debug("Stage shutting down ...", s.name)
 	for {
 		if s.inPipe() > 0 {
@@ -538,44 +541,28 @@ func (s *Stage) finalizeQueue(file *finalFile) {
 }
 
 func (s *Stage) finalizeHandler() {
+	defer log.Debug("Finalize channel done:", s.name)
 	for f := range s.finalizeCh {
-		// Attempt to find the root file before going through the
-		// finalizing chain.  That way, if we have a huge list of files,
-		// we don't waste time attempting to finalize files that we can
-		// easily identify as not being ready.
 		log.Debug("Finalize chain:", f.source, f.name)
-		for {
-			if f == nil {
-				break
-			}
-			if f.prev == "" {
-				s.finalize(f)
-				break
-			}
-			if cached := s.fromCache(f.path); cached != nil &&
-				cached.state != stateValidated {
-				// Skip redundancies or mistakes in the pipe
-				log.Debug("Already finalized or not ready:",
-					f.source, f.name, cached.state)
-				break
-			}
-			prevPath := filepath.Join(s.rootDir, f.prev)
-			prev := s.fromCache(prevPath)
-			if s.isReady(f, prev) {
-				s.finalize(f)
-				break
-			}
-			f = prev
+		if cached := s.fromCache(f.path); cached != nil &&
+			cached.state != stateValidated {
+			// Skip redundancies or mistakes in the pipe
+			log.Debug("Already finalized or not ready:",
+				f.source, f.name, cached.state)
+			continue
+		}
+		if s.isReady(f) {
+			s.finalize(f)
 		}
 	}
 }
 
-func (s *Stage) isReady(file *finalFile, prev *finalFile) bool {
-	fileLock := s.getWriteLock(file.path)
-	fileLock.Lock()
-	defer fileLock.Unlock()
-
+func (s *Stage) isReady(file *finalFile) bool {
+	if file.prev == "" {
+		return true
+	}
 	prevPath := filepath.Join(s.rootDir, file.prev)
+	prev := s.fromCache(prevPath)
 	switch {
 	case prev == nil:
 		if s.hasWriteLock(prevPath) {
@@ -607,6 +594,7 @@ func (s *Stage) isReady(file *finalFile, prev *finalFile) bool {
 					file.name, "<-", file.prev, "--", beg, "-", end)
 			}
 		}
+		log.Debug("No sign of previous file:", file.name, "<-", file.prev)
 
 	case prev.state == stateReceived:
 		log.Debug("Waiting for previous file:",
@@ -778,12 +766,12 @@ func (s *Stage) toWait(prevPath string, next *finalFile) {
 	if next.wait != nil {
 		next.wait.Stop()
 	}
-	next.wait = time.AfterFunc(wait, func(f *finalFile) func() {
+	next.wait = time.AfterFunc(wait, func(handle func(*finalFile), f *finalFile) func() {
 		return func() {
-			log.Debug("Attempting finalize again:", next.name)
-			s.finalizeQueue(next)
+			log.Debug("Attempting finalize again:", f.name)
+			handle(f)
 		}
-	}(next))
+	}(s.finalizeQueue, next))
 	files, ok := s.wait[prevPath]
 	if ok {
 		for _, waiting := range files {
@@ -842,20 +830,22 @@ func (s *Stage) toCache(file *finalFile, state int) {
 }
 
 func (s *Stage) buildCache(from time.Time) {
-	if func(mux *sync.RWMutex, t0 time.Time, t1 time.Time) bool {
-		mux.RLock()
-		defer mux.RUnlock()
-		return t0.After(t1)
-	}(&s.cacheLock, s.cacheTime, from) {
+	if from.IsZero() {
+		return
+	}
+	if func(s *Stage, t1 time.Time) bool {
+		s.cacheLock.RLock()
+		defer s.cacheLock.RUnlock()
+		log.Debug("Cache build request:", s.name, s.cacheTime, t1)
+		return !s.cacheTime.IsZero() && s.cacheTime.Before(t1)
+	}(s, from) {
 		return
 	}
 	s.cacheLock.Lock()
 	defer s.cacheLock.Unlock()
-	var cacheTime time.Time
-	if s.cacheTime.IsZero() {
+	cacheTime := s.cacheTime
+	if cacheTime.IsZero() {
 		cacheTime = time.Now()
-	} else if from.After(cacheTime) {
-		return
 	}
 	log.Debug("Building cache from logs...", s.name, from)
 	var first time.Time
