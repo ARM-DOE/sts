@@ -79,6 +79,7 @@ echo "Stopping ..."
 # Kill and restart so we can test a glut on start-up
 kill $pid_client
 kill $pid_server
+kill $monkey_pid
 
 # Make more data
 for args in "${sim[@]}"; do
