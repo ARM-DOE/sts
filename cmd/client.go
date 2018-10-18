@@ -62,7 +62,7 @@ func (c *clientApp) setDefaults() (err error) {
 		c.conf.BinSize = 10 * 1024 * 1024 * 1024
 	}
 	if c.conf.Timeout == 0 {
-		c.conf.Timeout = 3600 * 60
+		c.conf.Timeout = time.Hour * 1
 	}
 	if c.conf.PollAttempts == 0 {
 		c.conf.PollAttempts = 10
