@@ -10,7 +10,7 @@ OUT: # Outgoing configuration
       scan-delay    : 5s       # How long to sleep between directory scans
       min-age       : 0s       # How old a file must be before being added to the "outgoing" queue
       max-age       : 0s       # How old a file can be before getting logged as "stale" (remains in the queue)
-      timeout       : 1h       # The HTTP timeout for a single request
+      timeout       : 5m       # The HTTP timeout for a single request
       bin-size      : 20MB     # The generally-desired size for a given HTTP request (BEFORE any compression)
       compress      : 0        # Use GZIP compression level (0-9) (NOTE: bin-size is based on file size BEFORE compression)
       stat-payload  : true     # Log payload transmission stats

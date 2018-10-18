@@ -56,7 +56,7 @@ OUT:
       min-age       : 15s   # How old a file must be before being added to the "outgoing" queue
       max-age       : 12h   # How old a file can be before getting logged as "stale" (remains in the queue)
       scan-delay    : 30s   # How long to wait between scans of the outgoing directory
-      timeout       : 1h    # The HTTP timeout for a single request
+      timeout       : 30m   # The HTTP timeout for a single request
       stat-payload  : true  # Whether or not to log each payload's throughput stats
       stat-interval : 5m    # How often to log throughput statistics
       poll-delay    : 5s    # How long to wait after file sent before final validation
