@@ -97,7 +97,7 @@ func (h *Client) init() error {
 	if h.client, err = GetClient(h.TLS); err != nil {
 		return err
 	}
-	h.client.Timeout = time.Second * h.Timeout
+	h.client.Timeout = h.Timeout
 	return nil
 }
 
