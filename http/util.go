@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -47,6 +48,12 @@ const (
 
 	// HeaderJSON is the content type value for JSON-encoded payload.
 	HeaderJSON = "application/json"
+
+	// readTimeout is the server timeout for request reads.
+	readTimeout = time.Minute * 30
+
+	// writeTimeout is the server timeout for writing a response.
+	writeTimeout = time.Minute * 30
 )
 
 var gCerts map[string]*tls.Certificate
@@ -67,7 +74,13 @@ func ListenAndServe(addr string, tlsConf *tls.Config, handler http.Handler) erro
 		h = http.DefaultServeMux
 	}
 	if DefaultServer == nil {
-		DefaultServer = NewGracefulServer(&http.Server{Addr: addr, Handler: h}, tlsConf)
+		DefaultServer = NewGracefulServer(
+			&http.Server{
+				Addr:         addr,
+				Handler:      h,
+				ReadTimeout:  readTimeout,
+				WriteTimeout: writeTimeout,
+			}, tlsConf)
 	}
 	return DefaultServer.ListenAndServe()
 }
