@@ -22,10 +22,15 @@ const (
 	fullExt = ".full"
 	waitExt = ".wait"
 
-	// cacheAge is at least how long a received file is cached in memory
-	cacheAge = time.Hour * 24
+	// cacheAgeLogged is the minimum amount of time a received file is cached in
+	// memory based on when it was logged relative to now
+	cacheAgeLogged = time.Hour * 24
 
-	// cacheCnt is the number of files after which to age the cache
+	// cacheAgeLoaded is the minimum amount of time a received file is cached in
+	// memory based on when it was cached relative to now
+	cacheAgeLoaded = time.Hour * 1
+
+	// cacheCnt is the number of files received after which to age the cache
 	cacheCnt = 1000
 
 	// nValidators is the number of concurrent goroutines doing hash validation
@@ -83,6 +88,7 @@ type Stage struct {
 	cacheLock  sync.RWMutex
 	cache      map[string]*finalFile
 	cacheTime  time.Time
+	cacheTimes []time.Time
 	writeLock  sync.RWMutex
 	writeLocks map[string]*sync.RWMutex
 }
@@ -407,8 +413,8 @@ func (s *Stage) Recover() (err error) {
 	// Build the cache from the incoming log starting at the time of the oldest
 	// companion file found (or "now" if none exists) minus the cache age. Even
 	// if no files are found on the stage, we still want to build the cache.
-	log.Debug("Stage recovery cache build:", oldest.Add(-1*cacheAge))
-	s.buildCache(oldest.Add(-1 * cacheAge))
+	log.Debug("Stage recovery cache build:", oldest.Add(-1*cacheAgeLogged))
+	s.buildCache(oldest.Add(-1 * cacheAgeLogged))
 	if len(validate) == 0 && len(finalize) == 0 {
 		return
 	}
@@ -849,6 +855,7 @@ func (s *Stage) buildCache(from time.Time) {
 	}
 	log.Debug("Building cache from logs...", s.name, from)
 	var first time.Time
+	now := time.Now()
 	s.logger.Parse(func(name, hash string, size int64, t time.Time) bool {
 		if t.After(cacheTime) {
 			return true
@@ -867,7 +874,7 @@ func (s *Stage) buildCache(from time.Time) {
 			name:   name,
 			hash:   hash,
 			size:   size,
-			time:   time.Now(),
+			time:   now,
 			logged: t,
 			state:  stateLogged,
 		}
@@ -875,7 +882,10 @@ func (s *Stage) buildCache(from time.Time) {
 		log.Debug("Cached from log:", s.name, file.name)
 		return false
 	}, from, cacheTime)
-	s.cacheTime = first
+	if !first.IsZero() {
+		s.cacheTimes = append(s.cacheTimes, now)
+		s.cacheTime = first
+	}
 }
 
 func (s *Stage) getCacheStartTime() time.Time {
@@ -888,25 +898,51 @@ func (s *Stage) cleanCache() {
 	s.cacheLock.Lock()
 	defer s.cacheLock.Unlock()
 	var age time.Duration
+	var batches []time.Time
+	if len(s.cacheTimes) > 0 {
+		for _, t := range s.cacheTimes {
+			if time.Since(t) < cacheAgeLoaded {
+				// We want to expire batches in order so that we never
+				// leave a gap in the cache
+				break
+			}
+			batches = append(batches, t)
+		}
+		s.cacheTimes = s.cacheTimes[len(batches):]
+	}
 	s.cacheTime = time.Now()
 	for _, cacheFile := range s.cache {
 		if cacheFile.state >= stateFinalized {
 			if cacheFile.prev != "" && !cacheFile.nextFinal {
 				continue
 			}
-			age = time.Since(cacheFile.time)
-			if age > cacheAge {
+			age = time.Since(cacheFile.logged)
+			if age > cacheAgeLogged {
+				if len(batches) > 0 {
+					for _, t := range batches {
+						if t.Equal(cacheFile.time) && cacheFile.state == stateLogged {
+							// Delete if file was loaded via a batch that is
+							// ready to be expired
+							goto delete
+						}
+					}
+					goto keep
+				}
+			delete:
 				delete(s.cache, cacheFile.path)
 				log.Debug("Removed from cache:",
 					cacheFile.source, cacheFile.name)
 				continue
 			}
+		keep:
 			// We want the source cacheTime to be the earliest logged time of
-			// the files still in the cache (except the ones we keep around)
+			// the files still in the cache (except the extra ones we keep
+			// around to maintain the chain)
 			if cacheFile.logged.Before(s.cacheTime) {
 				s.cacheTime = cacheFile.logged
 			}
 		}
 	}
-	log.Debug("Cached:", s.name, len(s.cache))
+	log.Debug("Cache Count:", s.name, len(s.cache))
+	log.Debug("Cache Batch Count:", s.name, len(s.cacheTimes))
 }
