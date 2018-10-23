@@ -121,7 +121,7 @@ done
 
 while true; do
     sleep 1
-    out=`find $STS_HOME/data/stage -type f 2>/dev/null | sort`
+    out=`find $STS_HOME/data/stage -type f 2>/dev/null | sort | egrep -v '.part$'`
     if [ "$out" ]; then
         lines=($out)
         echo "${#lines[@]} stage files ..."
