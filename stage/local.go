@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -247,6 +248,27 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 	path := filepath.Join(s.rootDir, file.Name)
 	lock := s.getWriteLock(path)
 
+	// Make sure this isn't a resend (partial or full) of a file already received.
+	// This can happen when the sending side encounters a network failure and
+	// resends an entire bin--potentially including parts already successfully
+	// received from before the network issue occurred.
+	final := s.partialToFinal(file)
+	existing := s.fromCache(final.path)
+	if existing != nil &&
+		existing.state != stateFailed &&
+		existing.hash == final.hash {
+		log.Info("Ignoring duplicate (receive):", final.source, final.name)
+		lock.Lock()
+		os.Remove(path + partExt)
+		if existing.state >= stateFinalized {
+			os.Remove(path + compExt)
+		}
+		lock.Unlock()
+		s.delWriteLock(path)
+		_, err = io.Copy(ioutil.Discard, reader)
+		return
+	}
+
 	// Read the part and write it to the right place in the staged "partial"
 	fh, err := os.OpenFile(path+partExt, os.O_WRONLY, 0600)
 	if err != nil {
@@ -279,18 +301,6 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 
 	done := isCompanionComplete(cmp)
 	if done {
-		final := s.partialToFinal(file)
-		existing := s.fromCache(final.path)
-		if existing != nil &&
-			existing.state != stateFailed &&
-			existing.hash == final.hash {
-			log.Info("Ignoring duplicate (receive):", final.source, final.name)
-			os.Remove(path + partExt)
-			if existing.state >= stateFinalized {
-				os.Remove(path + compExt)
-			}
-			return
-		}
 		if err = os.Rename(path+partExt, path+fullExt); err != nil {
 			err = fmt.Errorf("Failed to swap in the \"full\" extension: %s",
 				err.Error())
