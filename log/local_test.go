@@ -37,7 +37,7 @@ func TestSend(t *testing.T) {
 	for i := 0; i < n; i++ {
 		name := fmt.Sprintf("file/name-%d.ext", i)
 		names = append(names, name)
-		go func() {
+		go func(i int) {
 			defer wg.Done()
 			logger.Sent(&mock.File{
 				Name:     name,
@@ -45,7 +45,7 @@ func TestSend(t *testing.T) {
 				Hash:     fileutil.StringMD5(name),
 				SendTime: int64(i),
 			})
-		}()
+		}(i)
 	}
 	wg.Wait()
 	for _, name := range names {
@@ -73,14 +73,14 @@ func TestReceive(t *testing.T) {
 		}
 		name := fmt.Sprintf("file/name-%d.ext", i)
 		names = append(names, name)
-		go func(lh *Receive) {
+		go func(lh *Receive, i int) {
 			defer wg.Done()
 			lh.Received(&mock.File{
 				Name: name,
 				Size: 1024 * 1024 * int64(i),
 				Hash: fileutil.StringMD5(name),
 			})
-		}(logger)
+		}(logger, i)
 	}
 	wg.Wait()
 	for i, name := range names {
