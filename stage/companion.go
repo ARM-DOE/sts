@@ -131,6 +131,39 @@ func addCompanionPart(cmp *sts.Partial, beg, end int64) {
 	cmp.Parts = append(cmp.Parts, &sts.ByteRange{Beg: beg, End: end})
 }
 
+func minInt64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func companionPartExists(cmp *sts.Partial, beg, end int64) bool {
+	overlap := int64(0)
+	var n int64
+	var minEnd int64
+	var maxBeg int64
+	for _, p := range cmp.Parts {
+		maxBeg = maxInt64(beg, p.Beg)
+		minEnd = minInt64(end, p.End)
+		n = minEnd - maxBeg
+		if n > 0 {
+			overlap += n
+			if overlap == end-beg {
+				return true
+			}
+		}
+	}
+	return overlap == end-beg
+}
+
 func isCompanionComplete(cmp *sts.Partial) bool {
 	size := int64(0)
 	for _, part := range cmp.Parts {

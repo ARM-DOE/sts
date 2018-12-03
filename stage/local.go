@@ -245,6 +245,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 			len(file.Parts))
 		return
 	}
+	part := file.Parts[0]
 	path := filepath.Join(s.rootDir, file.Name)
 	lock := s.getWriteLock(path)
 
@@ -252,22 +253,40 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 	// This can happen when the sending side encounters a network failure and
 	// resends an entire bin--potentially including parts already successfully
 	// received from before the network issue occurred.
+	lock.Lock()
 	final := s.partialToFinal(file)
 	existing := s.fromCache(final.path)
-	if existing != nil &&
+	isDuplicate := existing != nil &&
 		existing.state != stateFailed &&
-		existing.hash == final.hash {
+		existing.hash == final.hash
+	if existing == nil {
+		// This does add the unfortunate reality that for multipart files, the
+		// companion will be read twice for each part (except the first) instead
+		// of once.  But it's the price we have to pay to make sure we aren't
+		// writing to a file after it's deemed "done" and renamed.
+		if cmp, _ := readLocalCompanion(path, file.Name); cmp != nil {
+			if companionPartExists(cmp, part.Beg, part.End) {
+				isDuplicate = true
+			}
+		}
+	}
+	if isDuplicate {
 		log.Info("Ignoring duplicate (receive):", final.source, final.name)
-		lock.Lock()
-		os.Remove(path + partExt)
-		if existing.state >= stateFinalized {
-			os.Remove(path + compExt)
+		if existing != nil {
+			os.Remove(path + partExt)
+			if existing.state >= stateFinalized {
+				os.Remove(path + compExt)
+			}
 		}
 		lock.Unlock()
-		s.delWriteLock(path)
+		if existing != nil {
+			s.delWriteLock(path)
+		}
 		_, err = io.Copy(ioutil.Discard, reader)
 		return
 	}
+	// Done checking for redundancy
+	lock.Unlock()
 
 	// Read the part and write it to the right place in the staged "partial"
 	fh, err := os.OpenFile(path+partExt, os.O_WRONLY, 0600)
@@ -276,7 +295,6 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 			err.Error())
 		return
 	}
-	part := file.Parts[0]
 	fh.Seek(part.Beg, 0)
 	_, err = io.Copy(fh, reader)
 	fh.Close()
