@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -50,7 +49,6 @@ type finalFile struct {
 	prev        string
 	size        int64
 	hash        string
-	source      string
 	time        time.Time
 	logged      time.Time
 	state       int
@@ -247,46 +245,6 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 	}
 	part := file.Parts[0]
 	path := filepath.Join(s.rootDir, file.Name)
-	lock := s.getWriteLock(path)
-
-	// Make sure this isn't a resend (partial or full) of a file already received.
-	// This can happen when the sending side encounters a network failure and
-	// resends an entire bin--potentially including parts already successfully
-	// received from before the network issue occurred.
-	lock.Lock()
-	final := s.partialToFinal(file)
-	existing := s.fromCache(final.path)
-	isDuplicate := existing != nil &&
-		existing.state != stateFailed &&
-		existing.hash == final.hash
-	if existing == nil {
-		// This does add the unfortunate reality that for multipart files, the
-		// companion will be read twice for each part (except the first) instead
-		// of once.  But it's the price we have to pay to make sure we aren't
-		// writing to a file after it's deemed "done" and renamed.
-		if cmp, _ := readLocalCompanion(path, file.Name); cmp != nil {
-			if companionPartExists(cmp, part.Beg, part.End) {
-				isDuplicate = true
-			}
-		}
-	}
-	if isDuplicate {
-		log.Info("Ignoring duplicate (receive):", final.source, final.name)
-		if existing != nil {
-			os.Remove(path + partExt)
-			if existing.state >= stateFinalized {
-				os.Remove(path + compExt)
-			}
-		}
-		lock.Unlock()
-		if existing != nil {
-			s.delWriteLock(path)
-		}
-		_, err = io.Copy(ioutil.Discard, reader)
-		return
-	}
-	// Done checking for redundancy
-	lock.Unlock()
 
 	// Read the part and write it to the right place in the staged "partial"
 	fh, err := os.OpenFile(path+partExt, os.O_WRONLY, 0600)
@@ -303,6 +261,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 	}
 
 	// Make sure we're the only one updating the companion
+	lock := s.getWriteLock(path)
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -319,6 +278,19 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 
 	done := isCompanionComplete(cmp)
 	if done {
+		final := s.partialToFinal(file)
+		existing := s.fromCache(final.path)
+		if existing != nil &&
+			existing.state != stateFailed &&
+			existing.hash == final.hash {
+			log.Info("Ignoring duplicate (receive):", s.name, final.name)
+			os.Remove(path + partExt)
+			if existing.state >= stateFinalized {
+				os.Remove(path + compExt)
+				s.delWriteLock(path)
+			}
+			return
+		}
 		if err = os.Rename(path+partExt, path+fullExt); err != nil {
 			err = fmt.Errorf("Failed to swap in the \"full\" extension: %s",
 				err.Error())
@@ -330,6 +302,59 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 		go s.processQueue(final)
 	}
 	return
+}
+
+// Received returns how many (starting at index 0) of the input file parts have
+// been successfully received
+func (s *Stage) Received(parts []sts.Binned) (n int) {
+	for _, part := range parts {
+		if !s.partReceived(part) {
+			break
+		}
+		n++
+	}
+	return
+}
+
+func (s *Stage) partReceived(part sts.Binned) bool {
+	log.Debug("Checking for received part:", s.name, part.GetName())
+	when := time.Unix(part.GetFileTime(), 0)
+	monthAgo := time.Now().Add(-1 * time.Hour * 24 * 30)
+	if when.Before(monthAgo) {
+		// Let's put a sensible cap in place
+		when = monthAgo
+	}
+	s.buildCache(when)
+	beg, end := part.GetSlice()
+	path := filepath.Join(s.rootDir, part.GetName())
+	lock := s.getWriteLock(path)
+	lock.Lock()
+	defer lock.Unlock()
+	final := &finalFile{
+		path: path,
+		name: part.GetName(),
+		size: part.GetFileSize(),
+		hash: part.GetFileHash(),
+		prev: part.GetPrev(),
+	}
+	existing := s.fromCache(final.path)
+	if existing == nil {
+		if cmp, _ := readLocalCompanion(path, final.name); cmp != nil {
+			if companionPartExists(cmp, beg, end) {
+				log.Info("Part already received:", s.name, final.name, beg, end)
+				return true
+			}
+		} else {
+			s.delWriteLock(path)
+		}
+	} else if existing.state != stateFailed && existing.hash == final.hash {
+		log.Info("File already received:", s.name, final.name)
+		if existing.state >= stateFinalized {
+			s.delWriteLock(path)
+		}
+		return true
+	}
+	return false
 }
 
 // GetFileStatus returns the status of a file based on its source, name, and
@@ -491,12 +516,11 @@ func (s *Stage) Stop(wg *sync.WaitGroup) {
 
 func (s *Stage) partialToFinal(file *sts.Partial) *finalFile {
 	return &finalFile{
-		path:   filepath.Join(s.rootDir, file.Name),
-		name:   file.Name,
-		size:   file.Size,
-		hash:   file.Hash,
-		prev:   file.Prev,
-		source: file.Source,
+		path: filepath.Join(s.rootDir, file.Name),
+		name: file.Name,
+		size: file.Size,
+		hash: file.Hash,
+		prev: file.Prev,
 	}
 }
 
@@ -528,7 +552,7 @@ func (s *Stage) process(file *finalFile) {
 
 	existing := s.fromCache(file.path)
 	if existing == nil || existing.state != stateReceived {
-		log.Debug("Ignoring invalid (process):", file.source, file.name)
+		log.Debug("Ignoring invalid (process):", s.name, file.name)
 		return
 	}
 
@@ -577,12 +601,12 @@ func (s *Stage) finalizeQueue(file *finalFile) {
 func (s *Stage) finalizeHandler() {
 	defer log.Debug("Finalize channel done:", s.name)
 	for f := range s.finalizeCh {
-		log.Debug("Finalize chain:", f.source, f.name)
+		log.Debug("Finalize chain:", s.name, f.name)
 		if cached := s.fromCache(f.path); cached != nil &&
 			cached.state != stateValidated {
 			// Skip redundancies or mistakes in the pipe
 			log.Debug("Already finalized or not ready:",
-				f.source, f.name, cached.state)
+				s.name, f.name, cached.state)
 			continue
 		}
 		if s.isReady(f) {
@@ -666,7 +690,7 @@ func (s *Stage) finalize(file *finalFile) {
 
 	existing := s.fromCache(file.path)
 	if existing == nil || existing.state != stateValidated {
-		log.Debug("Ignoring invalid (final):", file.source, file.name, existing.state)
+		log.Debug("Ignoring invalid (final):", s.name, file.name, existing.state)
 		return
 	}
 
@@ -675,12 +699,12 @@ func (s *Stage) finalize(file *finalFile) {
 		file.wait = nil
 	}
 
-	log.Debug("Finalizing", file.source, file.name)
+	log.Debug("Finalizing", s.name, file.name)
 	if err := s.putFileAway(file); err != nil {
 		log.Error(err)
 		return
 	}
-	log.Debug("Finalized", file.source, file.name)
+	log.Debug("Finalized", s.name, file.name)
 
 	waiting := s.fromWait(file.path)
 	for _, waitFile := range waiting {
@@ -881,7 +905,7 @@ func (s *Stage) buildCache(from time.Time) {
 	if cacheTime.IsZero() {
 		cacheTime = time.Now()
 	}
-	log.Debug("Building cache from logs...", s.name, from)
+	log.Info("Building cache from logs:", s.name, from)
 	var first time.Time
 	now := time.Now()
 	s.logger.Parse(func(name, hash string, size int64, t time.Time) bool {
@@ -897,7 +921,6 @@ func (s *Stage) buildCache(from time.Time) {
 			return false
 		}
 		file := &finalFile{
-			source: s.name,
 			path:   path,
 			name:   name,
 			hash:   hash,
@@ -912,7 +935,7 @@ func (s *Stage) buildCache(from time.Time) {
 	}, from, cacheTime)
 	if !first.IsZero() {
 		s.cacheTimes = append(s.cacheTimes, now)
-		s.cacheTime = first
+		s.cacheTime = from
 	}
 }
 
@@ -958,8 +981,7 @@ func (s *Stage) cleanCache() {
 				}
 			delete:
 				delete(s.cache, cacheFile.path)
-				log.Debug("Removed from cache:",
-					cacheFile.source, cacheFile.name)
+				log.Debug("Removed from cache:", s.name, cacheFile.name)
 				continue
 			}
 		keep:

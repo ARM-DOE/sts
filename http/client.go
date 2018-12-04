@@ -165,6 +165,65 @@ func (h *Client) Transmit(payload sts.Payload) (n int, err error) {
 	return
 }
 
+// RecoverTransmission is of type sts.RecoverTransmission for querying how
+// many parts of a failed transmission were successfully received.
+func (h *Client) RecoverTransmission(payload sts.Payload) (n int, err error) {
+	if err = h.init(); err != nil {
+		return
+	}
+	var gz *gzip.Writer
+	if h.Compression != gzip.NoCompression {
+		gz, err = gzip.NewWriterLevel(nil, h.Compression)
+		if err != nil {
+			return
+		}
+	}
+	var meta []byte
+	if meta, err = payload.EncodeHeader(); err != nil {
+		return
+	}
+	mr := bytes.NewReader(meta)
+	pr, pw := io.Pipe()
+	go func() {
+		if gz != nil {
+			gz.Reset(pw)
+			io.Copy(gz, mr)
+			gz.Close()
+		} else {
+			io.Copy(pw, mr)
+		}
+		pw.Close()
+	}()
+	url := fmt.Sprintf("%s/data-recovery?v=%d", h.rootURL(), apiVersion)
+	req, err := http.NewRequest("PUT", url, pr)
+	if err != nil {
+		return
+	}
+	req.Header.Add(HeaderSourceName, h.SourceName)
+	req.Header.Add(HeaderSep, string(os.PathSeparator))
+	if h.TargetKey != "" {
+		req.Header.Add(HeaderKey, h.TargetKey)
+	}
+	if gz != nil {
+		req.Header.Add("Content-Encoding", "gzip")
+	}
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		n, _ = strconv.Atoi(resp.Header.Get(HeaderPartCount))
+		return
+	default:
+		err = fmt.Errorf(
+			"Transmission recovery request failed with response code: %d",
+			resp.StatusCode)
+	}
+	return
+}
+
 // Validate is of type sts.Validate for confirming or denying validity of
 // transmitted files
 func (h *Client) Validate(sent []sts.Pollable) (polled []sts.Polled, err error) {

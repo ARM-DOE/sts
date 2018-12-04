@@ -21,15 +21,13 @@ echo "Staging test data..."
 mkdir -p $STS_HOME/data/out/stsin-1
 tar -C $STS_HOME/data/out/stsin-1 -xzf $PWD/$basedir/clean.tgz
 
-echo "Running sender in background..."
-$cmd2 > /dev/null &
-
-sleep 2
-
 echo "Running receiver in background..."
 $cmd1 > /dev/null &
 
-sleep 3
+echo "Running sender in background..."
+$cmd2 > /dev/null &
+
+sleep 1.3
 
 echo "Reconfig receiver..."
 pkill -f "$cmd1"

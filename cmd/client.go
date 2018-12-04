@@ -197,6 +197,7 @@ func (c *clientApp) init() (err error) {
 			Recoverer:    httpClient.Recover,
 			BuildPayload: payload.NewBin,
 			Transmitter:  httpClient.Transmit,
+			TxRecoverer:  httpClient.RecoverTransmission,
 			Validator:    httpClient.Validate,
 			Logger:       log.NewSend(c.conf.LogDir),
 			Tagger:       nameToTag,

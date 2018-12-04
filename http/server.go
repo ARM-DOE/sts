@@ -88,6 +88,7 @@ func strToIndex(needle string, haystack []string) int {
 // Serve starts HTTP server.
 func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 	http.Handle("/data", s.handleValidate(http.HandlerFunc(s.routeData)))
+	http.Handle("/data-recovery", s.handleValidate(http.HandlerFunc(s.routeDataRecovery)))
 	http.Handle("/validate", s.handleValidate(http.HandlerFunc(s.routeValidate)))
 	http.Handle("/partials", s.handleValidate(http.HandlerFunc(s.routePartials)))
 	http.Handle("/static/", s.handleValidate(http.HandlerFunc(s.routeFile)))
@@ -287,7 +288,7 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	decoder, err := s.DecoderFactory(metaLen, reader)
+	decoder, err := s.DecoderFactory(metaLen, sep, reader)
 	if err != nil {
 		s.handleError(w, err)
 		return
@@ -314,10 +315,6 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 			Hash:   parts[index].GetFileHash(),
 			Source: source,
 		}
-		if sep != "" {
-			file.Name = filepath.Join(strings.Split(file.Name, sep)...)
-			file.Prev = filepath.Join(strings.Split(file.Prev, sep)...)
-		}
 		beg, end := parts[index].GetSlice()
 		file.Parts = append(file.Parts, &sts.ByteRange{
 			Beg: beg, End: end,
@@ -331,6 +328,33 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 		}
 		index++
 	}
+}
+
+func (s *Server) routeDataRecovery(w http.ResponseWriter, r *http.Request) {
+	var err error
+	defer r.Body.Close()
+	source := r.Header.Get(HeaderSourceName)
+	if source == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	compressed := r.Header.Get(HeaderContentEncoding) == HeaderGzip
+	sep := r.Header.Get(HeaderSep)
+	reader := r.Body
+	if compressed {
+		if reader, err = gzip.NewReader(reader); err != nil {
+			s.handleError(w, err)
+			return
+		}
+	}
+	decoder, err := s.DecoderFactory(0, sep, reader)
+	if err != nil {
+		s.handleError(w, err)
+		return
+	}
+	gateKeeper := s.getGateKeeper(source)
+	n := gateKeeper.Received(decoder.GetParts())
+	w.Header().Add(HeaderPartCount, strconv.Itoa(n))
 }
 
 func (s *Server) respond(w http.ResponseWriter, status int, data []byte) error {

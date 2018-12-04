@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"code.arm.gov/dataflow/sts"
@@ -373,17 +375,28 @@ type Decoder struct {
 
 // NewDecoder expects the number of bytes devoted to the metadata array and the
 // path delimeter string as inputs
-func NewDecoder(n int, r io.Reader) (sts.PayloadDecoder, error) {
+func NewDecoder(n int, sep string, r io.Reader) (sts.PayloadDecoder, error) {
 	var err error
 	binReader := &Decoder{
 		stream: r,
 	}
 	pr, pw := io.Pipe()
 	go func() {
-		io.CopyN(pw, r, int64(n))
+		if n > 0 {
+			io.CopyN(pw, r, int64(n))
+		} else {
+			// When no length provided, assume the meta is the entire payload
+			io.Copy(pw, r)
+		}
 	}()
 	jr := json.NewDecoder(pr)
 	err = jr.Decode(&binReader.meta)
+	if sep != "" {
+		for _, part := range binReader.meta {
+			part.Name = filepath.Join(strings.Split(part.Name, sep)...)
+			part.Prev = filepath.Join(strings.Split(part.Prev, sep)...)
+		}
+	}
 	return binReader, err
 }
 

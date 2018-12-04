@@ -20,14 +20,15 @@ const (
 // this client to manage the outgoing data flow
 type Conf struct {
 	// Components
-	Store        sts.FileSource     // The source of file objects from which to read (and delete)
-	Cache        sts.FileCache      // The persistent cache of file metadata from the store
-	Queue        sts.FileQueue      // The queue that takes files ready to send and chunks them up in its configured order
-	Recoverer    sts.Recover        // The function that determines what chunks need to be sent first
-	BuildPayload sts.PayloadFactory // The function that creates a Payload instance
-	Transmitter  sts.Transmit       // The transmission implementation
-	Validator    sts.Validate       // The validation implementation
-	Logger       sts.SendLogger     // The logger used to log completed files
+	Store        sts.FileSource          // The source of file objects from which to read (and delete)
+	Cache        sts.FileCache           // The persistent cache of file metadata from the store
+	Queue        sts.FileQueue           // The queue that takes files ready to send and chunks them up in its configured order
+	Recoverer    sts.Recover             // The function that determines what chunks need to be sent first
+	BuildPayload sts.PayloadFactory      // The function that creates a Payload instance
+	Transmitter  sts.Transmit            // The transmission implementation
+	TxRecoverer  sts.RecoverTransmission // The transmission recovery implementation
+	Validator    sts.Validate            // The validation implementation
+	Logger       sts.SendLogger          // The logger used to log completed files
 
 	// Helpers
 	Tagger sts.Translate // Takes a file name and provides a tag name
@@ -621,7 +622,7 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 	defer log.Debug("Sender done")
 	in := broker.chTransmit
 	out := broker.chTransmitted
-	nErr := 0
+	var nErr int
 	for {
 		log.Debug("Send loop ...")
 		payload, ok := <-in
@@ -632,20 +633,23 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 			beg, len := p.GetSlice()
 			log.Debug("Sending:", p.GetName(), beg, beg+len)
 		}
+		nErr = 0
 		for {
 			n, err := broker.Conf.Transmitter(payload)
 			if err == nil {
 				break
 			}
+			nErr++
+			log.Error("Payload send failed:", err.Error())
 			if n > 0 && n < len(payload.GetParts()) {
 				next := payload.Split(n)
 				out <- payload
 				payload = next
+			} else {
+				payload = broker.handleSendError(payload)
 			}
-			nErr++
-			log.Error("Payload send failed:", err.Error())
-			// Check each file in the payload to make sure none of them has
-			// changed and remove the ones that have
+			// Check each file in the payload to make sure none of them
+			// has changed and remove the ones that have
 			for _, binned := range payload.GetParts() {
 				file := broker.Conf.Cache.Get(binned.GetName())
 				if file == nil {
@@ -665,6 +669,27 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 		broker.stat(payload)
 		out <- payload
 	}
+}
+
+func (broker *Broker) handleSendError(payload sts.Payload) sts.Payload {
+	nErr := 0
+	for {
+		n, err := broker.Conf.TxRecoverer(payload)
+		if err == nil {
+			log.Debug("Transmission recovery:", n, "of", len(payload.GetParts()))
+			if n > 0 && n < len(payload.GetParts()) {
+				next := payload.Split(n)
+				broker.chTransmitted <- payload
+				payload = next
+			}
+			break
+		}
+		nErr++
+		log.Error("Payload recovery request failed:", err.Error())
+		// Wait longer the more it fails
+		time.Sleep(time.Duration(nErr) * time.Second)
+	}
+	return payload
 }
 
 func (broker *Broker) stat(payload sts.Payload) {

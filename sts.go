@@ -99,6 +99,7 @@ type GateKeeper interface {
 	Scan(version string) ([]byte, error)
 	Prepare(request []Binned)
 	Receive(*Partial, io.Reader) error
+	Received([]Binned) (nRecvd int)
 	GetFileStatus(relPath string, sent time.Time) int
 	Stop(*sync.WaitGroup)
 }
@@ -126,10 +127,15 @@ type PayloadFactory func(int64, Open) Payload
 // transmitted and any error encountered.
 type Transmit func(Payload) (int, error)
 
+// RecoverTransmission is the function type for querying the server about a
+// failed payload to determine which parts if any were successfully received
+// in order to avoid duplication
+type RecoverTransmission func(Payload) (int, error)
+
 // PayloadDecoderFactory creates a decoder instance to be used to parse a
 // multipart byte stream with the metadata at the beginning
 type PayloadDecoderFactory func(
-	metaLen int, payload io.Reader) (PayloadDecoder, error)
+	metaLen int, pathSep string, payload io.Reader) (PayloadDecoder, error)
 
 // Validate is the function type for validating files sent by the client were
 // successfully received by the server
