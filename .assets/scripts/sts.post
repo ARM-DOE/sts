@@ -1,0 +1,10 @@
+#!/bin/sh
+
+if [ -z "$DATAFLOW_HOME" ]; then
+    export DATAFLOW_HOME="/apps/transfer"
+fi
+confdir=$DATAFLOW_HOME/conf
+systemdir=/lib/systemd/system
+if [ -w $systemdir ]; then
+    cp $confdir/*.service $systemdir
+fi

@@ -3,7 +3,7 @@
 root="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 proj=$root/../../
 
-goversion=1.11.2
+goversion=1.12
 gotarget=`uname -s | awk '{print tolower($0)}'`
 gobundle=go${goversion}.${gotarget}-amd64.tar.gz
 gourl=https://storage.googleapis.com/golang/$gobundle
@@ -43,5 +43,4 @@ cd $root; go test ../../...
 # Copy conf files
 mkdir -p $GOPATH/conf
 cp $root/../dist.arm.yaml $GOPATH/conf/sts.yaml.example
-cp $root/stsd.arm.dist $GOPATH/conf/stsd.dist
-cp $root/stsd.service.arm.dist $GOPATH/conf/stsd.service.dist
+cp $root/stsd.service $GOPATH/conf

@@ -1,32 +1,13 @@
-comp: dataflow
-package-name: sts
-
-build-script: .assets/scripts/build-local.sh
-
+comp:           dataflow
+package-name:   sts
 default-prefix: /apps/transfer
-build-target: ''
-architecture: ''
-privileged: ''
-autodoc: yes
 
-# List of files to include in rpm package, set to [] if none
-# Files can be the full path name or relative path.
-# If releative path, must be relative from the top-level directory of the package
-# Any environment variables must be written as: $[ENV_VAR]
-# for including appropriate directory use (path)/to/dir, create /to/dir in package dir
+build-script:       .assets/scripts/build-local.sh
+package-script-dir: .assets/scripts
+
 include-items:
    - (.assets/scripts/.godev)/bin
    - (.assets/scripts/.godev)/conf
-
-# List of files to exclude in rpm package, set to [] if none
-# Files must be the full path name
-exclude-items: []
-
-# Package dependenceies, set to [] if none
-package-dependency: []
-
-# File dependenceies, set to [] if none
-file-dependency: []
 
 author:
   name: Sherman Beus
@@ -34,11 +15,24 @@ author:
   email: sherman.beus@pnnl.gov
   phone: 509-375-2662
 
+special-instructions: >
+  For first-time install, run "systemctl daemon-reload"
+  To start the daemon, run "systemctl start stsd"
+  To restart the daemon, run "systemctl restart stsd"
+
 synopsis: >
   A self-contained client/server application for reliable file movement
-change-log: ''
-description: ''
-replaces: 'N/A'
-special-instructions: 'N/A'
+
 notification-list:
-   - 'N/A'
+  - N/A
+
+obsoletes: sts-transfer, sts-delivery
+
+#------------------------------------------------------------------------------
+# Required fields that do not need to be set for this release
+
+build-target:   ''
+privileged:     ''
+exclude-items:  []
+package-dependency: []
+file-dependency: []
