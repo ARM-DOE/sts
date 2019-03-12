@@ -90,6 +90,7 @@ func decodeMeta(encoded []byte) (*meta, error) {
 type Local struct {
 	Root           string
 	MinAge         time.Duration
+	IncludeHidden  bool
 	Include        []*regexp.Regexp
 	Ignore         []*regexp.Regexp
 	FollowSymlinks bool
@@ -134,6 +135,9 @@ func (dir *Local) getRelPath(path string) string {
 }
 
 func (dir *Local) shouldIgnore(relPath string, isDir bool) bool {
+	if !dir.IncludeHidden && strings.HasPrefix(filepath.Base(relPath), ".") {
+		return true
+	}
 	var pattern *regexp.Regexp
 	for _, pattern = range dir.Ignore {
 		if pattern.MatchString(relPath) {

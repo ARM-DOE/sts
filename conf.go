@@ -10,7 +10,7 @@ import (
 	"code.arm.gov/dataflow/sts/reflectutil"
 
 	"github.com/alecthomas/units"
-	"gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v2"
 )
 
 const (
@@ -99,27 +99,28 @@ type ClientDirs struct {
 // SourceConf is the struct for managing the configuration of an outgoing
 // client source.
 type SourceConf struct {
-	Name         string
-	OutDir       string
-	LogDir       string
-	Threads      int
-	CacheAge     time.Duration
-	MinAge       time.Duration
-	MaxAge       time.Duration
-	ScanDelay    time.Duration
-	Timeout      time.Duration
-	BinSize      units.Base2Bytes
-	Compression  int
-	StatPayload  bool
-	StatInterval time.Duration
-	PollDelay    time.Duration
-	PollInterval time.Duration
-	PollAttempts int
-	Target       *TargetConf
-	GroupBy      *regexp.Regexp
-	Include      []*regexp.Regexp
-	Ignore       []*regexp.Regexp
-	Tags         []*TagConf
+	Name          string
+	OutDir        string
+	LogDir        string
+	Threads       int
+	CacheAge      time.Duration
+	MinAge        time.Duration
+	MaxAge        time.Duration
+	ScanDelay     time.Duration
+	Timeout       time.Duration
+	BinSize       units.Base2Bytes
+	Compression   int
+	StatPayload   bool
+	StatInterval  time.Duration
+	PollDelay     time.Duration
+	PollInterval  time.Duration
+	PollAttempts  int
+	Target        *TargetConf
+	GroupBy       *regexp.Regexp
+	IncludeHidden bool
+	Include       []*regexp.Regexp
+	Ignore        []*regexp.Regexp
+	Tags          []*TagConf
 
 	// We have to do this mumbo jumbo if we ever want a false value to
 	// override a true value because a false boolean value is the "empty"
@@ -134,27 +135,28 @@ type SourceConf struct {
 func (ss *SourceConf) UnmarshalYAML(
 	unmarshal func(interface{}) error) (err error) {
 	var aux struct {
-		Name         string        `yaml:"name"`
-		OutDir       string        `yaml:"out-dir"`
-		LogDir       string        `yaml:"logout-dir"`
-		Threads      int           `yaml:"threads"`
-		CacheAge     time.Duration `yaml:"cache-age"`
-		MinAge       time.Duration `yaml:"min-age"`
-		MaxAge       time.Duration `yaml:"max-age"`
-		ScanDelay    time.Duration `yaml:"scan-delay"`
-		Timeout      time.Duration `yaml:"timeout"`
-		BinSize      string        `yaml:"bin-size"`
-		Compression  int           `yaml:"compress"`
-		StatPayload  string        `yaml:"stat-payload"`
-		StatInterval time.Duration `yaml:"stat-interval"`
-		PollDelay    time.Duration `yaml:"poll-delay"`
-		PollInterval time.Duration `yaml:"poll-interval"`
-		PollAttempts int           `yaml:"poll-attempts"`
-		Target       *TargetConf   `yaml:"target"`
-		GroupBy      string        `yaml:"group-by"`
-		Include      []string      `yaml:"include"`
-		Ignore       []string      `yaml:"ignore"`
-		Tags         []*TagConf    `yaml:"tags"`
+		Name          string        `yaml:"name"`
+		OutDir        string        `yaml:"out-dir"`
+		LogDir        string        `yaml:"logout-dir"`
+		Threads       int           `yaml:"threads"`
+		CacheAge      time.Duration `yaml:"cache-age"`
+		MinAge        time.Duration `yaml:"min-age"`
+		MaxAge        time.Duration `yaml:"max-age"`
+		ScanDelay     time.Duration `yaml:"scan-delay"`
+		Timeout       time.Duration `yaml:"timeout"`
+		BinSize       string        `yaml:"bin-size"`
+		Compression   int           `yaml:"compress"`
+		StatPayload   string        `yaml:"stat-payload"`
+		StatInterval  time.Duration `yaml:"stat-interval"`
+		PollDelay     time.Duration `yaml:"poll-delay"`
+		PollInterval  time.Duration `yaml:"poll-interval"`
+		PollAttempts  int           `yaml:"poll-attempts"`
+		Target        *TargetConf   `yaml:"target"`
+		GroupBy       string        `yaml:"group-by"`
+		IncludeHidden string        `yaml:"include-hidden"`
+		Include       []string      `yaml:"include"`
+		Ignore        []string      `yaml:"ignore"`
+		Tags          []*TagConf    `yaml:"tags"`
 	}
 	if err = unmarshal(&aux); err != nil {
 		return
@@ -191,6 +193,14 @@ func (ss *SourceConf) UnmarshalYAML(
 		if ss.GroupBy, err = regexp.Compile(aux.GroupBy); err != nil {
 			return
 		}
+	}
+	switch {
+	case strings.ToLower(aux.IncludeHidden) == "true":
+		ss.IncludeHidden = true
+		break
+	case strings.ToLower(aux.IncludeHidden) == "false":
+		ss.IncludeHidden = false
+		break
 	}
 	var patterns []*regexp.Regexp
 	for _, s := range append(aux.Include, aux.Ignore...) {
