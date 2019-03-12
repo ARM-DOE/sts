@@ -895,7 +895,7 @@ func (s *Stage) buildCache(from time.Time) {
 		s.cacheLock.RLock()
 		defer s.cacheLock.RUnlock()
 		log.Debug("Cache build request:", s.name, s.cacheTime, t1)
-		return !s.cacheTime.IsZero() && s.cacheTime.Before(t1)
+		return !s.cacheTime.IsZero() && (s.cacheTime.Before(t1) || s.cacheTime.Equal(t1))
 	}(s, from) {
 		return
 	}
@@ -935,8 +935,8 @@ func (s *Stage) buildCache(from time.Time) {
 	}, from, cacheTime)
 	if !first.IsZero() {
 		s.cacheTimes = append(s.cacheTimes, now)
-		s.cacheTime = from
 	}
+	s.cacheTime = from
 }
 
 func (s *Stage) getCacheStartTime() time.Time {

@@ -211,7 +211,7 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 		var file sts.File
 		file, err = store.Sync(f)
 		if store.IsNotExist(err) {
-			cache.Done(f.GetName())
+			cache.Done(f.GetName(), nil)
 			return false
 		} else if err != nil {
 			log.Error("Failed to stat cached file:", f.GetPath(), err.Error())
@@ -402,6 +402,10 @@ func (broker *Broker) scan() []sts.Hashed {
 				continue
 			}
 		}
+		if file.GetSize() == 0 {
+			log.Debug("Skipping zero-length file:", file.GetName())
+			continue
+		}
 		wrapped[i] = &hashFile{
 			File: file,
 		}
@@ -409,6 +413,17 @@ func (broker *Broker) scan() []sts.Hashed {
 	}
 	wrapped = wrapped[:i]
 	cache.Iterate(func(cached sts.Cached) bool {
+		// Remove any that no longer exist (.nfs* files, for example)
+		if !cached.IsDone() && time.Unix(cached.GetTime(), 0).Before(age.Add(-1*24*time.Hour)) {
+			// Only check files that are not "done" and that have a mod time
+			// before the cache age boundary minus 24 hours
+			if _, err := store.Sync(cached); store.IsNotExist(err) {
+				log.Info("No longer sendable:", cached.GetName())
+				cache.Remove(cached.GetName())
+				return false
+			}
+			log.Info("Potentially stuck file:", cached.GetName())
+		}
 		switch {
 		// Add any that might have failed the hash calculation last time
 		case cached.GetHash() == "":
@@ -429,7 +444,6 @@ func (broker *Broker) scan() []sts.Hashed {
 
 			log.Error(err)
 		}
-
 		if n == len(wrapped) {
 			ready = wrapped
 		}
@@ -447,7 +461,6 @@ func (broker *Broker) scan() []sts.Hashed {
 		log.Error(err)
 		return nil
 	}
-
 	return ready
 }
 
@@ -461,7 +474,7 @@ func (broker *Broker) hashFiles(opener sts.Open, in <-chan []sts.Hashed, wg *syn
 			log.Debug(fmt.Sprintf("HASHing %s ...", file.GetName()))
 			fh, err = opener(file)
 			if err != nil {
-				log.Error(err)
+				log.Error("Failed to generate hash:", err)
 				continue
 			}
 			file.(*hashFile).hash, err = fileutil.ReadableMD5(fh)
@@ -660,6 +673,7 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 					file); f != nil || err != nil {
 					// If the file changed, it will get picked up again
 					// automatically, so we can just ignore it
+					log.Info("Ignoring changed file in payload:", binned.GetName())
 					payload.Remove(binned)
 				}
 			}
@@ -912,11 +926,17 @@ func (broker *Broker) finish(file sts.Polled) {
 		cached := broker.Conf.Cache.Get(file.GetName())
 		tagName := broker.Conf.Tagger(file.GetName())
 		tag := broker.tagMap[tagName]
-		if tag != nil && tag.Delete {
-			// Go ahead and delete the file--we'll clean the cache up later
-			broker.Conf.Store.Remove(cached)
-		}
-		broker.Conf.Cache.Done(file.GetName())
+		// Make marking done and file removal a single transaction so that we
+		// keep the cache in sync with the file system.  Without it, it's
+		// possible (but not likely) that the cache could be written with a
+		// file in the "done" state but wasn't cleaned up, which means it
+		// would eventually be removed from the cache (age off) and then get
+		// picked up again to be sent redundantly.
+		broker.Conf.Cache.Done(file.GetName(), func() {
+			if tag != nil && tag.Delete {
+				broker.Conf.Store.Remove(cached)
+			}
+		})
 	default:
 		log.Debug("Trying again:", file.GetName())
 		broker.chRetry <- file
@@ -940,7 +960,7 @@ func (broker *Broker) startRetry(wg *sync.WaitGroup) {
 		if err != nil {
 			log.Error(err)
 			if store.IsNotExist(err) {
-				cache.Done(file.GetName())
+				cache.Done(file.GetName(), nil)
 			}
 			continue
 		}

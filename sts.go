@@ -80,7 +80,7 @@ type FileCache interface {
 	Iterate(func(Cached) bool)
 	Get(string) Cached
 	Add(Hashed)
-	Done(string)
+	Done(name string, whileLocked func())
 	Reset(string)
 	Remove(string)
 	Persist(boundary time.Time) error

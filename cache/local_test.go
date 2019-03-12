@@ -51,14 +51,14 @@ func TestJSON(t *testing.T) {
 	if !cache.Boundary().Equal(boundary) {
 		t.Error("Boundary time not correct")
 	}
-	cache.Done("bogus")
+	cache.Done("bogus", func() {})
 	cache.Remove("bogus")
 	for i := 0; i < n; i++ {
 		if cache.Get(names[i]) == nil {
 			t.Fatal("Should exist:", names[i])
 		}
 		done := func(name string) {
-			cache.Done(name)
+			cache.Done(name, func() {})
 		}
 		go done(names[i])
 		go done(names[i])

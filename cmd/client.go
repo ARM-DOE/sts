@@ -112,6 +112,7 @@ func (c *clientApp) init() (err error) {
 	store := &store.Local{
 		Root:           c.conf.OutDir,
 		MinAge:         c.conf.MinAge,
+		IncludeHidden:  c.conf.IncludeHidden,
 		Include:        c.conf.Include,
 		Ignore:         c.conf.Ignore,
 		FollowSymlinks: c.dirOutFollow,

@@ -19,6 +19,11 @@ mkdir -p $STS_HOME/data/out/stsin-1
 mkdir -p $STS_HOME/data/out/stsin-2
 tar -C $STS_HOME/data/out/stsin-1 -xzf $PWD/$basedir/clean.tgz
 
+mkdir -p $STS_HOME/data/out/stsin-1/newdir
+touch $STS_HOME/data/out/stsin-1/newdir/betterignore
+echo "some content" > $STS_HOME/data/out/stsin-1/newdir/.betterignore
+echo "some content" > $STS_HOME/data/out/stsin-1/newdir/bettersend
+
 # For testing a symbolically linked file:
 # mv $STS_HOME/data/out/stsin-1/info/nsastsC1.20130806.134501.asc $STS_HOME/data/out
 # mkdir -p $STS_HOME/data/out/stsin-2/info
@@ -37,7 +42,7 @@ tar -C $STS_HOME/data/out/stsin-1 -xzf $PWD/$basedir/clean.tgz
 echo "Running in background..."
 $cmd > /dev/null &
 
-sleep 0.5 # Wait for it do some stuff.
+sleep 8 # Wait for it do some stuff.
 
 echo "Simulating crash..."
 pkill $exe

@@ -8,11 +8,12 @@ if [ -z ${STS_HOME+x} ]; then
 fi
 
 bin="$GOPATH/bin/sts"
-cmd_server1="$bin$VSERVER1 --debug --mode=in"
-cmd_client1="$bin$VCLIENT1 --debug --mode=out --loop"
+debug=""
+cmd_server1="$bin$VSERVER1 $debug--mode=in"
+cmd_client1="$bin$VCLIENT1 $debug--mode=out --loop"
 
-cmd_server2="$bin$VSERVER2 --debug --mode=in"
-cmd_client2="$bin$VCLIENT2 --debug --mode=out --loop"
+cmd_server2="$bin$VSERVER2 $debug--mode=in"
+cmd_client2="$bin$VCLIENT2 $debug--mode=out --loop"
 
 echo "Cleaning last run..."
 rm -rf $STS_HOME
