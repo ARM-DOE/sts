@@ -118,9 +118,12 @@ type Recover func() ([]*Partial, error)
 // Open is a generic function for creating a Readable handle to a file
 type Open func(File) (Readable, error)
 
+// Rename is a generic function for generating a new name for a file
+type Rename func(File) string
+
 // PayloadFactory creates a Payload instance based on the input max size (in
 // bytes) and Open function
-type PayloadFactory func(int64, Open) Payload
+type PayloadFactory func(int64, Open, Rename) Payload
 
 // Transmit is the function type for actually sending payload over the wire (or
 // whatever).  It returns some representation of how much was successfully
@@ -203,6 +206,7 @@ type Binnable interface {
 // Binned is the interface for a single file chunk that is part of a payload
 type Binned interface {
 	GetName() string
+	GetRenamed() string
 	GetPrev() string
 	GetFileTime() int64
 	GetFileHash() string
@@ -238,13 +242,14 @@ type PayloadDecoder interface {
 // Partial is the JSON-encodable struct containing metadata for a single file
 // on the receiving end
 type Partial struct {
-	Name   string       `json:"path"`
-	Prev   string       `json:"prev"`
-	Time   int64        `json:"time"`
-	Size   int64        `json:"size"`
-	Hash   string       `json:"hash"`
-	Source string       `json:"src"`
-	Parts  []*ByteRange `json:"parts"`
+	Name    string       `json:"path"`
+	Renamed string       `json:"renamed"`
+	Prev    string       `json:"prev"`
+	Time    int64        `json:"time"`
+	Size    int64        `json:"size"`
+	Hash    string       `json:"hash"`
+	Source  string       `json:"src"`
+	Parts   []*ByteRange `json:"parts"`
 }
 
 // ByteRange is the JSON-encodable struct used by the Partial for tracking a

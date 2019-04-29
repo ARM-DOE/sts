@@ -18,14 +18,15 @@ import (
 const binFluff = 0.1
 
 type fileMeta struct {
-	Name string `json:"n"`
-	Prev string `json:"p"`
-	Hash string `json:"f"`
-	Time int64  `json:"t"`
-	Size int64  `json:"s"`
-	Beg  int64  `json:"b"`
-	End  int64  `json:"e"`
-	send int64
+	Name    string `json:"n"`
+	Renamed string `json:"r"`
+	Prev    string `json:"p"`
+	Hash    string `json:"f"`
+	Time    int64  `json:"t"`
+	Size    int64  `json:"s"`
+	Beg     int64  `json:"b"`
+	End     int64  `json:"e"`
+	send    int64
 }
 
 func (f *fileMeta) GetName() string {
@@ -94,16 +95,18 @@ type Bin struct {
 	bytes    int64   // Allocated bytes in the Bin
 	times    map[int]time.Time
 	opener   sts.Open
+	renamer  sts.Rename
 }
 
 // NewBin creates a new Bin reference
-func NewBin(size int64, opener sts.Open) sts.Payload {
+func NewBin(size int64, opener sts.Open, renamer sts.Rename) sts.Payload {
 	bin := &Bin{
 		capacity: size,
 		fluff:    int64(float64(size) * binFluff),
 		parts:    make([]*part, 0),
 		times:    make(map[int]time.Time),
 		opener:   opener,
+		renamer:  renamer,
 	}
 	bin.setTime(binCreated)
 	return bin
@@ -192,7 +195,7 @@ func (bin *Bin) Split(n int) sts.Payload {
 	for i := n; i < len(bin.parts); i++ {
 		nb += bin.parts[i].end - bin.parts[i].beg
 	}
-	b := NewBin(nb, bin.opener).(*Bin)
+	b := NewBin(nb, bin.opener, bin.renamer).(*Bin)
 	b.capacity = nb
 	b.bytes = nb
 	b.parts = bin.parts[n:]
@@ -231,6 +234,9 @@ func (bin *Bin) EncodeHeader() (byteMeta []byte, err error) {
 			send: part.GetSendSize(),
 			Beg:  part.beg,
 			End:  part.end,
+		}
+		if bin.renamer != nil {
+			meta[i].Renamed = bin.renamer(part)
 		}
 	}
 	byteMeta, err = json.Marshal(meta)

@@ -11,6 +11,7 @@ import (
 	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/cache"
 	"code.arm.gov/dataflow/sts/client"
+	"code.arm.gov/dataflow/sts/fileutil"
 	"code.arm.gov/dataflow/sts/http"
 	"code.arm.gov/dataflow/sts/log"
 	"code.arm.gov/dataflow/sts/payload"
@@ -122,6 +123,24 @@ func (c *clientApp) init() (err error) {
 	if err != nil {
 		return
 	}
+	var pathToNewName sts.Rename
+	if len(c.conf.Rename) > 0 {
+		extraVars := map[string]string{
+			"__source": c.conf.Name,
+		}
+		maps := make([]*fileutil.PathMap, len(c.conf.Rename))
+		for i, r := range c.conf.Rename {
+			maps[i] = &fileutil.PathMap{
+				Pattern:   r.Pattern,
+				Template:  r.Template,
+				ExtraVars: extraVars,
+			}
+		}
+		mapper := &fileutil.PathMapper{
+			maps: maps,
+		}
+		pathToNewName = mapper.Translate
+	}
 	qtags := make([]*queue.Tag, len(c.conf.Tags))
 	for i, t := range c.conf.Tags {
 		name := ""
@@ -201,6 +220,7 @@ func (c *clientApp) init() (err error) {
 			TxRecoverer:  httpClient.RecoverTransmission,
 			Validator:    httpClient.Validate,
 			Logger:       log.NewSend(c.conf.LogDir),
+			Renamer:      pathToNewName,
 			Tagger:       nameToTag,
 			CacheAge:     c.conf.CacheAge,
 			ScanDelay:    c.conf.ScanDelay,

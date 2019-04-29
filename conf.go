@@ -120,6 +120,7 @@ type SourceConf struct {
 	IncludeHidden bool
 	Include       []*regexp.Regexp
 	Ignore        []*regexp.Regexp
+	Rename        []*MappingConf
 	Tags          []*TagConf
 
 	// We have to do this mumbo jumbo if we ever want a false value to
@@ -135,28 +136,29 @@ type SourceConf struct {
 func (ss *SourceConf) UnmarshalYAML(
 	unmarshal func(interface{}) error) (err error) {
 	var aux struct {
-		Name          string        `yaml:"name"`
-		OutDir        string        `yaml:"out-dir"`
-		LogDir        string        `yaml:"logout-dir"`
-		Threads       int           `yaml:"threads"`
-		CacheAge      time.Duration `yaml:"cache-age"`
-		MinAge        time.Duration `yaml:"min-age"`
-		MaxAge        time.Duration `yaml:"max-age"`
-		ScanDelay     time.Duration `yaml:"scan-delay"`
-		Timeout       time.Duration `yaml:"timeout"`
-		BinSize       string        `yaml:"bin-size"`
-		Compression   int           `yaml:"compress"`
-		StatPayload   string        `yaml:"stat-payload"`
-		StatInterval  time.Duration `yaml:"stat-interval"`
-		PollDelay     time.Duration `yaml:"poll-delay"`
-		PollInterval  time.Duration `yaml:"poll-interval"`
-		PollAttempts  int           `yaml:"poll-attempts"`
-		Target        *TargetConf   `yaml:"target"`
-		GroupBy       string        `yaml:"group-by"`
-		IncludeHidden string        `yaml:"include-hidden"`
-		Include       []string      `yaml:"include"`
-		Ignore        []string      `yaml:"ignore"`
-		Tags          []*TagConf    `yaml:"tags"`
+		Name          string         `yaml:"name"`
+		OutDir        string         `yaml:"out-dir"`
+		LogDir        string         `yaml:"logout-dir"`
+		Threads       int            `yaml:"threads"`
+		CacheAge      time.Duration  `yaml:"cache-age"`
+		MinAge        time.Duration  `yaml:"min-age"`
+		MaxAge        time.Duration  `yaml:"max-age"`
+		ScanDelay     time.Duration  `yaml:"scan-delay"`
+		Timeout       time.Duration  `yaml:"timeout"`
+		BinSize       string         `yaml:"bin-size"`
+		Compression   int            `yaml:"compress"`
+		StatPayload   string         `yaml:"stat-payload"`
+		StatInterval  time.Duration  `yaml:"stat-interval"`
+		PollDelay     time.Duration  `yaml:"poll-delay"`
+		PollInterval  time.Duration  `yaml:"poll-interval"`
+		PollAttempts  int            `yaml:"poll-attempts"`
+		Target        *TargetConf    `yaml:"target"`
+		GroupBy       string         `yaml:"group-by"`
+		IncludeHidden string         `yaml:"include-hidden"`
+		Include       []string       `yaml:"include"`
+		Ignore        []string       `yaml:"ignore"`
+		Rename        []*MappingConf `yaml:"rename"`
+		Tags          []*TagConf     `yaml:"tags"`
 	}
 	if err = unmarshal(&aux); err != nil {
 		return
@@ -212,7 +214,32 @@ func (ss *SourceConf) UnmarshalYAML(
 	}
 	ss.Include = patterns[0:len(aux.Include)]
 	ss.Ignore = patterns[len(aux.Include):len(patterns)]
+	ss.Rename = aux.Rename
 	ss.Tags = aux.Tags
+	return
+}
+
+// MappingConf is the struct for indicating what path pattern should be mapped
+// to a different target name based on the associated template string.
+type MappingConf struct {
+	Pattern  *regexp.Regexp
+	Template string
+}
+
+// UnmarshalYAML implements the Unmarshaler interface for handling custom
+// member(s): https://godoc.org/gopkg.in/yaml.v2
+func (m *MappingConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
+	var aux struct {
+		Pattern  string `yaml:"from"`
+		Template string `yaml:"to"`
+	}
+	if err = unmarshal(&aux); err != nil {
+		return
+	}
+	if m.Pattern, err = regexp.Compile(aux.Pattern); err != nil {
+		return
+	}
+	m.Template = aux.Template
 	return
 }
 

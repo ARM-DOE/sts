@@ -31,7 +31,8 @@ type Conf struct {
 	Logger       sts.SendLogger          // The logger used to log completed files
 
 	// Helpers
-	Tagger sts.Translate // Takes a file name and provides a tag name
+	Tagger  sts.Translate // Takes a file name and provides a tag name
+	Renamer sts.Rename    // Takes a file and provides a new target file name
 
 	// Options
 	CacheAge     time.Duration    // How long to keep files in the cache after being sent
@@ -616,7 +617,8 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 		if payload == nil {
 			payload = broker.Conf.BuildPayload(
 				int64(broker.Conf.PayloadSize),
-				broker.Conf.Store.GetOpener())
+				broker.Conf.Store.GetOpener(),
+				broker.Conf.Rename)
 		}
 		log.Debug("Payload:", current.GetName(), payload.IsFull())
 		added := payload.Add(current)
