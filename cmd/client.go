@@ -123,7 +123,7 @@ func (c *clientApp) init() (err error) {
 	if err != nil {
 		return
 	}
-	var pathToNewName sts.Rename
+	var fileToNewName sts.Rename
 	if len(c.conf.Rename) > 0 {
 		extraVars := map[string]string{
 			"__source": c.conf.Name,
@@ -137,9 +137,11 @@ func (c *clientApp) init() (err error) {
 			}
 		}
 		mapper := &fileutil.PathMapper{
-			maps: maps,
+			Maps: maps,
 		}
-		pathToNewName = mapper.Translate
+		fileToNewName = func(file sts.File) string {
+			return mapper.Translate(file.GetPath())
+		}
 	}
 	qtags := make([]*queue.Tag, len(c.conf.Tags))
 	for i, t := range c.conf.Tags {
@@ -220,7 +222,7 @@ func (c *clientApp) init() (err error) {
 			TxRecoverer:  httpClient.RecoverTransmission,
 			Validator:    httpClient.Validate,
 			Logger:       log.NewSend(c.conf.LogDir),
-			Renamer:      pathToNewName,
+			Renamer:      fileToNewName,
 			Tagger:       nameToTag,
 			CacheAge:     c.conf.CacheAge,
 			ScanDelay:    c.conf.ScanDelay,
