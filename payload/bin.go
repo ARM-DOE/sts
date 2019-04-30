@@ -33,6 +33,10 @@ func (f *fileMeta) GetName() string {
 	return f.Name
 }
 
+func (f *fileMeta) GetRenamed() string {
+	return f.Renamed
+}
+
 func (f *fileMeta) GetPrev() string {
 	return f.Prev
 }
@@ -58,9 +62,14 @@ func (f *fileMeta) GetSendSize() int64 {
 }
 
 type part struct {
-	sts.Binnable       // The file for which this part applies
-	beg          int64 // Beginning byte in the part
-	end          int64 // Ending byte in the part
+	sts.Binnable        // The file for which this part applies
+	renamed      string // The new name
+	beg          int64  // Beginning byte in the part
+	end          int64  // Ending byte in the part
+}
+
+func (p *part) GetRenamed() string {
+	return p.renamed
 }
 
 func (p *part) GetFileSize() int64 {
@@ -158,6 +167,9 @@ func (bin *Bin) Add(chunk sts.Binnable) (added bool) {
 			beg:      beg,
 			end:      end,
 		}
+		if bin.renamer != nil {
+			p.renamed = bin.renamer(chunk)
+		}
 		bin.parts = append(bin.parts, p)
 		bin.bytes += bytes
 		chunk.AddAlloc(bytes)
@@ -226,17 +238,15 @@ func (bin *Bin) EncodeHeader() (byteMeta []byte, err error) {
 	for i := 0; i < len(bin.parts); i++ {
 		part := bin.parts[i]
 		meta[i] = &fileMeta{
-			Name: part.GetName(),
-			Prev: part.GetPrev(),
-			Hash: part.GetFileHash(),
-			Time: part.GetFileTime(),
-			Size: part.GetFileSize(),
-			send: part.GetSendSize(),
-			Beg:  part.beg,
-			End:  part.end,
-		}
-		if bin.renamer != nil {
-			meta[i].Renamed = bin.renamer(part)
+			Name:    part.GetName(),
+			Renamed: part.GetRenamed(),
+			Prev:    part.GetPrev(),
+			Hash:    part.GetFileHash(),
+			Time:    part.GetFileTime(),
+			Size:    part.GetFileSize(),
+			send:    part.GetSendSize(),
+			Beg:     part.beg,
+			End:     part.end,
 		}
 	}
 	byteMeta, err = json.Marshal(meta)

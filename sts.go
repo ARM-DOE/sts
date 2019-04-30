@@ -54,7 +54,7 @@ type SendLogger interface {
 // ReceiveLogger is the interface for logging on the incoming side
 type ReceiveLogger interface {
 	Parse(
-		handler func(name, hash string, size int64, t time.Time) bool,
+		handler func(name, renamed, hash string, size int64, t time.Time) bool,
 		after time.Time,
 		before time.Time) bool
 	Received(file Received)
@@ -206,6 +206,7 @@ type Binnable interface {
 // Binned is the interface for a single file chunk that is part of a payload
 type Binned interface {
 	GetName() string
+	GetRenamed() string
 	GetPrev() string
 	GetFileTime() int64
 	GetFileHash() string
@@ -287,6 +288,7 @@ type Polled interface {
 // Received is the interface a file must implement to be logged as received
 type Received interface {
 	GetName() string
+	GetRenamed() string
 	GetSize() int64
 	GetHash() string
 }

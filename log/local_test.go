@@ -77,7 +77,7 @@ func TestReceive(t *testing.T) {
 			defer wg.Done()
 			lh.Received(&mock.File{
 				Name: name,
-				Size: 1024 * 1024 * int64(i),
+				Size: 1024 * 1024 * int64(i+1),
 				Hash: fileutil.StringMD5(name),
 			})
 		}(logger, i)
@@ -91,7 +91,7 @@ func TestReceive(t *testing.T) {
 	}
 	parsed := 0
 	for host, logger = range byHost {
-		logger.Parse(func(name, hash string, size int64, r time.Time) bool {
+		logger.Parse(func(name, renamed, hash string, size int64, r time.Time) bool {
 			parsed++
 			if size == 0 || r.IsZero() {
 				t.Error("Bad size/time:", size, r)

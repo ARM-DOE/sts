@@ -46,6 +46,7 @@ const (
 type finalFile struct {
 	path        string
 	name        string
+	renamed     string
 	prev        string
 	size        int64
 	hash        string
@@ -61,6 +62,10 @@ type finalFile struct {
 
 func (f *finalFile) GetName() string {
 	return f.name
+}
+
+func (f *finalFile) GetRenamed() string {
+	return f.renamed
 }
 
 func (f *finalFile) GetSize() int64 {
@@ -110,22 +115,22 @@ func New(name, rootDir, targetDir string, logger sts.ReceiveLogger) *Stage {
 	return s
 }
 
-func (s *Stage) getWriteLock(path string) *sync.RWMutex {
+func (s *Stage) getWriteLock(key string) *sync.RWMutex {
 	s.writeLock.Lock()
 	defer s.writeLock.Unlock()
 	var m *sync.RWMutex
 	var exists bool
-	if m, exists = s.writeLocks[path]; !exists {
+	if m, exists = s.writeLocks[key]; !exists {
 		m = &sync.RWMutex{}
-		s.writeLocks[path] = m
+		s.writeLocks[key] = m
 	}
 	return m
 }
 
-func (s *Stage) delWriteLock(path string) {
+func (s *Stage) delWriteLock(key string) {
 	s.writeLock.Lock()
 	defer s.writeLock.Unlock()
-	delete(s.writeLocks, path)
+	delete(s.writeLocks, key)
 	s.lastIn = time.Now()
 	log.Debug("Write Locks:", s.name, len(s.writeLocks))
 }
@@ -516,11 +521,12 @@ func (s *Stage) Stop(wg *sync.WaitGroup) {
 
 func (s *Stage) partialToFinal(file *sts.Partial) *finalFile {
 	return &finalFile{
-		path: filepath.Join(s.rootDir, file.Name),
-		name: file.Name,
-		size: file.Size,
-		hash: file.Hash,
-		prev: file.Prev,
+		path:    filepath.Join(s.rootDir, file.Name),
+		name:    file.Name,
+		renamed: file.Renamed,
+		size:    file.Size,
+		hash:    file.Hash,
+		prev:    file.Prev,
 	}
 }
 
@@ -722,7 +728,11 @@ func (s *Stage) putFileAway(file *finalFile) (err error) {
 	file.logged = time.Now()
 
 	// Move it
-	targetPath := filepath.Join(s.targetDir, file.name)
+	targetName := file.name
+	if file.renamed != "" {
+		targetName = file.renamed
+	}
+	targetPath := filepath.Join(s.targetDir, targetName)
 	os.MkdirAll(filepath.Dir(targetPath), 0775)
 	if err = fileutil.Move(file.path+waitExt, targetPath); err != nil {
 		err = fmt.Errorf(
@@ -908,7 +918,7 @@ func (s *Stage) buildCache(from time.Time) {
 	log.Info("Building cache from logs:", s.name, from)
 	var first time.Time
 	now := time.Now()
-	s.logger.Parse(func(name, hash string, size int64, t time.Time) bool {
+	s.logger.Parse(func(name, renamed, hash string, size int64, t time.Time) bool {
 		if t.After(cacheTime) {
 			return true
 		}
@@ -921,13 +931,14 @@ func (s *Stage) buildCache(from time.Time) {
 			return false
 		}
 		file := &finalFile{
-			path:   path,
-			name:   name,
-			hash:   hash,
-			size:   size,
-			time:   now,
-			logged: t,
-			state:  stateLogged,
+			path:    path,
+			name:    name,
+			renamed: renamed,
+			hash:    hash,
+			size:    size,
+			time:    now,
+			logged:  t,
+			state:   stateLogged,
 		}
 		s.cache[path] = file
 		log.Debug("Cached from log:", s.name, file.name)

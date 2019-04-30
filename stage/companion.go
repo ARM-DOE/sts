@@ -18,11 +18,12 @@ func newLocalCompanion(path string, file *sts.Partial) (cmp *sts.Partial, err er
 		return
 	}
 	cmp = &sts.Partial{
-		Name:   file.Name,
-		Prev:   file.Prev,
-		Size:   file.Size,
-		Hash:   file.Hash,
-		Source: file.Source,
+		Name:    file.Name,
+		Renamed: file.Renamed,
+		Prev:    file.Prev,
+		Size:    file.Size,
+		Hash:    file.Hash,
+		Source:  file.Source,
 	}
 	return
 }

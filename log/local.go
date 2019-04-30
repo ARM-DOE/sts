@@ -71,8 +71,9 @@ func (r *Receive) Received(file sts.Received) {
 	defer r.lock.Unlock()
 	r.logger.log(
 		fmt.Sprintf(
-			"%s:%s:%d:%d:",
+			"%s:%s:%s:%d:%d:",
 			file.GetName(),
+			file.GetRenamed(),
 			file.GetHash(),
 			file.GetSize(),
 			time.Now().Unix()))
@@ -88,7 +89,7 @@ func (r *Receive) WasReceived(relPath string, after time.Time, before time.Time)
 // Parse reads the log files in the provided time range and calls the handler
 // on each record
 func (r *Receive) Parse(
-	handler func(name, hash string, size int64, t time.Time) bool,
+	handler func(name, renamed, hash string, size int64, t time.Time) bool,
 	after time.Time, before time.Time) bool {
 
 	r.lock.RLock()
@@ -98,9 +99,17 @@ func (r *Receive) Parse(
 		if len(parts) < 4 {
 			return false
 		}
-		b, _ := strconv.ParseInt(parts[2], 10, 64)
-		t, _ := strconv.ParseInt(parts[3], 10, 64)
-		return handler(parts[0], parts[1], b, time.Unix(t, 0))
+		name := parts[0]
+		renamed := ""
+		i := 1
+		if len(parts) > 4 {
+			renamed = parts[i]
+			i++
+		}
+		hash := parts[i]
+		b, _ := strconv.ParseInt(parts[i+1], 10, 64)
+		t, _ := strconv.ParseInt(parts[i+2], 10, 64)
+		return handler(name, renamed, hash, b, time.Unix(t, 0))
 	}, after, before)
 	return false
 }

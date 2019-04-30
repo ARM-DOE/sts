@@ -308,12 +308,13 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		file := &sts.Partial{
-			Name:   parts[index].GetName(),
-			Prev:   parts[index].GetPrev(),
-			Size:   parts[index].GetFileSize(),
-			Time:   parts[index].GetFileTime(),
-			Hash:   parts[index].GetFileHash(),
-			Source: source,
+			Name:    parts[index].GetName(),
+			Renamed: parts[index].GetRenamed(),
+			Prev:    parts[index].GetPrev(),
+			Size:    parts[index].GetFileSize(),
+			Time:    parts[index].GetFileTime(),
+			Hash:    parts[index].GetFileHash(),
+			Source:  source,
 		}
 		beg, end := parts[index].GetSlice()
 		file.Parts = append(file.Parts, &sts.ByteRange{

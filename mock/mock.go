@@ -14,6 +14,7 @@ import (
 // File is meant to implement as many of the file-typed interfaces as possible
 type File struct {
 	Name     string
+	Renamed  string
 	Path     string
 	Size     int64
 	Time     time.Time
@@ -32,6 +33,11 @@ func (f *File) GetPath() string {
 // GetName gets the name part of the path
 func (f *File) GetName() string {
 	return f.Name
+}
+
+// GetRenamed gets the new name, if applicable (empty otherwise)
+func (f *File) GetRenamed() string {
+	return f.Renamed
 }
 
 // GetSize gets the file size
