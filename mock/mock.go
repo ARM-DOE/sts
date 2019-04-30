@@ -239,7 +239,7 @@ func (c *Cache) Add(file sts.Hashed) {
 }
 
 // Done marks the file by the given key as done
-func (c *Cache) Done(key string, whileLocked func()) {
+func (c *Cache) Done(key string, whileLocked func(sts.Cached)) {
 	f := c.Get(key)
 	if f == nil {
 		return
@@ -252,7 +252,7 @@ func (c *Cache) Done(key string, whileLocked func()) {
 	c.dirty = true
 	f.(*File).Done = true
 	if whileLocked != nil {
-		whileLocked()
+		whileLocked(f)
 	}
 }
 

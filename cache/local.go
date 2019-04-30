@@ -133,7 +133,7 @@ func (j *JSON) Add(file sts.Hashed) {
 }
 
 // Done marks the file by the given key as done
-func (j *JSON) Done(key string, whileLocked func()) {
+func (j *JSON) Done(key string, whileLocked func(sts.Cached)) {
 	f := j.Get(key)
 	if f == nil {
 		return
@@ -146,7 +146,7 @@ func (j *JSON) Done(key string, whileLocked func()) {
 	j.dirty = true
 	f.(*cacheFile).Done = true
 	if whileLocked != nil {
-		whileLocked()
+		whileLocked(f)
 	}
 }
 

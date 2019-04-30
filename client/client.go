@@ -923,7 +923,6 @@ func (broker *Broker) finish(file sts.Polled) {
 	switch {
 	case file.Waiting() || file.Received():
 		log.Debug("Validated:", file.GetName())
-		cached := broker.Conf.Cache.Get(file.GetName())
 		tagName := broker.Conf.Tagger(file.GetName())
 		tag := broker.tagMap[tagName]
 		// Make marking done and file removal a single transaction so that we
@@ -932,7 +931,7 @@ func (broker *Broker) finish(file sts.Polled) {
 		// file in the "done" state but wasn't cleaned up, which means it
 		// would eventually be removed from the cache (age off) and then get
 		// picked up again to be sent redundantly.
-		broker.Conf.Cache.Done(file.GetName(), func() {
+		broker.Conf.Cache.Done(file.GetName(), func(cached sts.Cached) {
 			if tag != nil && tag.Delete {
 				broker.Conf.Store.Remove(cached)
 			}
