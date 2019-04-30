@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"code.arm.gov/dataflow/sts"
 )
 
 // PathMap houses a single translation from a pattern to a string template used
@@ -68,7 +70,8 @@ func (pm *PathMap) Translate(
 
 // PathMapper houses an ordered list of translations for one path to another
 type PathMapper struct {
-	Maps []*PathMap
+	Maps   []*PathMap
+	Logger sts.Logger
 }
 
 // Translate takes an input path and returns the first valid output name

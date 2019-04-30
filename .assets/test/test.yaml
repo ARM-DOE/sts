@@ -34,6 +34,9 @@ OUT: # Outgoing configuration
           priority  : 2
         - pattern   : ^collection/
           priority  : 1
+      rename:
+        - from: '/(?P<prefix>[^/]+)\.(?P<YMD>\d{8})\.(?P<HMS>\d{6})\.(?P<rest>[^/]+)$'
+          to: '{{.prefix}}/{{.YMD}}-{{.HMS}}.{{.rest}}'
     - name: stsout-2
       target:
         name: stsin-2

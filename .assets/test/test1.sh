@@ -42,7 +42,7 @@ echo "some content" > $STS_HOME/data/out/stsin-1/newdir/bettersend
 echo "Running in background..."
 $cmd > /dev/null &
 
-sleep 8 # Wait for it do some stuff.
+sleep 10 # Wait for it do some stuff.
 
 echo "Simulating crash..."
 pkill $exe

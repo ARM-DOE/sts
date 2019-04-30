@@ -130,14 +130,17 @@ func (c *clientApp) init() (err error) {
 		}
 		maps := make([]*fileutil.PathMap, len(c.conf.Rename))
 		for i, r := range c.conf.Rename {
+			log.Debug("Rename map found!", r.Pattern.String(), r.Template)
 			maps[i] = &fileutil.PathMap{
 				Pattern:   r.Pattern,
 				Template:  r.Template,
 				ExtraVars: extraVars,
 			}
 		}
+		log.Debug("Map count:", len(maps))
 		mapper := &fileutil.PathMapper{
-			Maps: maps,
+			Maps:   maps,
+			Logger: log.Get(),
 		}
 		fileToNewName = func(file sts.File) string {
 			return mapper.Translate(file.GetPath())

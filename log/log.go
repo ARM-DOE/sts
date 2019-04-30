@@ -21,6 +21,11 @@ func InitExternal(logger sts.Logger) {
 	std = logger
 }
 
+// Get returns the standard initialized logger if it exists
+func Get() sts.Logger {
+	return std
+}
+
 // SetDebug sets debug mode to on or off
 func SetDebug(on bool) {
 	std.(*General).setDebug(on)
