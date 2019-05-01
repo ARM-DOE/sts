@@ -14,13 +14,20 @@ import (
 )
 
 func newLocalCompanion(path string, file *sts.Partial) (cmp *sts.Partial, err error) {
-	if cmp, err = readLocalCompanion(path, file.Name); err != nil || cmp != nil {
+	cmp, err = readLocalCompanion(path, file.Name)
+	if err != nil {
+		return
+	}
+	if cmp != nil && cmp.Hash == file.Hash {
+		cmp.Time = file.Time
+		cmp.Prev = file.Prev
 		return
 	}
 	cmp = &sts.Partial{
 		Name:   file.Name,
 		Prev:   file.Prev,
 		Size:   file.Size,
+		Time:   file.Time,
 		Hash:   file.Hash,
 		Source: file.Source,
 	}
@@ -115,9 +122,17 @@ func writeCompanion(path string, cmp *sts.Partial) error {
 
 func addCompanionPart(cmp *sts.Partial, beg, end int64) {
 	j := len(cmp.Parts)
+	k := j
 	for i := 0; i < j; i++ {
 		part := cmp.Parts[i]
-		if beg >= part.End || end <= part.Beg {
+		if beg >= part.End {
+			continue
+		}
+		if end <= part.Beg {
+			if k > i {
+				// Identify where to insert new part to maintain order
+				k = i
+			}
 			continue
 		}
 		log.Debug(fmt.Sprintf(
@@ -126,9 +141,12 @@ func addCompanionPart(cmp *sts.Partial, beg, end int64) {
 		cmp.Parts[j-1], cmp.Parts[i] = cmp.Parts[i], cmp.Parts[j-1]
 		i--
 		j--
+		k--
 	}
 	cmp.Parts = cmp.Parts[:j]
-	cmp.Parts = append(cmp.Parts, &sts.ByteRange{Beg: beg, End: end})
+	cmp.Parts = append(cmp.Parts, nil)
+	copy(cmp.Parts[k+1:], cmp.Parts[k:])
+	cmp.Parts[k] = &sts.ByteRange{Beg: beg, End: end}
 }
 
 func minInt64(a, b int64) int64 {
