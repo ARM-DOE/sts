@@ -4,7 +4,7 @@ pid_main=$$
 
 basedir=$(dirname $0)
 if [ -z ${STS_TEST+x} ]; then
-    export STS_TEST=/var/tmp/sts-glut
+    export STS_HOME=/var/tmp/sts-glut
 fi
 
 bin="$GOPATH/bin/sts"
@@ -16,10 +16,10 @@ cmd_server2="$bin$VSERVER2 $debug--mode=in"
 cmd_client2="$bin$VCLIENT2 $debug--mode=out --loop"
 
 echo "Cleaning last run..."
-rm -rf $STS_TEST
-mkdir -p $STS_TEST/conf
-cp $basedir/test4.server.yaml $STS_TEST/conf/sts.in.yaml
-cp $basedir/test4.client.yaml $STS_TEST/conf/sts.out.yaml
+rm -rf $STS_HOME
+mkdir -p $STS_HOME/conf
+cp $basedir/test4.server.yaml $STS_HOME/conf/sts.in.yaml
+cp $basedir/test4.client.yaml $STS_HOME/conf/sts.out.yaml
 
 sim=(
     "stsin-1 xs       100   5000 0"
@@ -46,14 +46,14 @@ function monkey() {
     while (( count_stg < 3 || count_out < 3 )); do
         sleep 5
         if (( count_stg < 3 )); then
-            for f in `find $STS_TEST/data/stage -type f -name lg.\*.part`; do
+            for f in `find $STS_HOME/data/stage -type f -name lg.\*.part`; do
                 echo "Monkeying with $f ..."
                 dd if=/dev/urandom count=8 bs=8 of=$f conv=notrunc > /dev/null 2>&1
                 count_stg=$((count_stg+1))
             done
         fi
         if (( count_out < 3 )); then
-            for f in `find $STS_TEST/data/out -type f -name lg.\* | head -1`; do
+            for f in `find $STS_HOME/data/out -type f -name lg.\* | head -1`; do
                 echo "Monkeying with $f ..."
                 dd if=/dev/urandom count=8 bs=8 of=$f conf=notrunc > /dev/null 2>&1
                 count_out=$((count_out+1))
@@ -116,7 +116,7 @@ echo "Waiting ..."
 # Wait for the client to be done
 while true; do
     sleep 5
-    out=`find $STS_TEST/data/out -type f 2>/dev/null | sort`
+    out=`find $STS_HOME/data/out -type f 2>/dev/null | sort`
     if [ "$out" ]; then
         lines=($out)
         echo "${#lines[@]} outgoing files left ..."
@@ -129,7 +129,7 @@ done
 
 while true; do
     sleep 1
-    out=`find $STS_TEST/data/stage -type f 2>/dev/null | sort | egrep -v '.part$'`
+    out=`find $STS_HOME/data/stage -type f 2>/dev/null | sort | egrep -v '.part$'`
     if [ "$out" ]; then
         lines=($out)
         echo "${#lines[@]} stage files ..."
@@ -147,7 +147,7 @@ types=( "xs" "sm" "md" "lg" "xl" )
 
 for host in "${hosts[@]}"; do
     for type in "${types[@]}"; do
-        recvd=`grep $type. $STS_TEST/data/log/incoming_from/$host/*/*`
+        recvd=`grep $type. $STS_HOME/data/log/incoming_from/$host/*/*`
         sortd=`cat <(echo "$recvd") | sort`
         match=`diff <(cat <(echo "$recvd")) <(cat <(echo "$sortd"))`
         if [ "$match" ]; then
@@ -159,7 +159,7 @@ for host in "${hosts[@]}"; do
     done
 done
 
-sortd=`cut -d ":" -f 1 $STS_TEST/data/log/incoming_from/*/*/* | sort`
+sortd=`cut -d ":" -f 1 $STS_HOME/data/log/incoming_from/*/*/* | sort`
 uniqd=`uniq -c <(cat <(echo "$sortd")) | grep -v " 1"`
 if [ "$uniqd" ]; then
     echo "Incoming Duplicates:"
@@ -168,7 +168,7 @@ if [ "$uniqd" ]; then
     exit 0
 fi
 
-left=`find $STS_TEST/data/out -type f | sort`
+left=`find $STS_HOME/data/out -type f | sort`
 if [ "$left" ]; then
     echo "Files Left Behind:"
     cat <(echo "$left")
