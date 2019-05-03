@@ -3,12 +3,12 @@
 pid_main=$$
 
 basedir=$(dirname $0)
-if [ -z ${STS_HOME+x} ]; then
+if [ -z ${STS_TEST+x} ]; then
     export STS_HOME=/var/tmp/sts-glut
 fi
 
 bin="$GOPATH/bin/sts"
-debug=""
+debug="--debug "
 cmd_server1="$bin$VSERVER1 $debug--mode=in"
 cmd_client1="$bin$VCLIENT1 $debug--mode=out --loop"
 
@@ -41,17 +41,24 @@ pid_client=$!
 pids=( "$pid_client" "$pid_server" )
 
 function monkey() {
-    count=0
-    while true; do
-        sleep 2
-        for f in `find $STS_HOME/data/stage -type f -name lg.\*.part`; do
-            echo "Monkeying with $f ..."
-            dd if=/dev/urandom count=8 bs=8 of=$f conv=notrunc > /dev/null 2>&1
-            count=$((count+1))
-            if (( count > 2 )); then
-                return
-            fi
-        done
+    count_stg=0
+    count_out=0
+    while (( count_stg < 3 || count_out < 3 )); do
+        sleep 5
+        if (( count_stg < 3 )); then
+            for f in `find $STS_HOME/data/stage -type f -name lg.\*.part`; do
+                echo "Monkeying with $f ..."
+                dd if=/dev/urandom count=8 bs=8 of=$f conv=notrunc > /dev/null 2>&1
+                count_stg=$((count_stg+1))
+            done
+        fi
+        if (( count_out < 3 )); then
+            for f in `find $STS_HOME/data/out -type f -name lg.\* | head -1`; do
+                echo "Monkeying with $f ..."
+                dd if=/dev/urandom count=8 bs=8 of=$f conf=notrunc > /dev/null 2>&1
+                count_out=$((count_out+1))
+            done
+        fi
     done
 }
 
@@ -63,7 +70,7 @@ function ctrl_c() {
     echo "Caught signal ..."
     for pid in "${pids[@]}"; do
         echo "Stopping $pid ..."
-        kill $pid
+        kill $pid > /dev/null 2>&1
     done
     kill $pid_main
     exit 0
@@ -80,7 +87,7 @@ echo "Stopping ..."
 # Kill and restart so we can test a glut on start-up
 kill $pid_client
 kill $pid_server
-kill $monkey_pid
+kill $monkey_pid > /dev/null 2>&1
 
 # Make more data
 for args in "${sim[@]}"; do

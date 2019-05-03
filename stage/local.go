@@ -281,6 +281,8 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 		return
 	}
 
+	log.Debug("Part received:", file.Source, file.Name, part.Beg, part.End)
+
 	done := isCompanionComplete(cmp)
 	if done {
 		final := s.partialToFinal(file)
@@ -303,7 +305,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 			return
 		}
 		s.toCache(final, stateReceived)
-		log.Debug("File transmitted:", path)
+		log.Debug("File received:", cmp.Source, cmp.Name)
 		go s.processQueue(final)
 	}
 	return

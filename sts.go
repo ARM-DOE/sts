@@ -270,15 +270,14 @@ type Sent interface {
 // Pollable is the interface a file must implement to be polled by the client
 // for whether or not the server received the file successfully
 type Pollable interface {
-	GetName() string
+	Sent
 	GetPrev() string // Needed in case the file needs to be resent
 	GetStarted() time.Time
 }
 
 // Polled is the interface a file must implement as a response to being polled
 type Polled interface {
-	GetName() string
-	GetPrev() string
+	Pollable
 	NotFound() bool
 	Waiting() bool
 	Failed() bool

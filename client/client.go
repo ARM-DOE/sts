@@ -646,7 +646,8 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 		}
 		for _, p := range payload.GetParts() {
 			beg, len := p.GetSlice()
-			log.Debug("Sending:", p.GetName(), beg, beg+len)
+			log.Debug("Sending:", p.GetName(), beg, beg+len,
+				"T:", time.Unix(p.GetFileTime(), 0))
 		}
 		nErr = 0
 		for {
@@ -792,6 +793,11 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 					hash:    binned.GetFileHash(),
 				}
 				pFile = progress[key]
+			} else if pFile.hash != binned.GetFileHash() {
+				pFile.sent = 0
+				pFile.size = binned.GetSendSize()
+				pFile.started = payload.GetStarted()
+				pFile.hash = binned.GetFileHash()
 			}
 			pFile.prev = binned.GetPrev()
 			offset, n := binned.GetSlice()
@@ -955,8 +961,15 @@ func (broker *Broker) startRetry(wg *sync.WaitGroup) {
 	var cached sts.Cached
 	var fh sts.Readable
 	for file := range broker.chRetry {
-		log.Debug(fmt.Sprintf("Re-HASHing %s ...", file.GetName()))
-		hashed = &hashFile{File: cache.Get(file.GetName())}
+		cached = cache.Get(file.GetName())
+		if f, err := broker.Conf.Store.Sync(cached); f != nil || err != nil {
+			// OK to ignore cases like this since changed files are picked up
+			// automatically and put in the send Q again
+			log.Info("Ignoring changed failed file:", file.GetName())
+			continue
+		}
+		hashed = &hashFile{File: cached}
+		log.Debug("Recomputing hash:", file.GetName())
 		fh, err = opener(hashed)
 		if err != nil {
 			log.Error(err)
@@ -971,7 +984,7 @@ func (broker *Broker) startRetry(wg *sync.WaitGroup) {
 		}
 		fh.Close()
 		cache.Add(hashed)
-		log.Debug(fmt.Sprintf("Re-HASHed %s : %s", file.GetName(), hashed.hash))
+		log.Debug("Recomputed hash:", file.GetName(), hashed.hash)
 		cached = cache.Get(file.GetName())
 		// Use a "recovered" file in order to keep the "prev" intact
 		broker.chScanned <- []sts.Hashed{&recoverFile{
