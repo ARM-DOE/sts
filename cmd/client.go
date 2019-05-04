@@ -199,9 +199,10 @@ func (c *clientApp) init() (err error) {
 	tags := make([]*client.FileTag, len(qtags))
 	for i := 0; i < len(tags); i++ {
 		tags[i] = &client.FileTag{
-			Name:    qtags[i].Name,
-			InOrder: c.conf.Tags[i].Order != "",
-			Delete:  c.conf.Tags[i].Delete,
+			Name:        qtags[i].Name,
+			InOrder:     c.conf.Tags[i].Order != "",
+			Delete:      c.conf.Tags[i].Delete,
+			DeleteDelay: c.conf.Tags[i].DeleteDelay,
 		}
 	}
 	httpClient := &http.Client{

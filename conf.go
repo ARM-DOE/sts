@@ -246,12 +246,13 @@ func (m *MappingConf) UnmarshalYAML(unmarshal func(interface{}) error) (err erro
 // TagConf is the struct for managing configuration options for "tags" (groups)
 // of files.
 type TagConf struct {
-	Pattern   *regexp.Regexp
-	Priority  int
-	Method    string
-	Order     string
-	Delete    bool
-	LastDelay time.Duration
+	Pattern     *regexp.Regexp
+	Priority    int
+	Method      string
+	Order       string
+	Delete      bool
+	DeleteDelay time.Duration
+	LastDelay   time.Duration
 
 	// We have to do this mumbo jumbo if we ever want a false value to
 	// override a true value because a false boolean value is the "empty"
@@ -264,12 +265,13 @@ type TagConf struct {
 // member(s): https://godoc.org/gopkg.in/yaml.v2
 func (t *TagConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 	var aux struct {
-		Pattern   string        `yaml:"pattern"`
-		Priority  int           `yaml:"priority"`
-		Method    string        `yaml:"method"`
-		Order     string        `yaml:"order"`
-		Delete    string        `yaml:"delete"`
-		LastDelay time.Duration `yaml:"last-delay"`
+		Pattern     string        `yaml:"pattern"`
+		Priority    int           `yaml:"priority"`
+		Method      string        `yaml:"method"`
+		Order       string        `yaml:"order"`
+		Delete      string        `yaml:"delete"`
+		DeleteDelay time.Duration `yaml:"delete-delay"`
+		LastDelay   time.Duration `yaml:"last-delay"`
 	}
 	if err = unmarshal(&aux); err != nil {
 		return

@@ -50,9 +50,10 @@ type Conf struct {
 // FileTag is the struct for defining settings relevant to files of a "tag"
 // that are relevant at the client level
 type FileTag struct {
-	Name    string // The name of the tag to be matched by the tagger
-	InOrder bool   // Whether or not the order files are received matters
-	Delete  bool
+	Name        string // The name of the tag to be matched by the tagger
+	InOrder     bool   // Whether or not the order files are received matters
+	Delete      bool
+	DeleteDelay time.Duration
 }
 
 // Broker is the client struct
@@ -365,6 +366,39 @@ func (broker *Broker) fromCache(key string) sts.File {
 	return nil
 }
 
+func (broker *Broker) getTag(file sts.File) *FileTag {
+	tagName := broker.Conf.Tagger(file.GetName())
+	if tag, ok := broker.tagMap[tagName]; ok {
+		return tag
+	}
+	return nil
+}
+
+func (broker *Broker) willDelete(file sts.File) bool {
+	if !broker.cleanSome {
+		return false
+	}
+	if tag := broker.getTag(file); tag != nil {
+		return tag.Delete
+	}
+	return false
+}
+
+func (broker *Broker) canDelete(file sts.File) bool {
+	if !broker.cleanSome {
+		return false
+	}
+	if tag := broker.getTag(file); tag != nil {
+		if tag.Delete {
+			if tag.DeleteDelay == 0 {
+				return true
+			}
+			return time.Since(time.Unix(file.GetTime(), 0)) > tag.DeleteDelay
+		}
+	}
+	return false
+}
+
 func (broker *Broker) scan() []sts.Hashed {
 	var err error
 	var files []sts.File
@@ -384,24 +418,12 @@ func (broker *Broker) scan() []sts.Hashed {
 	wrapped := make([]sts.Hashed, len(files))
 	i := 0
 	for _, file := range files {
-		if !broker.cleanAll {
-			// Based on the tag configuration, exclude files that would have
-			// aged off in a scenario where they are not automatically deleted
-			// after being sent successfully
-			check := true
-			if broker.cleanSome {
-				tagName := broker.Conf.Tagger(file.GetName())
-				if tag, ok := broker.tagMap[tagName]; ok && !tag.Delete {
-					check = true
-				}
-			}
+		if broker.willDelete(file) && file.GetTime() < age.Unix() {
 			// Skip files that aren't marked to be cleaned up and that have
 			// mod times before the scan time minus the minimum age minus
 			// the cache age
-			if check && file.GetTime() < age.Unix() {
-				log.Debug("Skipping due to age:", file.GetName())
-				continue
-			}
+			log.Debug("Skipping due to age:", file.GetName())
+			continue
 		}
 		if file.GetSize() == 0 {
 			log.Debug("Skipping zero-length file:", file.GetName())
@@ -431,8 +453,14 @@ func (broker *Broker) scan() []sts.Hashed {
 			wrapped = append(wrapped, &hashFile{File: cached})
 		case cached.IsDone() && cached.GetTime() < age.Unix():
 			// Clean the cache while we're at it
-			log.Debug("Cleaned:", cached.GetName())
+			if broker.canDelete(cached) {
+				broker.Conf.Store.Remove(cached)
+				log.Debug("Deleted aged file:", cached.GetName())
+			} else if broker.willDelete(cached) {
+				break
+			}
 			cache.Remove(cached.GetName())
+			log.Debug("Removed from cache:", cached.GetName())
 		}
 		return false
 	})
@@ -931,8 +959,6 @@ func (broker *Broker) finish(file sts.Polled) {
 	switch {
 	case file.Waiting() || file.Received():
 		log.Debug("Validated:", file.GetName())
-		tagName := broker.Conf.Tagger(file.GetName())
-		tag := broker.tagMap[tagName]
 		// Make marking done and file removal a single transaction so that we
 		// keep the cache in sync with the file system.  Without it, it's
 		// possible (but not likely) that the cache could be written with a
@@ -940,7 +966,7 @@ func (broker *Broker) finish(file sts.Polled) {
 		// would eventually be removed from the cache (age off) and then get
 		// picked up again to be sent redundantly.
 		broker.Conf.Cache.Done(file.GetName(), func(cached sts.Cached) {
-			if tag != nil && tag.Delete {
+			if broker.canDelete(cached) {
 				broker.Conf.Store.Remove(cached)
 			}
 		})
