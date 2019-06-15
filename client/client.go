@@ -65,6 +65,7 @@ type Broker struct {
 	statSince time.Time
 	sendTimes [][2]int64
 	bytesOut  int64
+	stopFull  bool
 
 	// Channels
 	chStop        chan bool
@@ -349,7 +350,7 @@ func (broker *Broker) startScan(wg *sync.WaitGroup) {
 		}
 		log.Debug("Scan complete. Found:", len(found))
 		select {
-		case <-broker.chStop:
+		case broker.stopFull = <-broker.chStop:
 			return
 		default:
 			break
@@ -576,6 +577,10 @@ func (broker *Broker) startQueue(wg *sync.WaitGroup) {
 				broker.Conf.Queue.Push(batch)
 			}
 			if !ok {
+				// OK to stop before the Q is empty if not doing a "full stop"
+				if !broker.stopFull {
+					return
+				}
 				in = nil
 			}
 			block = false
@@ -968,6 +973,7 @@ func (broker *Broker) finish(file sts.Polled) {
 		broker.Conf.Cache.Done(file.GetName(), func(cached sts.Cached) {
 			if broker.canDelete(cached) {
 				broker.Conf.Store.Remove(cached)
+				log.Debug("Deleted:", cached.GetName())
 			}
 		})
 	default:

@@ -2,10 +2,9 @@ package main
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"regexp"
-	"strconv"
-	"strings"
 	"time"
 
 	"code.arm.gov/dataflow/sts"
@@ -19,6 +18,20 @@ import (
 	"code.arm.gov/dataflow/sts/stage"
 	"code.arm.gov/dataflow/sts/store"
 )
+
+func getTLSConf(conf *sts.TargetConf) (*tls.Config, error) {
+	if conf.TLSCertPath != "" {
+		return http.LoadTLSConf("", "", conf.TLSCertPath)
+	}
+	if conf.TLSCertBase64 != "" {
+		cert, err := base64.StdEncoding.DecodeString(conf.TLSCertBase64)
+		if err != nil {
+			return nil, err
+		}
+		return http.TLSConf([]byte{}, []byte{}, cert)
+	}
+	return nil, nil
+}
 
 type clientApp struct {
 	dirCache     string
@@ -43,21 +56,11 @@ func (c *clientApp) setDefaults() (err error) {
 		err = fmt.Errorf("Target host missing from configuration")
 		return
 	}
-	c.host = c.conf.Target.Host
-	c.port = 1992
-	hostParts := strings.Split(c.host, ":")
-	if len(hostParts) > 1 {
-		c.host = hostParts[0]
-		if c.port, err = strconv.Atoi(hostParts[1]); err != nil {
-			err = fmt.Errorf("Cannot parse port: %s", c.conf.Target.Host)
-			return
-		}
+	if c.host, c.port, err = c.conf.Target.ParseHost(); err != nil {
+		return
 	}
-	if c.conf.Target.TLSCertPath != "" {
-		if c.tls, err = http.GetTLSConf(
-			"", "", c.conf.Target.TLSCertPath); err != nil {
-			return
-		}
+	if c.tls, err = getTLSConf(c.conf.Target); err != nil {
+		return
 	}
 	if c.conf.BinSize == 0 {
 		c.conf.BinSize = 10 * 1024 * 1024 * 1024

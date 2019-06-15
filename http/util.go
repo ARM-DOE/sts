@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"code.arm.gov/dataflow/sts/fileutil"
 )
 
 const (
@@ -264,19 +266,38 @@ func (g *gracefulConn) Close() error {
 	return err
 }
 
-// GetTLSConf returns a tls.Config reference based on provided paths.
-func GetTLSConf(certPath, keyPath, caPath string) (conf *tls.Config, err error) {
+// LoadTLSConf returns a tls.Config reference based on provided paths.
+func LoadTLSConf(certPath, keyPath, caPath string) (conf *tls.Config, err error) {
 	if certPath == "" && keyPath == "" && caPath == "" {
 		return
 	}
-	conf = &tls.Config{}
 	var cert *tls.Certificate
 	var pool *x509.CertPool
 	if cert, pool, err = loadCert(certPath, keyPath, caPath); err != nil {
 		return
 	}
-	if cert != nil {
-		conf.Certificates = []tls.Certificate{*cert}
+	conf, err = getTLSConf(cert, pool)
+	return
+}
+
+// TLSConf returns a tls.Config reference based on provided strings.
+func TLSConf(cert, key, ca []byte) (conf *tls.Config, err error) {
+	if len(cert) > 0 && len(key) > 0 && len(ca) > 0 {
+		return
+	}
+	var pem *tls.Certificate
+	var pool *x509.CertPool
+	if pem, pool, err = getCert(cert, key, ca); err != nil {
+		return
+	}
+	conf, err = getTLSConf(pem, pool)
+	return
+}
+
+func getTLSConf(pem *tls.Certificate, pool *x509.CertPool) (conf *tls.Config, err error) {
+	conf = &tls.Config{}
+	if pem != nil {
+		conf.Certificates = []tls.Certificate{*pem}
 	}
 	if pool != nil {
 		conf.RootCAs = pool
@@ -326,6 +347,37 @@ func loadCert(certPath, keyPath, caPath string) (pem *tls.Certificate, pool *x50
 			if err != nil {
 				return
 			}
+			pool = x509.NewCertPool()
+			pool.AppendCertsFromPEM(ca)
+		}
+	}
+	return
+}
+
+func getCert(cert, key, ca []byte) (pem *tls.Certificate, pool *x509.CertPool, err error) {
+	id := fileutil.StringMD5(string(cert) + string(key) + string(ca))
+	gCertLock.Lock()
+	defer gCertLock.Unlock()
+	if gCerts == nil {
+		gCerts = make(map[string]*tls.Certificate)
+	}
+	if gCertPools == nil {
+		gCertPools = make(map[string]*x509.CertPool)
+	}
+	var ok bool
+	if len(cert) > 0 && len(key) > 0 {
+		if pem, ok = gCerts[id]; !ok {
+			var p tls.Certificate
+			p, err = tls.X509KeyPair(cert, key)
+			if err != nil {
+				return
+			}
+			pem = &p
+			gCerts[id] = pem
+		}
+	}
+	if len(ca) > 0 {
+		if pool, ok = gCertPools[id]; !ok {
 			pool = x509.NewCertPool()
 			pool.AppendCertsFromPEM(ca)
 		}

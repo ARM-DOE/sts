@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,13 +24,15 @@ type Server struct {
 	Host        string
 	Port        int
 	TLS         *tls.Config
-	Sources     []string
-	Keys        []string
 	Compression int
 
 	GateKeepers       map[string]sts.GateKeeper
 	GateKeeperFactory sts.GateKeeperFactory
 	DecoderFactory    sts.PayloadDecoderFactory
+
+	IsValid       sts.RequestValidator
+	IsKeyValid    sts.IsKeyValid
+	ClientManager sts.ClientManager
 
 	lock sync.RWMutex
 }
@@ -61,32 +62,9 @@ func (s *Server) stopGateKeepers() {
 	wg.Wait()
 }
 
-func (s *Server) isValid(src, key string) bool {
-	if src != "" {
-		if matched, err := regexp.MatchString(`^[a-z0-9\.\-]+$`, src); err != nil || !matched {
-			return false
-		}
-		if len(s.Sources) > 0 && strToIndex(src, s.Sources) < 0 {
-			return false
-		}
-	}
-	if key != "" && len(s.Keys) > 0 && strToIndex(key, s.Keys) < 0 {
-		return false
-	}
-	return true
-}
-
-func strToIndex(needle string, haystack []string) int {
-	for i, v := range haystack {
-		if v == needle {
-			return i
-		}
-	}
-	return -1
-}
-
 // Serve starts HTTP server.
 func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
+	http.Handle("/client/", http.HandlerFunc(s.routeClientManagement))
 	http.Handle("/data", s.handleValidate(http.HandlerFunc(s.routeData)))
 	http.Handle("/data-recovery", s.handleValidate(http.HandlerFunc(s.routeDataRecovery)))
 	http.Handle("/validate", s.handleValidate(http.HandlerFunc(s.routeValidate)))
@@ -110,7 +88,7 @@ func (s *Server) handleValidate(next http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		source := r.Header.Get(HeaderSourceName)
 		key := r.Header.Get(HeaderKey)
-		if !s.isValid(source, key) {
+		if !s.IsValid(source, key) {
 			log.Error(fmt.Errorf("Unknown Source:Key => %s:%s", source, key))
 			w.WriteHeader(http.StatusForbidden)
 			return

@@ -1,9 +1,21 @@
 #!/bin/bash
 
 race=""
-if [[ $1 == "-race" ]]; then
-    race="-race"
-fi
+ldflags=""
+
+for i in "$@"; do
+    case $i in
+        -r|--race)
+        race="-race"
+        shift
+        ;;
+        --ldflags=*)
+        ldflags="${i#*=}"
+        shift
+        ;;
+    esac
+done
+
 basedir=$(dirname $0)
 
 if [ -f $GOPATH/bin/sts ]; then
@@ -17,6 +29,8 @@ mkdir -p $GOPATH/bin
 
 echo "-- Building Dependencies"
 go get gopkg.in/yaml.v2
+go get github.com/lib/pq
+go get github.com/jmoiron/sqlx
 go get github.com/alecthomas/units
 go get github.com/stackimpact/stackimpact-go
 
@@ -31,5 +45,5 @@ fi
 
 echo "-- Building Executable"
 go build -o $GOPATH/bin/sts $race \
-    -ldflags="-X 'main.BuildTime=$date UTC' -X 'main.Version=$vers'" \
-    $GOPATH/src/code.arm.gov/dataflow/sts/cmd/*.go
+    -ldflags="-X 'main.BuildTime=$date UTC' -X 'main.Version=$vers' $ldflags" \
+    $GOPATH/src/code.arm.gov/dataflow/sts/main/*.go

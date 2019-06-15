@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"runtime"
 	"sync"
 
@@ -13,8 +12,7 @@ import (
 	"code.arm.gov/dataflow/sts/fileutil"
 	"code.arm.gov/dataflow/sts/http"
 	"code.arm.gov/dataflow/sts/log"
-	"code.arm.gov/dataflow/sts/payload"
-	"code.arm.gov/dataflow/sts/stage"
+
 	// For profiling...
 	// "net/http"
 	// _ "net/http/pprof"
@@ -33,11 +31,18 @@ var (
 	Version = ""
 	// BuildTime is set based on -X option passed at build.
 	BuildTime = ""
+	// ConfigServer is set based on -X option passed at build.  It is expected
+	// to be a JSON-encoded string that can be decoded as an sts.TargetConf
+	// struct
+	ConfigServer = ""
 )
 
 func main() {
-	app := newApp()
-	app.run()
+	if ConfigServer != "" {
+		runFromServer(ConfigServer)
+	} else {
+		newApp().run()
+	}
 }
 
 type app struct {
@@ -57,6 +62,26 @@ type app struct {
 }
 
 func newApp() *app {
+	var err error
+	var a *app
+
+	a = appFromCLI()
+
+	err = sts.InitPaths(
+		a.conf,
+		filepath.Join,
+		func(path *string, isDir bool) error {
+			*path, err = fileutil.InitPath(a.root, *path, isDir)
+			return err
+		})
+	if err != nil {
+		panic(err.Error())
+	}
+
+	return a
+}
+
+func appFromCLI() *app {
 	var err error
 
 	// Initialize command line arguments
@@ -97,36 +122,32 @@ func newApp() *app {
 
 	// Parse configuration
 	if a.confPath == "" {
-		if a.root == "" {
-			panic("Cannot find configuration file")
-		}
-		if a.mode == modeAuto {
-			a.confPath = filepath.Join(a.root, "conf", "sts.yaml")
-		} else {
-			a.confPath = filepath.Join(a.root, "conf", "sts."+a.mode+".yaml")
+		if a.root != "" {
+			// Find the configuration file based on $STS_HOME
+			if a.mode == modeAuto {
+				a.confPath = filepath.Join(a.root, "conf", "sts.yaml")
+			} else {
+				a.confPath = filepath.Join(a.root, "conf", "sts."+a.mode+".yaml")
+			}
 		}
 	} else if !filepath.IsAbs(a.confPath) {
+		// Find the configuration based on the full path provided
 		if a.confPath, err = filepath.Abs(a.confPath); err != nil {
 			panic(err.Error())
 		}
+		if a.root == "" {
+			a.root = filepath.Dir(a.confPath)
+		}
 	}
-	if a.root == "" {
-		a.root = filepath.Dir(a.confPath)
+
+	// Fall back to JSON if the YAML file doesn't exist
+	if _, err := os.Stat(a.confPath); os.IsNotExist(err) {
+		a.confPath = strings.TrimSuffix(a.confPath, filepath.Ext(a.confPath)) + ".json"
 	}
-	conf, err := sts.NewConf(a.confPath)
-	if err != nil {
+
+	// Read the local configuration file
+	if a.conf, err = sts.NewConf(a.confPath); err != nil {
 		panic(fmt.Sprintf("Failed to parse configuration:\n%s", err.Error()))
-	}
-	a.conf = conf
-	err = sts.InitPaths(
-		a.conf,
-		filepath.Join,
-		func(path *string, isDir bool) error {
-			*path, err = fileutil.InitPath(a.root, *path, isDir)
-			return err
-		})
-	if err != nil {
-		panic(err.Error())
 	}
 
 	return a
@@ -151,6 +172,7 @@ func (a *app) run() {
 	}
 	// Run until we get a signal to shutdown if running ONLY as a "receiver" or
 	// if configured to run as a sender in a loop.
+	stopFull := true
 	if a.loop || (i && !o) {
 		// if !i {
 		// 	// Start a profiler server only if running solely "out" mode in a
@@ -166,8 +188,9 @@ func (a *app) run() {
 		log.Debug("Waiting for signal...")
 
 		<-sc // Block until we get a signal.
+		stopFull = false
 	}
-	a.stopClients()
+	a.stopClients(stopFull)
 	a.stopServer()
 	a.stopInternalServer()
 }
@@ -185,58 +208,18 @@ func (a *app) startServer() bool {
 		}
 		panic("Missing required SERVER configuration")
 	}
-	conf := a.conf.Server
-	if conf.Server.Port == 0 {
-		panic("HTTP port not specified")
+	s := &serverApp{
+		debug: a.debug,
+		conf:  a.conf.Server,
 	}
-	dirs := conf.Dirs
-	log.Init(dirs.LogMsg, a.debug)
-	newStage := func(source string) sts.GateKeeper {
-		return stage.New(
-			source,
-			filepath.Join(dirs.Stage, source),
-			filepath.Join(dirs.Final, source),
-			log.NewReceive(filepath.Join(dirs.LogIn, source)))
-	}
-	nodes, err := ioutil.ReadDir(dirs.Stage)
-	if err != nil {
+	if err = s.init(); err != nil {
 		panic(err)
-	}
-	var stager sts.GateKeeper
-	var stagers map[string]sts.GateKeeper
-	stagers = make(map[string]sts.GateKeeper)
-	for _, node := range nodes {
-		if node.IsDir() {
-			stager = newStage(node.Name())
-			if err = stager.Recover(); err != nil {
-				panic(err)
-			}
-			stagers[node.Name()] = stager
-		}
-	}
-	server := &http.Server{
-		ServeDir:          dirs.Serve,
-		Host:              conf.Server.Host,
-		Port:              conf.Server.Port,
-		Sources:           conf.Sources,
-		Keys:              conf.Keys,
-		Compression:       conf.Server.Compression,
-		DecoderFactory:    payload.NewDecoder,
-		GateKeepers:       stagers,
-		GateKeeperFactory: newStage,
-	}
-	if conf.Server.TLSCertPath != "" && conf.Server.TLSKeyPath != "" {
-		if server.TLS, err = http.GetTLSConf(
-			conf.Server.TLSCertPath,
-			conf.Server.TLSKeyPath, ""); err != nil {
-			panic(err)
-		}
 	}
 	stop := make(chan bool)
 	done := make(chan bool)
 	a.serverStop = stop
 	a.serverDone = done
-	go server.Serve(stop, done)
+	go s.server.Serve(stop, done)
 	return true
 }
 
@@ -267,6 +250,7 @@ func (a *app) startClients() bool {
 	var err error
 	dirs := a.conf.Client.Dirs
 	log.Init(dirs.LogMsg, a.debug)
+	a.clients = []*clientApp{}
 	a.clientStop = make(map[chan<- bool]<-chan bool)
 	watching := make(map[string]bool)
 	for _, source := range a.conf.Client.Sources {
@@ -294,20 +278,20 @@ func (a *app) startClients() bool {
 	return true
 }
 
-func (a *app) stopClients() {
+func (a *app) stopClients(stopFull bool) {
 	if len(a.clients) == 0 {
 		return
 	}
 	var wg sync.WaitGroup
 	wg.Add(len(a.clients))
 	for stop, done := range a.clientStop {
-		go func(stop chan<- bool, done <-chan bool, wg *sync.WaitGroup) {
+		go func(stop chan<- bool, full bool, done <-chan bool, wg *sync.WaitGroup) {
 			defer wg.Done()
 			log.Debug("Stopping client...")
-			stop <- true
+			stop <- full
 			log.Debug("Waiting for client...")
 			<-done
-		}(stop, done, &wg)
+		}(stop, stopFull, done, &wg)
 	}
 	wg.Wait()
 }

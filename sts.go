@@ -36,6 +36,9 @@ const (
 
 	// MethodHTTP indicates HTTP transfer method
 	MethodHTTP = "http"
+
+	// DefaultPort is the default TCP port used for HTTP communication
+	DefaultPort = 1992
 )
 
 // Logger is the generic logging interface
@@ -106,6 +109,36 @@ type GateKeeper interface {
 
 // GateKeeperFactory creates GateKeeper instances
 type GateKeeperFactory func(source string) GateKeeper
+
+// ClientStatus uses bitmasking to represent the status of a client
+type ClientStatus uint
+
+const (
+	// ClientIsDisabled indicates that transfer is to not occur
+	ClientIsDisabled ClientStatus = 1 << iota
+
+	// ClientIsApproved indicates that transfer should be enabled
+	ClientIsApproved
+
+	// ClientHasUpdatedConfiguration indicates, well, the updated configuration
+	// should be retrieved
+	ClientHasUpdatedConfiguration
+)
+
+// ClientManager is responsible for disseminating and collecting information
+// about a client (sender)
+type ClientManager interface {
+	GetClientStatus(clientID, clientName, clientOS string) (ClientStatus, error)
+	GetClientConf(clientID string) (*ClientConf, error)
+	SetClientConfReceived(clientID string, when time.Time) error
+}
+
+// RequestValidator validates an incoming request
+type RequestValidator func(source, key string) bool
+
+// IsKeyValid determines whether or not the provided key is allowed to send the
+// provided file
+type IsKeyValid func(key string, file *Partial) bool
 
 // DecodePartials decodes the input reader into a slice of Partial instance
 // pointers
