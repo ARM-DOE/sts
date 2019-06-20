@@ -90,10 +90,19 @@ func runFromServer(jsonEncodedServerConfig string) {
 
 	go requestClientConf(httpClient, clientID, ch)
 
+	rootDir := os.Getenv("STS_HOME")
+	if rootDir == "" {
+		rootDir, err = os.UserCacheDir()
+		if err != nil {
+			panic(err)
+		}
+		rootDir = filepath.Join(rootDir, "sts")
+	}
+
 	a := &app{
 		loop: true,
 		mode: modeSend,
-		root: os.Getenv("STS_HOME"),
+		root: rootDir,
 		conf: &sts.Conf{
 			Client: <-ch,
 		},
@@ -110,6 +119,9 @@ func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 	signalCh := make(chan os.Signal)
 	signal.Notify(signalCh, os.Interrupt, os.Kill)
 	for {
+		if a.conf.Client.Dirs.Cache == "" {
+			a.conf.Client.Dirs.Cache = "cache"
+		}
 		err = sts.InitPaths(
 			a.conf,
 			filepath.Join,
