@@ -96,7 +96,8 @@ sleep 1
 echo "Making some data ..."
 
 sim=(
-    "stsin-1 xs 1000 50 0"
+    "stsin-1 sm 1000 50 0"
+    "stsin-1 xs 500 500 0"
 )
 for args in "${sim[@]}"; do
     echo "Making data: $args ..."
@@ -132,6 +133,10 @@ source_conf=$(cat <<-END
         {
             "pattern": "DEFAULT",
             "delete": "true"
+        },
+        {
+            "pattern": "^sm",
+            "method": "none"
         }
     ]
 }
@@ -161,6 +166,31 @@ function ctrl_c() {
     exit 0
 }
 trap ctrl_c INT
+
+sleep 10
+
+updated_source_conf=${source_conf/^sm/$'^xs'}
+
+now=$(date +"%Y-%m-%d %T")
+
+update_src=$(cat <<-END
+UPDATE ${db_table_datasets}
+ SET source_conf='${updated_source_conf}'
+ WHERE name='stsout-1' AND client_id=trim('${id}');
+UPDATE ${db_table_clients}
+ SET dirs_conf='${dirs_conf}'
+    ,verified_at='$now'
+    ,updated_at='$now'
+ WHERE id=trim('${id}');
+END
+)
+update_src=${update_src//$'\n'/}
+
+echo "------------------------------------------------------------------------"
+echo "UPDATING CONF ..."
+echo "------------------------------------------------------------------------"
+
+$psql "$update_src" > /dev/null
 
 while true; do
     sleep 1
