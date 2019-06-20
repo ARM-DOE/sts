@@ -193,7 +193,6 @@ func requestClientConf(
 				log.Error(err.Error())
 				goto next
 			}
-			log.Debug("Client conf:", conf.Dirs, conf.Sources)
 			if conf != nil && len(conf.Sources) > 0 {
 				log.Debug("Applying updated client conf:", clientID)
 				ch <- conf

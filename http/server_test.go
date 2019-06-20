@@ -98,7 +98,6 @@ func TestCRUD(t *testing.T) {
 		ServeDir: filepath.Join(root, "serve"),
 		Host:     "localhost",
 		Port:     1992,
-		Sources:  []string{"sender"},
 	}
 	stop := make(chan bool)
 	done := make(chan bool)
