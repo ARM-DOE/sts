@@ -156,29 +156,29 @@ type ClientDirs struct {
 // SourceConf is the struct for managing the configuration of an outgoing
 // client source.
 type SourceConf struct {
-	Name          string         `yaml:"name" json:"name"`
-	OutDir        string         `yaml:"out-dir" json:"out-dir"`
-	LogDir        string         `yaml:"log-dir" json:"log-dir"`
-	Threads       int            `yaml:"threads" json:"threads"`
-	CacheAge      time.Duration  `yaml:"cache-age"`
-	MinAge        time.Duration  `yaml:"min-age"`
-	MaxAge        time.Duration  `yaml:"max-age"`
-	ScanDelay     time.Duration  `yaml:"scan-delay"`
-	Timeout       time.Duration  `yaml:"timeout"`
-	Compression   int            `yaml:"compress" json:"compress"`
-	StatInterval  time.Duration  `yaml:"stat-interval"`
-	PollDelay     time.Duration  `yaml:"poll-delay"`
-	PollInterval  time.Duration  `yaml:"poll-interval"`
-	PollAttempts  int            `yaml:"poll-attempts" json:"poll-attempts"`
-	Target        *TargetConf    `yaml:"target" json:"target"`
-	Rename        []*MappingConf `yaml:"rename" json:"rename"`
-	Tags          []*TagConf     `yaml:"tags" json:"tags"`
-	BinSize       units.Base2Bytes
-	StatPayload   bool
-	GroupBy       *regexp.Regexp
-	IncludeHidden bool
-	Include       []*regexp.Regexp
-	Ignore        []*regexp.Regexp
+	Name          string           `yaml:"name" json:"name"`
+	OutDir        string           `yaml:"out-dir" json:"out-dir"`
+	LogDir        string           `yaml:"log-dir" json:"log-dir"`
+	Threads       int              `yaml:"threads" json:"threads"`
+	CacheAge      time.Duration    `yaml:"cache-age" json:"-"`
+	MinAge        time.Duration    `yaml:"min-age" json:"-"`
+	MaxAge        time.Duration    `yaml:"max-age" json:"-"`
+	ScanDelay     time.Duration    `yaml:"scan-delay" json:"-"`
+	Timeout       time.Duration    `yaml:"timeout" json:"-"`
+	Compression   int              `yaml:"compress" json:"compress"`
+	StatInterval  time.Duration    `yaml:"stat-interval" json:"-"`
+	PollDelay     time.Duration    `yaml:"poll-delay" json:"-"`
+	PollInterval  time.Duration    `yaml:"poll-interval" json:"-"`
+	PollAttempts  int              `yaml:"poll-attempts" json:"poll-attempts"`
+	Target        *TargetConf      `yaml:"target" json:"target"`
+	Rename        []*MappingConf   `yaml:"rename" json:"rename"`
+	Tags          []*TagConf       `yaml:"tags" json:"tags"`
+	BinSize       units.Base2Bytes `json:"-"`
+	StatPayload   bool             `json:"-"`
+	GroupBy       *regexp.Regexp   `json:"-"`
+	IncludeHidden bool             `json:"-"`
+	Include       []*regexp.Regexp `json:"-"`
+	Ignore        []*regexp.Regexp `json:"-"`
 
 	// We have to do this mumbo jumbo if we ever want a false value to
 	// override a true value because a false boolean value is the "empty"
@@ -218,7 +218,6 @@ func (ss *SourceConf) applyAux(aux *auxSourceConf) (err error) {
 			return
 		}
 	}
-	ss.Compression = aux.Compression
 	switch {
 	case strings.ToLower(aux.StatPayload) == "true":
 		ss.StatPayload = true
@@ -286,11 +285,46 @@ func (ss *SourceConf) UnmarshalJSON(data []byte) (err error) {
 	return
 }
 
+// MarshalJSON implements Marshaler interface for handling custom member(s):
+// https://golang.org/pkg/encoding/json/#Marshal
+func (ss *SourceConf) MarshalJSON() ([]byte, error) {
+	aux := ss.getAux()
+	aux.CacheAge.Duration = ss.CacheAge
+	aux.MinAge.Duration = ss.MinAge
+	aux.MaxAge.Duration = ss.MaxAge
+	aux.ScanDelay.Duration = ss.ScanDelay
+	aux.Timeout.Duration = ss.Timeout
+	aux.StatInterval.Duration = ss.StatInterval
+	aux.PollDelay.Duration = ss.PollDelay
+	aux.PollInterval.Duration = ss.PollInterval
+	aux.BinSize = ss.BinSize.String()
+	if ss.GroupBy != nil {
+		aux.GroupBy = ss.GroupBy.String()
+	}
+	switch {
+	case ss.StatPayload:
+		aux.StatPayload = "true"
+	case ss.isStatPayloadSet:
+		aux.StatPayload = "false"
+	}
+	aux.IncludeHidden = "false"
+	if ss.IncludeHidden {
+		aux.IncludeHidden = "true"
+	}
+	var strings []string
+	for _, p := range append(ss.Include, ss.Ignore...) {
+		strings = append(strings, p.String())
+	}
+	aux.Include = strings[0:len(ss.Include)]
+	aux.Ignore = strings[len(ss.Include):len(strings)]
+	return json.Marshal(aux)
+}
+
 // MappingConf is the struct for indicating what path pattern should be mapped
 // to a different target name based on the associated template string.
 type MappingConf struct {
-	Template string `yaml:"to" json:"to"`
-	Pattern  *regexp.Regexp
+	Template string         `yaml:"to" json:"to"`
+	Pattern  *regexp.Regexp `json:"-"`
 }
 
 type aliasMappingConf MappingConf
@@ -332,16 +366,24 @@ func (m *MappingConf) UnmarshalJSON(data []byte) (err error) {
 	return
 }
 
+// MarshalJSON implements Marshaler interface for handling custom member(s):
+// https://golang.org/pkg/encoding/json/#Marshal
+func (m *MappingConf) MarshalJSON() ([]byte, error) {
+	aux := m.getAux()
+	aux.Pattern = m.Pattern.String()
+	return json.Marshal(aux)
+}
+
 // TagConf is the struct for managing configuration options for "tags" (groups)
 // of files.
 type TagConf struct {
-	Priority    int           `yaml:"priority" json:"priority"`
-	Method      string        `yaml:"method" json:"method"`
-	Order       string        `yaml:"order" json:"order"`
-	LastDelay   time.Duration `yaml:"last-delay"`
-	DeleteDelay time.Duration `yaml:"delete-delay"`
-	Pattern     *regexp.Regexp
-	Delete      bool
+	Priority    int            `yaml:"priority" json:"priority"`
+	Method      string         `yaml:"method" json:"method"`
+	Order       string         `yaml:"order" json:"order"`
+	LastDelay   time.Duration  `yaml:"last-delay" json:"-"`
+	DeleteDelay time.Duration  `yaml:"delete-delay" json:"-"`
+	Pattern     *regexp.Regexp `json:"-"`
+	Delete      bool           `json:"-"`
 
 	// We have to do this mumbo jumbo if we ever want a false value to
 	// override a true value because a false boolean value is the "empty"
@@ -409,6 +451,24 @@ func (t *TagConf) UnmarshalJSON(data []byte) (err error) {
 	t.DeleteDelay = aux.DeleteDelay.Duration
 	err = t.applyAux(aux)
 	return
+}
+
+// MarshalJSON implements Marshaler interface for handling custom member(s):
+// https://golang.org/pkg/encoding/json/#Marshal
+func (t *TagConf) MarshalJSON() ([]byte, error) {
+	aux := t.getAux()
+	if t.Pattern != nil {
+		aux.Pattern = t.Pattern.String()
+	}
+	aux.LastDelay.Duration = t.LastDelay
+	aux.DeleteDelay.Duration = t.DeleteDelay
+	switch {
+	case t.Delete:
+		aux.Delete = "true"
+	case t.isDeleteSet:
+		aux.Delete = "false"
+	}
+	return json.Marshal(aux)
 }
 
 // TargetConf houses the configuration for the target host for a given source
