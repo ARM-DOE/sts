@@ -476,6 +476,7 @@ type TargetConf struct {
 	Name          string `yaml:"name" json:"name"`
 	Key           string `yaml:"key" json:"key"`
 	Host          string `yaml:"http-host" json:"http-host"`
+	PathPrefix    string `yaml:"http-path-prefix" json:"http-path-prefix"`
 	TLSCertPath   string `yaml:"http-tls-cert" json:"http-tls-cert"`
 	TLSCertBase64 string `yaml:"http-tls-cert-encoded" json:"http-tls-cert-encoded"`
 }
@@ -529,6 +530,7 @@ type ServerDirs struct {
 type HTTPServer struct {
 	Host        string `yaml:"http-host" json:"http-host"`
 	Port        int    `yaml:"http-port" json:"http-port"`
+	PathPrefix  string `yaml:"http-path-prefix" json:"http-path-prefix"`
 	TLSCertPath string `yaml:"http-tls-cert" json:"http-tls-cert"`
 	TLSKeyPath  string `yaml:"http-tls-key" json:"http-tls-key"`
 	Compression int    `yaml:"compress" json:"compress"`

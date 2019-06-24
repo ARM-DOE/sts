@@ -23,6 +23,7 @@ type Server struct {
 	ServeDir    string
 	Host        string
 	Port        int
+	PathPrefix  string
 	TLS         *tls.Config
 	Compression int
 
@@ -64,12 +65,12 @@ func (s *Server) stopGateKeepers() {
 
 // Serve starts HTTP server.
 func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
-	http.Handle("/client/", http.HandlerFunc(s.routeClientManagement))
-	http.Handle("/data", s.handleValidate(http.HandlerFunc(s.routeData)))
-	http.Handle("/data-recovery", s.handleValidate(http.HandlerFunc(s.routeDataRecovery)))
-	http.Handle("/validate", s.handleValidate(http.HandlerFunc(s.routeValidate)))
-	http.Handle("/partials", s.handleValidate(http.HandlerFunc(s.routePartials)))
-	http.Handle("/static/", s.handleValidate(http.HandlerFunc(s.routeFile)))
+	http.Handle(s.PathPrefix+"/client/", http.HandlerFunc(s.routeClientManagement))
+	http.Handle(s.PathPrefix+"/data", s.handleValidate(http.HandlerFunc(s.routeData)))
+	http.Handle(s.PathPrefix+"/data-recovery", s.handleValidate(http.HandlerFunc(s.routeDataRecovery)))
+	http.Handle(s.PathPrefix+"/validate", s.handleValidate(http.HandlerFunc(s.routeValidate)))
+	http.Handle(s.PathPrefix+"/partials", s.handleValidate(http.HandlerFunc(s.routePartials)))
+	http.Handle(s.PathPrefix+"/static/", s.handleValidate(http.HandlerFunc(s.routeFile)))
 
 	go func(done chan<- bool, host string, port int, tlsConf *tls.Config) {
 		addr := fmt.Sprintf("%s:%d", host, port)

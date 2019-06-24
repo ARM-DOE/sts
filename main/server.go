@@ -79,6 +79,7 @@ func (a *serverApp) init() (err error) {
 		ServeDir:          dirs.Serve,
 		Host:              conf.Server.Host,
 		Port:              conf.Server.Port,
+		PathPrefix:        conf.Server.PathPrefix,
 		Compression:       conf.Server.Compression,
 		DecoderFactory:    payload.NewDecoder,
 		IsValid:           a.standardValidator,
@@ -101,6 +102,7 @@ func (a *serverApp) init() (err error) {
 			conf.SourceControl.Pass,
 			conf.SourceControl.ClientsTable,
 			conf.SourceControl.DatasetsTable,
+			decodeClientID,
 		)
 		a.server.ClientManager = db
 		a.server.IsValid = db.IsValid

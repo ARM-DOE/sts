@@ -11,17 +11,21 @@ var hasDatabase = flag.Bool("db", false, strings.TrimSpace(`
 Current system has a local Postgres server with database named "sts"
 `))
 
+func decodeClientID(clientID string) (string, string) {
+	return clientID, ""
+}
+
 func TestSQL(t *testing.T) {
 	if !*hasDatabase {
 		return
 	}
 	var err error
-	p := NewPostgres(uint(0), "localhost", "sts", "sts_admin", "sts", "", "")
+	p := NewPostgres(uint(0), "localhost", "sts", "sts_admin", "sts", "", "", decodeClientID)
 	p.destroy()
 	p.create()
 	p.connect()
 	defer p.disconnect()
-	if err = p.initClient("somerandomstring", "somerandomname", "darwin"); err != nil {
+	if err = p.initClient("somerandomstring", "anotherrandomstring", "somerandomname", "darwin"); err != nil {
 		t.Fatal(err)
 	}
 	_, err = p.db.Exec(`

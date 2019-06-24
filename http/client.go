@@ -58,6 +58,7 @@ type Client struct {
 	SourceName      string
 	TargetHost      string
 	TargetPort      int
+	TargetPrefix    string
 	TargetKey       string
 	Compression     int
 	Timeout         time.Duration
@@ -73,10 +74,13 @@ func (h *Client) rootURL() string {
 		return h.root
 	}
 	protocol := "http"
-	if h.TLS != nil {
+	if h.TLS != nil || h.TargetPort == 443 {
 		protocol += "s"
 	}
 	h.root = fmt.Sprintf("%s://%s:%d", protocol, h.TargetHost, h.TargetPort)
+	if h.TargetPrefix != "" {
+		h.root += h.TargetPrefix
+	}
 	return h.root
 }
 

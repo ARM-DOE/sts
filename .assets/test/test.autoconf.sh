@@ -20,9 +20,10 @@ name="stsin-1"
 key="12345"
 host="localhost"
 port="1992"
+prfx="/prefix"
 cert=$(base64 $basedir/../localhost.crt)
 
-serverconfig="{\"name\":\"$name\",\"key\":\"$key\",\"http-host\":\"$host\",\"http-tls-cert-encoded\":\"$cert\"}"
+serverconfig="{\"name\":\"$name\",\"key\":\"$key\",\"http-host\":\"$host\",\"http-path-prefix\":\"$prfx\",\"http-tls-cert-encoded\":\"$cert\"}"
 
 psql="psql -h $db_host -p $db_port -U $db_user -d $db_name -c"
 
@@ -67,6 +68,7 @@ server_conf=$(cat <<-END
         "server": {
             "http-host": "${host}",
             "http-port": ${port},
+            "http-path-prefix": "${prfx}",
             "http-tls-cert": "${PWD}/${basedir}/../localhost.crt",
             "http-tls-key": "${PWD}/${basedir}/../localhost.key"
         }
@@ -104,10 +106,12 @@ for args in "${sim[@]}"; do
     $PWD/$basedir/makedata.py $args
 done
 
-echo "Inserting source into database ..."
-
-id=$($psql "SELECT id FROM $db_table_clients LIMIT 1" | egrep "^\s*$key:")
+id=$($psql "SELECT id, key FROM $db_table_clients WHERE key='$key' LIMIT 1" | egrep "\|\s+$key")
+id=$(echo $id | cut -d "|" -f1)
 id=${id//$'\n'/}
+id=${id//$' '/}
+
+echo "Inserting source (client: $id) into database ..."
 
 source_conf=$(cat <<-END
 {
@@ -125,8 +129,9 @@ source_conf=$(cat <<-END
     "poll-attempts": 1,
     "target": {
         "name": "${name}",
-        "key": "${id}",
+        "key": "${key}:${id}",
         "http-host": "${host}:${port}",
+        "http-path-prefix": "${prfx}",
         "http-tls-cert-encoded": "${cert}"
     },
     "tags": [
@@ -148,12 +153,12 @@ now=$(date +"%Y-%m-%d %T")
 add_src=$(cat <<-END
 INSERT INTO ${db_table_datasets}
  (name, source_conf, client_id, created_at, updated_at)
- VALUES('stsout-1', '${source_conf}', trim('${id}'), '$now', '$now');
+ VALUES('stsout-1', '${source_conf}', '${id}', '$now', '$now');
 UPDATE ${db_table_clients}
  SET dirs_conf='${dirs_conf}'
     ,verified_at='$now'
     ,updated_at='$now'
- WHERE id=trim('${id}');
+ WHERE id='${id}';
 END
 )
 add_src=${add_src//$'\n'/}
@@ -176,12 +181,12 @@ now=$(date +"%Y-%m-%d %T")
 update_src=$(cat <<-END
 UPDATE ${db_table_datasets}
  SET source_conf='${updated_source_conf}'
- WHERE name='stsout-1' AND client_id=trim('${id}');
+ WHERE name='stsout-1' AND client_id='${id}';
 UPDATE ${db_table_clients}
  SET dirs_conf='${dirs_conf}'
     ,verified_at='$now'
     ,updated_at='$now'
- WHERE id=trim('${id}');
+ WHERE id='${id}';
 END
 )
 update_src=${update_src//$'\n'/}

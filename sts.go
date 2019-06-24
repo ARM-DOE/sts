@@ -133,6 +133,13 @@ type ClientManager interface {
 	SetClientConfReceived(clientID string, when time.Time) error
 }
 
+// EncodeClientID creates a decodable composite ID from a key and unique ID
+type EncodeClientID func(key, uid string) (clientID string)
+
+// DecodeClientID converts a composite client ID into its original key and
+// unique ID
+type DecodeClientID func(clientID string) (key, uid string)
+
 // RequestValidator validates an incoming request
 type RequestValidator func(source, key string) bool
 

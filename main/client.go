@@ -212,6 +212,7 @@ func (c *clientApp) init() (err error) {
 		SourceName:      c.conf.Name,
 		TargetHost:      c.host,
 		TargetPort:      c.port,
+		TargetPrefix:    c.conf.Target.PathPrefix,
 		TargetKey:       c.conf.Target.Key,
 		Timeout:         c.conf.Timeout,
 		Compression:     c.conf.Compression,

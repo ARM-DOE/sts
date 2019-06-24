@@ -53,6 +53,18 @@ func (log *logger) WasSent(name string, after time.Time, before time.Time) bool 
 	return false
 }
 
+func encodeClientID(key, uid string) string {
+	return key + ":" + uid
+}
+
+func decodeClientID(clientID string) (string, string) {
+	parts := strings.Split(clientID, ":")
+	if len(parts) < 2 {
+		return clientID, ""
+	}
+	return parts[0], parts[1]
+}
+
 func runFromServer(jsonEncodedServerConfig string) {
 	log.InitExternal(&logger{
 		debugMode: true,
@@ -73,16 +85,20 @@ func runFromServer(jsonEncodedServerConfig string) {
 		panic(err)
 	}
 	httpClient := &http.Client{
-		TargetHost: host,
-		TargetPort: port,
-		TLS:        tls,
+		TargetHost:   host,
+		TargetPort:   port,
+		TargetPrefix: serverConf.PathPrefix,
+		TLS:          tls,
 	}
 
 	addr, err := getMacAddr()
 	if err != nil {
 		panic(err)
 	}
-	clientID := serverConf.Key + ":" + fileutil.StringMD5(strings.Join(addr, ""))
+	clientID := encodeClientID(
+		serverConf.Key,
+		fileutil.StringMD5(strings.Join(addr, "")),
+	)
 
 	log.Debug("Client ID:", clientID)
 

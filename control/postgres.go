@@ -17,6 +17,7 @@ import (
 const schema = `
 CREATE TABLE __ (
 	id text NOT NULL,
+	key text NOT NULL,
 	name text NOT NULL,
 	alias text NOT NULL,
 	os text NOT NULL,
@@ -42,6 +43,7 @@ CREATE TABLE __ (
 // Client represents a client record
 type Client struct {
 	ID         string      `db:"id"`
+	Key        string      `db:"key"`
 	Name       string      `db:"name"`
 	Alias      string      `db:"alias"`
 	OS         string      `db:"os"`
@@ -105,10 +107,10 @@ type clientCache struct {
 	lock    sync.RWMutex
 }
 
-func (c *clientCache) getApprovedDatasetNames(clientID string) []string {
+func (c *clientCache) getApprovedDatasetNames(uid string) []string {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
-	if names, ok := c.clients[clientID]; ok {
+	if names, ok := c.clients[uid]; ok {
 		return names
 	}
 	return nil
@@ -128,12 +130,12 @@ func (c *clientCache) build(datasets []*Dataset) {
 	}
 }
 
-func (c *clientCache) rebuild(clientID string, datasets []*Dataset) {
+func (c *clientCache) rebuild(uid string, datasets []*Dataset) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	c.clients[clientID] = make([]string, len(datasets))
+	c.clients[uid] = make([]string, len(datasets))
 	for i, d := range datasets {
-		c.clients[clientID][i] = d.Name
+		c.clients[uid][i] = d.Name
 	}
 	return
 }
@@ -149,13 +151,17 @@ type Postgres struct {
 	clientsTable  string
 	datasetsTable string
 
+	idDecoder sts.DecodeClientID
+
 	db    *sqlx.DB
 	cache *clientCache
 }
 
 // NewPostgres creates a new Postgres instance
 func NewPostgres(
-	port uint, host, name, user, pass, clientsTable, datasetsTable string,
+	port uint, host, name, user, pass,
+	clientsTable, datasetsTable string,
+	idDecoder sts.DecodeClientID,
 ) (p *Postgres) {
 	if port == 0 {
 		port = 5432
@@ -174,6 +180,7 @@ func NewPostgres(
 		pass:          pass,
 		clientsTable:  clientsTable,
 		datasetsTable: datasetsTable,
+		idDecoder:     idDecoder,
 	}
 	return
 }
@@ -234,15 +241,16 @@ func (p *Postgres) disconnect() error {
 	return err
 }
 
-func (p *Postgres) initClient(id, name, os string) (err error) {
+func (p *Postgres) initClient(id, key, name, os string) (err error) {
 	_, err = p.db.NamedExec(
 		fmt.Sprintf(`
 			INSERT INTO %s
-			(id, name, alias, os, dirs_conf, created_at, updated_at, pinged_at)
-			VALUES (:id, :name, '', :os, '{}', :now, :now, :now)
+			(id, key, name, alias, os, dirs_conf, created_at, updated_at, pinged_at)
+			VALUES (:id, :key, :name, '', :os, '{}', :now, :now, :now)
 		`, p.clientsTable),
 		map[string]interface{}{
 			"id":   id,
+			"key":  key,
 			"name": name,
 			"os":   os,
 			"now":  time.Now(),
@@ -257,11 +265,11 @@ func (p *Postgres) getClientByID(id string) (client *Client, err error) {
 	return
 }
 
-func (p *Postgres) getDatasetsByClient(clientID string) (datasets []*Dataset, err error) {
+func (p *Postgres) getDatasetsByClient(uid string) (datasets []*Dataset, err error) {
 	p.db.Select(
 		&datasets,
 		fmt.Sprintf(`SELECT * FROM %s WHERE client_id=$1`, p.datasetsTable),
-		clientID,
+		uid,
 	)
 	return
 }
@@ -277,21 +285,21 @@ func (p *Postgres) getDatasets() (datasets []*Dataset, err error) {
 	return
 }
 
-func (p *Postgres) setPingedTime(clientID string, when time.Time) (err error) {
+func (p *Postgres) setPingedTime(uid string, when time.Time) (err error) {
 	_, err = p.db.NamedExec(fmt.Sprintf(`
 		UPDATE %s SET pinged_at=:t WHERE id=:id
 	`, p.clientsTable), map[string]interface{}{
-		"id": clientID,
+		"id": uid,
 		"t":  when,
 	})
 	return
 }
 
-func (p *Postgres) setLoadedTime(clientID string, when time.Time) (err error) {
+func (p *Postgres) setLoadedTime(uid string, when time.Time) (err error) {
 	_, err = p.db.NamedExec(fmt.Sprintf(`
 		UPDATE %s SET loaded_at=:t WHERE id=:id
 	`, p.clientsTable), map[string]interface{}{
-		"id": clientID,
+		"id": uid,
 		"t":  when,
 	})
 	return
@@ -307,18 +315,19 @@ func (p *Postgres) GetClientStatus(
 		return
 	}
 	defer p.disconnect()
+	key, uid := p.idDecoder(clientID)
 	status |= sts.ClientIsDisabled
 	var client *Client
-	client, err = p.getClientByID(clientID)
+	client, err = p.getClientByID(uid)
 	if err == sql.ErrNoRows {
-		if err = p.initClient(clientID, clientName, clientOS); err != nil {
+		if err = p.initClient(uid, key, clientName, clientOS); err != nil {
 			return
 		}
-		if client, err = p.getClientByID(clientID); err != nil {
+		if client, err = p.getClientByID(uid); err != nil {
 			return
 		}
 	}
-	if err = p.setPingedTime(clientID, time.Now()); err != nil {
+	if err = p.setPingedTime(uid, time.Now()); err != nil {
 		return
 	}
 	if !client.VerifiedAt.Valid {
@@ -338,11 +347,12 @@ func (p *Postgres) GetClientConf(clientID string) (conf *sts.ClientConf, err err
 		return
 	}
 	defer p.disconnect()
-	client, err := p.getClientByID(clientID)
+	_, uid := p.idDecoder(clientID)
+	client, err := p.getClientByID(uid)
 	if client == nil || err != nil {
 		return
 	}
-	datasets, err := p.getDatasetsByClient(clientID)
+	datasets, err := p.getDatasetsByClient(uid)
 	if err != nil || len(datasets) == 0 {
 		return
 	}
@@ -358,7 +368,7 @@ func (p *Postgres) GetClientConf(clientID string) (conf *sts.ClientConf, err err
 	}
 	// Whenever a client gets an updated conf, let's rebuild the cache to make
 	// sure we're current
-	p.cache.rebuild(clientID, datasets)
+	p.cache.rebuild(uid, datasets)
 	return
 }
 
@@ -368,7 +378,8 @@ func (p *Postgres) SetClientConfReceived(clientID string, when time.Time) error 
 		return err
 	}
 	defer p.disconnect()
-	return p.setLoadedTime(clientID, when)
+	_, uid := p.idDecoder(clientID)
+	return p.setLoadedTime(uid, when)
 }
 
 // IsValid fulfills sts.IsKeyValid and determines whether or not the input key
@@ -379,7 +390,8 @@ func (p *Postgres) IsValid(dataset, clientID string) bool {
 		p.connect()
 		p.disconnect()
 	}
-	for _, name := range p.cache.getApprovedDatasetNames(clientID) {
+	_, uid := p.idDecoder(clientID)
+	for _, name := range p.cache.getApprovedDatasetNames(uid) {
 		if name == dataset {
 			return true
 		}
