@@ -90,7 +90,7 @@ func (c *Client) SetClientConfReceived(clientID string, when time.Time) error {
 // routeClientManagement handles the HTTP routes for getting a client's status
 // and configuration
 func (s *Server) routeClientManagement(w http.ResponseWriter, r *http.Request) {
-	log.Debug("Handling:", r.URL.RequestURI)
+	log.Debug("Handling:", r.URL.RequestURI())
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) < 4 || s.ClientManager == nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -112,6 +112,7 @@ func (s *Server) routeClientManagement(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
+			log.Debug("Client Status:", clientID, clientName, clientOS, ":", status)
 			err = s.respond(
 				w,
 				http.StatusOK,
@@ -133,7 +134,7 @@ func (s *Server) routeClientManagement(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
-			log.Debug("Client conf:", string(respJSON))
+			log.Debug("Client Conf:", string(respJSON))
 			w.Header().Set(HeaderContentType, HeaderJSON)
 			if err = s.respond(w, http.StatusOK, respJSON); err != nil {
 				log.Error(err.Error())
