@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"code.arm.gov/dataflow/sts"
+	"code.arm.gov/dataflow/sts/log"
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 )
@@ -242,6 +243,7 @@ func (p *Postgres) disconnect() error {
 }
 
 func (p *Postgres) initClient(id, key, name, os string) (err error) {
+	log.Debug("Initializing Client:", id, key, name, os)
 	_, err = p.db.NamedExec(
 		fmt.Sprintf(`
 			INSERT INTO %s

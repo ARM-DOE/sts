@@ -90,6 +90,7 @@ func (c *Client) SetClientConfReceived(clientID string, when time.Time) error {
 // routeClientManagement handles the HTTP routes for getting a client's status
 // and configuration
 func (s *Server) routeClientManagement(w http.ResponseWriter, r *http.Request) {
+	log.Debug("Handling:", r.URL.RequestURI)
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) < 4 || s.ClientManager == nil {
 		w.WriteHeader(http.StatusBadRequest)
