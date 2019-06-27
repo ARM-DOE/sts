@@ -263,14 +263,23 @@ func (p *Postgres) initClient(id, key, name, os string) (err error) {
 
 func (p *Postgres) getClientByID(id string) (client *Client, err error) {
 	client = &Client{}
-	err = p.db.Get(client, fmt.Sprintf(`SELECT * FROM %s WHERE id=$1`, p.clientsTable), id)
+	err = p.db.Get(client, fmt.Sprintf(`
+		SELECT id, upload_key, name, alias, os, dirs_conf,
+		created_at, updated_at, pinged_at, loaded_at, verified_at
+		FROM %s
+		WHERE id=$1
+	`, p.clientsTable), id)
 	return
 }
 
 func (p *Postgres) getDatasetsByClient(uid string) (datasets []*Dataset, err error) {
 	p.db.Select(
 		&datasets,
-		fmt.Sprintf(`SELECT * FROM %s WHERE client_id=$1`, p.datasetsTable),
+		fmt.Sprintf(`
+			SELECT name, source_conf, client_id, created_at, updated_at
+			FROM %s
+			WHERE client_id=$1
+		`, p.datasetsTable),
 		uid,
 	)
 	return
@@ -278,12 +287,19 @@ func (p *Postgres) getDatasetsByClient(uid string) (datasets []*Dataset, err err
 
 func (p *Postgres) getDatasetByName(name string) (dataset *Dataset, err error) {
 	dataset = &Dataset{}
-	err = p.db.Get(dataset, fmt.Sprintf(`SELECT * FROM %s WHERE name=$1`, p.datasetsTable), name)
+	err = p.db.Get(dataset, fmt.Sprintf(`
+		SELECT name, source_conf, client_id, created_at, updated_at
+		FROM %s
+		WHERE name=$1
+	`, p.datasetsTable), name)
 	return
 }
 
 func (p *Postgres) getDatasets() (datasets []*Dataset, err error) {
-	p.db.Select(&datasets, fmt.Sprintf(`SELECT * FROM %s`, p.datasetsTable))
+	p.db.Select(&datasets, fmt.Sprintf(`
+		SELECT name, source_conf, client_id, created_at, updated_at
+		FROM %s
+	`, p.datasetsTable))
 	return
 }
 
