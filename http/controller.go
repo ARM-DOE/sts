@@ -28,6 +28,7 @@ func (c *Client) GetClientStatus(
 	var resp *http.Response
 	var reader io.ReadCloser
 	url := fmt.Sprintf("%s/client/%s/status", c.rootURL(), clientID)
+	log.Debug("GET", url, "...")
 	if req, err = http.NewRequest("GET", url, bytes.NewReader([]byte(""))); err != nil {
 		return
 	}
@@ -60,6 +61,7 @@ func (c *Client) GetClientConf(clientID string) (conf *sts.ClientConf, err error
 	var resp *http.Response
 	var reader io.ReadCloser
 	url := fmt.Sprintf("%s/client/%s/conf", c.rootURL(), clientID)
+	log.Debug("GET", url, "...")
 	if req, err = http.NewRequest("GET", url, bytes.NewReader([]byte(""))); err != nil {
 		return
 	}

@@ -100,6 +100,8 @@ func runFromServer(jsonEncodedServerConfig string) {
 		fileutil.StringMD5(strings.Join(addr, "")),
 	)
 
+	log.Debug("Server:", fmt.Sprintf("%s:%d", host, port))
+	log.Debug("Server Prefix:", serverConf.PathPrefix)
 	log.Debug("Client ID:", clientID)
 
 	ch := make(chan *sts.ClientConf)
