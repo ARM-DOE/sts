@@ -18,7 +18,7 @@ import (
 const schema = `
 CREATE TABLE __ (
 	id text NOT NULL,
-	key text NOT NULL,
+	upload_key text NOT NULL,
 	name text NOT NULL,
 	alias text NOT NULL,
 	os text NOT NULL,
@@ -44,7 +44,7 @@ CREATE TABLE __ (
 // Client represents a client record
 type Client struct {
 	ID         string      `db:"id"`
-	Key        string      `db:"key"`
+	Key        string      `db:"upload_key"`
 	Name       string      `db:"name"`
 	Alias      string      `db:"alias"`
 	OS         string      `db:"os"`
@@ -247,7 +247,7 @@ func (p *Postgres) initClient(id, key, name, os string) (err error) {
 	_, err = p.db.NamedExec(
 		fmt.Sprintf(`
 			INSERT INTO %s
-			(id, key, name, alias, os, dirs_conf, created_at, updated_at, pinged_at)
+			(id, upload_key, name, alias, os, dirs_conf, created_at, updated_at, pinged_at)
 			VALUES (:id, :key, :name, '', :os, '{}', :now, :now, :now)
 		`, p.clientsTable),
 		map[string]interface{}{
@@ -328,6 +328,8 @@ func (p *Postgres) GetClientStatus(
 		if client, err = p.getClientByID(uid); err != nil {
 			return
 		}
+	} else if err != nil {
+		return
 	}
 	if err = p.setPingedTime(uid, time.Now()); err != nil {
 		return
