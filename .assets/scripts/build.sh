@@ -2,6 +2,7 @@
 
 race=""
 ldflags=""
+outname="sts"
 
 for i in "$@"; do
     case $i in
@@ -13,8 +14,20 @@ for i in "$@"; do
         ldflags="${i#*=}"
         shift
         ;;
+        --os=*)
+        GOOS="${i#*=}"
+        shift
+        ;;
+        --outname=*)
+        outname="${i#*=}"
+        shift
+        ;;
     esac
 done
+
+if [[ "$GOOS" == "windows" ]]; then
+    outname="$outname.exe"
+fi
 
 basedir=$(dirname $0)
 
@@ -44,6 +57,6 @@ if [ -z "$vers" ]; then
 fi
 
 echo "-- Building Executable"
-go build -o $GOPATH/bin/sts $race \
+go build -o $GOPATH/bin/$outname $race \
     -ldflags="-X 'main.BuildTime=$date UTC' -X 'main.Version=$vers' $ldflags" \
     $GOPATH/src/code.arm.gov/dataflow/sts/main/*.go
