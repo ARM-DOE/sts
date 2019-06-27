@@ -15,7 +15,7 @@ for i in "$@"; do
         shift
         ;;
         --os=*)
-        GOOS="${i#*=}"
+        export GOOS="${i#*=}"
         shift
         ;;
         --outname=*)
