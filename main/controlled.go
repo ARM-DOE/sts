@@ -217,15 +217,17 @@ func requestClientConf(
 		case status&sts.ClientIsDisabled != 0:
 			log.Debug("Client disabled:", clientID)
 			goto next
-		case status&sts.ClientIsApproved != 0 && status&sts.ClientHasUpdatedConfiguration != 0:
-			log.Debug("Client has updated conf:", clientID)
-			if conf, err = manager.GetClientConf(clientID); err != nil {
-				log.Error(err.Error())
-				goto next
-			}
-			if conf != nil && len(conf.Sources) > 0 {
-				log.Debug("Applying updated client conf:", clientID)
-				ch <- conf
+		case status&sts.ClientIsApproved != 0:
+			if status&sts.ClientHasUpdatedConfiguration != 0 || conf == nil {
+				log.Debug("Client has [updated] conf:", clientID)
+				if conf, err = manager.GetClientConf(clientID); err != nil {
+					log.Error(err.Error())
+					goto next
+				}
+				if conf != nil && len(conf.Sources) > 0 {
+					log.Debug("Applying client conf:", clientID)
+					ch <- conf
+				}
 			}
 		}
 	next:
