@@ -294,6 +294,7 @@ func (a *app) stopClients(stopFull bool) {
 		}(stop, stopFull, done, &wg)
 	}
 	wg.Wait()
+	a.clients = nil
 	a.clientStop = nil
 }
 
