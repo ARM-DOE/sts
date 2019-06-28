@@ -342,6 +342,7 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 func (broker *Broker) startScan(wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer log.Debug("Scanner done")
+	var wait <-chan time.Time
 	for {
 		log.Debug("Scanning ...")
 		found := broker.scan()
@@ -349,10 +350,11 @@ func (broker *Broker) startScan(wg *sync.WaitGroup) {
 			broker.chScanned <- found
 		}
 		log.Debug("Scan complete. Found:", len(found))
+		wait = time.After(broker.Conf.ScanDelay)
 		select {
 		case broker.stopFull = <-broker.chStop:
 			return
-		default:
+		case <-wait:
 			break
 		}
 		time.Sleep(broker.Conf.ScanDelay)
