@@ -357,7 +357,6 @@ func (broker *Broker) startScan(wg *sync.WaitGroup) {
 		case <-wait:
 			break
 		}
-		time.Sleep(broker.Conf.ScanDelay)
 	}
 }
 
