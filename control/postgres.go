@@ -373,7 +373,7 @@ func (p *Postgres) GetClientConf(clientID string) (conf *sts.ClientConf, err err
 		return
 	}
 	datasets, err := p.getDatasetsByClient(uid)
-	if err != nil || len(datasets) == 0 {
+	if err != nil {
 		return
 	}
 	conf = &sts.ClientConf{}

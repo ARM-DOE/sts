@@ -137,6 +137,9 @@ func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 	signalCh := make(chan os.Signal)
 	signal.Notify(signalCh, os.Interrupt, os.Kill)
 	for {
+		if a.conf.Client.Dirs == nil {
+			a.conf.Client.Dirs = &sts.ClientDirs{}
+		}
 		if a.conf.Client.Dirs.Cache == "" {
 			a.conf.Client.Dirs.Cache = "cache"
 		}
