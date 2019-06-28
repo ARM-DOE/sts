@@ -155,8 +155,10 @@ func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 			goto wait
 		}
 
-		log.Debug("Starting clients...")
-		a.startClients()
+		if len(a.conf.Client.Sources) > 0 {
+			log.Debug("Starting clients...")
+			a.startClients()
+		}
 
 	wait:
 		select {
