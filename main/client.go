@@ -146,7 +146,7 @@ func (c *clientApp) init() (err error) {
 			Logger: log.Get(),
 		}
 		fileToNewName = func(file sts.File) string {
-			return mapper.Translate(file.GetPath())
+			return mapper.Translate(file.GetName())
 		}
 	}
 	qtags := make([]*queue.Tag, len(c.conf.Tags))
