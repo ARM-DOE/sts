@@ -294,6 +294,7 @@ func (a *app) stopClients(stopFull bool) {
 		}(stop, stopFull, done, &wg)
 	}
 	wg.Wait()
+	a.clientStop = nil
 }
 
 func (a *app) startInternalServer() {

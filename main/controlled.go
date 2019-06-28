@@ -127,6 +127,8 @@ func runFromServer(jsonEncodedServerConfig string) {
 	}
 
 	a.runControlledClients(ch)
+
+	log.Debug("Done.")
 }
 
 // runControlledClients runs in a loop waiting for any config changes to be
