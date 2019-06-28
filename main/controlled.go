@@ -228,10 +228,6 @@ func requestClientConf(
 					log.Error("An unknown error occurred; check client configuration")
 					goto next
 				}
-				if len(conf.Sources) == 0 {
-					log.Info("Client has no configured data sources")
-					goto next
-				}
 				log.Info("Applying client configuration ...")
 				ch <- conf
 			}
