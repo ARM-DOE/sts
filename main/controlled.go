@@ -219,15 +219,21 @@ func requestClientConf(
 			goto next
 		case status&sts.ClientIsApproved != 0:
 			if status&sts.ClientHasUpdatedConfiguration != 0 || conf == nil {
-				log.Debug("Client has [updated] conf:", clientID)
+				log.Info("Client has [updated] conf:", clientID)
 				if conf, err = manager.GetClientConf(clientID); err != nil {
 					log.Error(err.Error())
 					goto next
 				}
-				if conf != nil && len(conf.Sources) > 0 {
-					log.Debug("Applying client conf:", clientID)
-					ch <- conf
+				if conf == nil {
+					log.Error("An unknown error occurred; check client configuration")
+					goto next
 				}
+				if len(conf.Sources) == 0 {
+					log.Info("Client has no configured data sources")
+					goto next
+				}
+				log.Info("Applying client configuration ...")
+				ch <- conf
 			}
 		}
 	next:
