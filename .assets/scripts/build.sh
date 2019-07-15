@@ -2,6 +2,7 @@
 
 race=""
 ldflags=""
+outdir=$GOPATH/bin
 outname="sts"
 
 for i in "$@"; do
@@ -16,6 +17,10 @@ for i in "$@"; do
         ;;
         --os=*)
         export GOOS="${i#*=}"
+        shift
+        ;;
+        --outdir=*)
+        outdir="${i#*=}"
         shift
         ;;
         --outname=*)
@@ -57,6 +62,6 @@ if [ -z "$vers" ]; then
 fi
 
 echo "-- Building Executable"
-go build -o $GOPATH/bin/$outname $race \
+go build -o $outdir/$outname $race \
     -ldflags="-X 'main.BuildTime=$date UTC' -X 'main.Version=$vers' $ldflags" \
     $GOPATH/src/code.arm.gov/dataflow/sts/main/*.go
