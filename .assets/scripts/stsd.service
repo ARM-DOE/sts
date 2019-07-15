@@ -7,12 +7,7 @@ Type=simple
 User=dsmgr
 Group=data
 RestartSec=5
-# EnvironmentFile=-/apps/transfer/conf/sts-env
-# ExecStartPre=-/usr/libexec/postfix/aliasesdb
-# ExecStartPre=-/usr/libexec/postfix/chroot-update
 ExecStart=/apps/transfer/bin/sts -loop -conf /apps/transfer/conf/sts.yaml
-# ExecReload=/usr/sbin/postfix reload
-# ExecStop=/usr/sbin/postfix stop
  
 [Install]
 WantedBy=multi-user.target
