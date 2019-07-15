@@ -502,6 +502,7 @@ type ServerConf struct {
 	Keys          []string    `yaml:"keys" json:"keys"`
 	Dirs          *ServerDirs `yaml:"dirs" json:"dirs"`
 	Server        *HTTPServer `yaml:"server" json:"server"`
+	Queue         *Queue
 }
 
 // DBConf is the struct for defining a database connection
@@ -534,6 +535,12 @@ type HTTPServer struct {
 	TLSCertPath string `yaml:"http-tls-cert" json:"http-tls-cert"`
 	TLSKeyPath  string `yaml:"http-tls-key" json:"http-tls-key"`
 	Compression int    `yaml:"compress" json:"compress"`
+}
+
+// Queue is the struct for managing an AWS queue resource
+type Queue struct {
+	Region string `yaml:"aws-region" json:"aws-region"`
+	Name   string `yaml:"name" json:"name"`
 }
 
 // NewConf returns a parsed Conf reference based on the provided conf file path

@@ -76,14 +76,19 @@ func (f *finalFile) GetHash() string {
 	return f.hash
 }
 
+func (f *finalFile) GetBody() string {
+	return f.path
+}
+
 // Stage is the manager for all things file reception
 type Stage struct {
-	name      string
-	rootDir   string
-	targetDir string
-	logger    sts.ReceiveLogger
-	nPipe     int
-	lastIn    time.Time
+	name       string
+	rootDir    string
+	targetDir  string
+	logger     sts.ReceiveLogger
+	dispatcher sts.Dispatcher
+	nPipe      int
+	lastIn     time.Time
 
 	validateCh chan *finalFile
 	finalizeCh chan *finalFile
@@ -101,12 +106,13 @@ type Stage struct {
 // for the stage area (will append {source}/), targetDir is where files
 // should be moved once validated, and logger instance for logging files
 // received
-func New(name, rootDir, targetDir string, logger sts.ReceiveLogger) *Stage {
+func New(name, rootDir, targetDir string, logger sts.ReceiveLogger, dispatcher sts.Dispatcher) *Stage {
 	s := &Stage{
-		name:      name,
-		rootDir:   rootDir,
-		targetDir: targetDir,
-		logger:    logger,
+		name:       name,
+		rootDir:    rootDir,
+		targetDir:  targetDir,
+		logger:     logger,
+		dispatcher: dispatcher,
 	}
 	s.wait = make(map[string][]*finalFile)
 	s.cache = make(map[string]*finalFile)
@@ -708,11 +714,19 @@ func (s *Stage) finalize(file *finalFile) {
 	}
 
 	log.Debug("Finalizing", s.name, file.name)
-	if err := s.putFileAway(file); err != nil {
+	targetPath, err := s.putFileAway(file)
+	if err != nil {
 		log.Error(err)
 		return
 	}
 	log.Debug("Finalized", s.name, file.name)
+
+	if s.dispatcher != nil {
+		log.Debug("Dispatching", targetPath)
+		if err := s.dispatcher.Send(targetPath); err != nil {
+			log.Error(err)
+		}
+	}
 
 	waiting := s.fromWait(file.path)
 	for _, waitFile := range waiting {
@@ -721,7 +735,7 @@ func (s *Stage) finalize(file *finalFile) {
 	}
 }
 
-func (s *Stage) putFileAway(file *finalFile) (err error) {
+func (s *Stage) putFileAway(file *finalFile) (targetPath string, err error) {
 	// Better to log the file twice rather than receive it twice.  If we log
 	// after putting the file away, it's possible that a crash could occur
 	// after putting the file away but before logging. On restart, there would
@@ -734,7 +748,7 @@ func (s *Stage) putFileAway(file *finalFile) (err error) {
 	if file.renamed != "" {
 		targetName = file.renamed
 	}
-	targetPath := filepath.Join(s.targetDir, targetName)
+	targetPath = filepath.Join(s.targetDir, targetName)
 	os.MkdirAll(filepath.Dir(targetPath), 0775)
 	if err = fileutil.Move(file.path+waitExt, targetPath); err != nil {
 		err = fmt.Errorf(

@@ -8,10 +8,12 @@ import (
 
 	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/control"
+	"code.arm.gov/dataflow/sts/dispatch"
 	"code.arm.gov/dataflow/sts/http"
 	"code.arm.gov/dataflow/sts/log"
 	"code.arm.gov/dataflow/sts/payload"
 	"code.arm.gov/dataflow/sts/stage"
+	"github.com/aws/aws-sdk-go/aws"
 )
 
 func strToIndex(needle string, haystack []string) int {
@@ -52,12 +54,24 @@ func (a *serverApp) init() (err error) {
 	}
 	dirs := conf.Dirs
 	log.Init(dirs.LogMsg, a.debug)
+	var dispatcher *dispatch.Queue
+	if conf.Queue != nil {
+		dispatcher, err = dispatch.NewQueue(
+			&aws.Config{Region: aws.String(conf.Queue.Region)},
+			conf.Queue.Name,
+		)
+		if err != nil {
+			return
+		}
+	}
 	newStage := func(source string) sts.GateKeeper {
 		return stage.New(
 			source,
 			filepath.Join(dirs.Stage, source),
 			filepath.Join(dirs.Final, source),
-			log.NewReceive(filepath.Join(dirs.LogIn, source)))
+			log.NewReceive(filepath.Join(dirs.LogIn, source)),
+			dispatcher,
+		)
 	}
 	nodes, err := ioutil.ReadDir(dirs.Stage)
 	if err != nil {

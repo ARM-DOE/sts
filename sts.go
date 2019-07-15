@@ -95,6 +95,11 @@ type FileQueue interface {
 	Pop() Sendable
 }
 
+// Dispatcher is the interface for broadcasting messages
+type Dispatcher interface {
+	Send(string) error
+}
+
 // GateKeeper is the interface for managing the "putting away" of files
 // received on the server
 type GateKeeper interface {
