@@ -36,14 +36,14 @@ fi
 
 basedir=$(dirname $0)
 
-if [ -f $GOPATH/bin/sts ]; then
+if [ -f $outdir/$outname ]; then
     echo "-- Cleaning Old Build"
-    rm $GOPATH/bin/sts
+    rm $outdir/$outname
     rm -rf $GOPATH/pkg
 fi
 
 echo "-- Preparing"
-mkdir -p $GOPATH/bin
+mkdir -p $outdir
 
 echo "-- Building Dependencies"
 go get gopkg.in/yaml.v2
