@@ -28,6 +28,8 @@ notification-list:
 
 obsoletes: sts-transfer, sts-delivery
 
+scriptlet-installer: root
+
 #------------------------------------------------------------------------------
 # Required fields that do not need to be set for this release
 
