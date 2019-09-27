@@ -22,6 +22,7 @@ tar -C $STS_HOME/data/out/stsin-1 -xzf $PWD/$basedir/clean.tgz
 mkdir -p $STS_HOME/data/out/stsin-1/newdir
 touch $STS_HOME/data/out/stsin-1/newdir/betterignore
 echo "some content" > $STS_HOME/data/out/stsin-1/newdir/.betterignore
+echo "some content" > $STS_HOME/data/out/stsin-1/newdir/.nfs2939249321abadf2332
 echo "some content" > $STS_HOME/data/out/stsin-1/newdir/bettersend
 
 # For testing a symbolically linked file:

@@ -102,11 +102,16 @@ type Local struct {
 // AddStandardIgnore adds standard ignore patterns
 func (dir *Local) AddStandardIgnore() {
 	ignore := []*regexp.Regexp{
-		regexp.MustCompile(`\.DS_Store$`),
 		regexp.MustCompile(
-			fmt.Sprintf(`%s$`, regexp.QuoteMeta(fileutil.LockExt))),
+			fmt.Sprintf(
+				`(?:^|%s)%s$`,
+				regexp.QuoteMeta(string(filepath.Separator)),
+				regexp.QuoteMeta(fileutil.LockExt))),
 		regexp.MustCompile(
-			fmt.Sprintf(`%s$`, regexp.QuoteMeta(disabledName))),
+			fmt.Sprintf(
+				`(?:^|%s)%s$`,
+				regexp.QuoteMeta(string(filepath.Separator)),
+				regexp.QuoteMeta(disabledName))),
 	}
 	dir.Ignore = append(dir.Ignore, ignore...)
 }
