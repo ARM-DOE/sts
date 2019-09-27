@@ -62,6 +62,12 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 	}
 }
 
+// UnmarshalYAML implements Unmarshaler interface
+func (d *Duration) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
+	err = unmarshal(&d.Duration)
+	return
+}
+
 // Conf is the outer struct for decoding a YAML config file
 type Conf struct {
 	AgentKey string      `yaml:"stackimpact" json:"stackimpact"`
@@ -110,22 +116,13 @@ func (conf *ClientConf) propagate() {
 
 type aliasClientConf ClientConf
 
-type auxClientConf struct {
-	*aliasClientConf
-}
-
-func (conf *ClientConf) getAux() *auxClientConf {
-	return &auxClientConf{
-		aliasClientConf: (*aliasClientConf)(conf),
-	}
-}
-
 // UnmarshalYAML implements the Unmarshaler interface for handling custom
 // member(s): https://godoc.org/gopkg.in/yaml.v2
 func (conf *ClientConf) UnmarshalYAML(
 	unmarshal func(interface{}) error,
 ) (err error) {
-	if err = unmarshal(conf.getAux()); err != nil {
+	aux := (*aliasClientConf)(conf)
+	if err = unmarshal(aux); err != nil {
 		return
 	}
 	conf.propagate()
@@ -135,7 +132,8 @@ func (conf *ClientConf) UnmarshalYAML(
 // UnmarshalJSON implements the Unmarshaler interface for handling custom
 // member(s): https://golang.org/pkg/encoding/json/#Unmarshal
 func (conf *ClientConf) UnmarshalJSON(data []byte) (err error) {
-	if err = json.Unmarshal(data, conf.getAux()); err != nil {
+	aux := (*aliasClientConf)(conf)
+	if err = json.Unmarshal(data, aux); err != nil {
 		return
 	}
 	conf.propagate()
@@ -156,29 +154,29 @@ type ClientDirs struct {
 // SourceConf is the struct for managing the configuration of an outgoing
 // client source.
 type SourceConf struct {
-	Name          string           `yaml:"name" json:"name"`
-	OutDir        string           `yaml:"out-dir" json:"out-dir"`
-	LogDir        string           `yaml:"log-dir" json:"log-dir"`
-	Threads       int              `yaml:"threads" json:"threads"`
-	CacheAge      time.Duration    `yaml:"cache-age" json:"-"`
-	MinAge        time.Duration    `yaml:"min-age" json:"-"`
-	MaxAge        time.Duration    `yaml:"max-age" json:"-"`
-	ScanDelay     time.Duration    `yaml:"scan-delay" json:"-"`
-	Timeout       time.Duration    `yaml:"timeout" json:"-"`
-	Compression   int              `yaml:"compress" json:"compress"`
-	StatInterval  time.Duration    `yaml:"stat-interval" json:"-"`
-	PollDelay     time.Duration    `yaml:"poll-delay" json:"-"`
-	PollInterval  time.Duration    `yaml:"poll-interval" json:"-"`
-	PollAttempts  int              `yaml:"poll-attempts" json:"poll-attempts"`
-	Target        *TargetConf      `yaml:"target" json:"target"`
-	Rename        []*MappingConf   `yaml:"rename" json:"rename"`
-	Tags          []*TagConf       `yaml:"tags" json:"tags"`
-	BinSize       units.Base2Bytes `json:"-"`
-	StatPayload   bool             `json:"-"`
-	GroupBy       *regexp.Regexp   `json:"-"`
-	IncludeHidden bool             `json:"-"`
-	Include       []*regexp.Regexp `json:"-"`
-	Ignore        []*regexp.Regexp `json:"-"`
+	Name          string
+	OutDir        string
+	LogDir        string
+	Threads       int
+	CacheAge      time.Duration
+	MinAge        time.Duration
+	MaxAge        time.Duration
+	ScanDelay     time.Duration
+	Timeout       time.Duration
+	Compression   int
+	StatInterval  time.Duration
+	PollDelay     time.Duration
+	PollInterval  time.Duration
+	PollAttempts  int
+	Target        *TargetConf
+	Rename        []*MappingConf
+	Tags          []*TagConf
+	BinSize       units.Base2Bytes
+	StatPayload   bool
+	GroupBy       *regexp.Regexp
+	IncludeHidden bool
+	Include       []*regexp.Regexp
+	Ignore        []*regexp.Regexp
 
 	// We have to do this mumbo jumbo if we ever want a false value to
 	// override a true value because a false boolean value is the "empty"
@@ -187,32 +185,50 @@ type SourceConf struct {
 	isStatPayloadSet bool
 }
 
-type aliasSourceConf SourceConf
 type auxSourceConf struct {
-	BinSize       string   `yaml:"bin-size" json:"bin-size"`
-	StatPayload   string   `yaml:"stat-payload" json:"stat-payload"`
-	GroupBy       string   `yaml:"group-by" json:"group-by"`
-	IncludeHidden string   `yaml:"include-hidden" json:"include-hidden"`
-	Include       []string `yaml:"include" json:"include"`
-	Ignore        []string `yaml:"ignore" json:"ignore"`
-	CacheAge      Duration `json:"cache-age"`
-	MinAge        Duration `json:"min-age"`
-	MaxAge        Duration `json:"max-age"`
-	ScanDelay     Duration `json:"scan-delay"`
-	Timeout       Duration `json:"timeout"`
-	StatInterval  Duration `json:"stat-interval"`
-	PollDelay     Duration `json:"poll-delay"`
-	PollInterval  Duration `json:"poll-interval"`
-	*aliasSourceConf
-}
-
-func (ss *SourceConf) getAux() *auxSourceConf {
-	return &auxSourceConf{
-		aliasSourceConf: (*aliasSourceConf)(ss),
-	}
+	Name          string         `yaml:"name" json:"name"`
+	OutDir        string         `yaml:"out-dir" json:"out-dir"`
+	LogDir        string         `yaml:"log-dir" json:"log-dir"`
+	Threads       int            `yaml:"threads" json:"threads"`
+	CacheAge      Duration       `yaml:"cache-age" json:"cache-age"`
+	MinAge        Duration       `yaml:"min-age" json:"min-age"`
+	MaxAge        Duration       `yaml:"max-age" json:"max-age"`
+	ScanDelay     Duration       `yaml:"scan-delay" json:"scan-delay"`
+	Timeout       Duration       `yaml:"timeout" json:"timeout"`
+	Compression   int            `yaml:"compress" json:"compress"`
+	StatInterval  Duration       `yaml:"interval" json:"stat-interval"`
+	PollDelay     Duration       `yaml:"poll-delay" json:"poll-delay"`
+	PollInterval  Duration       `yaml:"poll-interval" json:"poll-interval"`
+	PollAttempts  int            `yaml:"poll-attempts" json:"poll-attempts"`
+	Target        *TargetConf    `yaml:"target" json:"target"`
+	Rename        []*MappingConf `yaml:"rename" json:"rename"`
+	Tags          []*TagConf     `yaml:"tags" json:"tags"`
+	BinSize       string         `yaml:"bin-size" json:"bin-size"`
+	StatPayload   string         `yaml:"stat-payload" json:"stat-payload"`
+	GroupBy       string         `yaml:"group-by" json:"group-by"`
+	IncludeHidden string         `yaml:"include-hidden" json:"include-hidden"`
+	Include       []string       `yaml:"include" json:"include"`
+	Ignore        []string       `yaml:"ignore" json:"ignore"`
 }
 
 func (ss *SourceConf) applyAux(aux *auxSourceConf) (err error) {
+	ss.Name = aux.Name
+	ss.OutDir = aux.OutDir
+	ss.LogDir = aux.LogDir
+	ss.Threads = aux.Threads
+	ss.CacheAge = aux.CacheAge.Duration
+	ss.MinAge = aux.MinAge.Duration
+	ss.MaxAge = aux.MaxAge.Duration
+	ss.ScanDelay = aux.ScanDelay.Duration
+	ss.Timeout = aux.Timeout.Duration
+	ss.Compression = aux.Compression
+	ss.StatInterval = aux.StatInterval.Duration
+	ss.PollDelay = aux.PollDelay.Duration
+	ss.PollInterval = aux.PollInterval.Duration
+	ss.PollAttempts = aux.PollAttempts
+	ss.Target = aux.Target
+	ss.Rename = aux.Rename
+	ss.Tags = aux.Tags
 	if aux.BinSize != "" {
 		if ss.BinSize, err = units.ParseBase2Bytes(aux.BinSize); err != nil {
 			return
@@ -258,7 +274,7 @@ func (ss *SourceConf) applyAux(aux *auxSourceConf) (err error) {
 func (ss *SourceConf) UnmarshalYAML(
 	unmarshal func(interface{}) error,
 ) (err error) {
-	aux := ss.getAux()
+	aux := &auxSourceConf{}
 	if err = unmarshal(aux); err != nil {
 		return
 	}
@@ -269,18 +285,10 @@ func (ss *SourceConf) UnmarshalYAML(
 // UnmarshalJSON implements the Unmarshaler interface for handling custom
 // member(s): https://golang.org/pkg/encoding/json/#Unmarshal
 func (ss *SourceConf) UnmarshalJSON(data []byte) (err error) {
-	aux := ss.getAux()
+	aux := &auxSourceConf{}
 	if err = json.Unmarshal(data, aux); err != nil {
 		return
 	}
-	ss.CacheAge = aux.CacheAge.Duration
-	ss.MinAge = aux.MinAge.Duration
-	ss.MaxAge = aux.MaxAge.Duration
-	ss.ScanDelay = aux.ScanDelay.Duration
-	ss.Timeout = aux.Timeout.Duration
-	ss.StatInterval = aux.StatInterval.Duration
-	ss.PollDelay = aux.PollDelay.Duration
-	ss.PollInterval = aux.PollInterval.Duration
 	err = ss.applyAux(aux)
 	return
 }
@@ -288,15 +296,24 @@ func (ss *SourceConf) UnmarshalJSON(data []byte) (err error) {
 // MarshalJSON implements Marshaler interface for handling custom member(s):
 // https://golang.org/pkg/encoding/json/#Marshal
 func (ss *SourceConf) MarshalJSON() ([]byte, error) {
-	aux := ss.getAux()
+	aux := &auxSourceConf{}
+	aux.Name = ss.Name
+	aux.OutDir = ss.OutDir
+	aux.LogDir = ss.LogDir
+	aux.Threads = ss.Threads
 	aux.CacheAge.Duration = ss.CacheAge
 	aux.MinAge.Duration = ss.MinAge
 	aux.MaxAge.Duration = ss.MaxAge
 	aux.ScanDelay.Duration = ss.ScanDelay
 	aux.Timeout.Duration = ss.Timeout
+	aux.Compression = ss.Compression
 	aux.StatInterval.Duration = ss.StatInterval
 	aux.PollDelay.Duration = ss.PollDelay
 	aux.PollInterval.Duration = ss.PollInterval
+	aux.PollAttempts = ss.PollAttempts
+	aux.Target = ss.Target
+	aux.Rename = ss.Rename
+	aux.Tags = ss.Tags
 	aux.BinSize = ss.BinSize.String()
 	if ss.GroupBy != nil {
 		aux.GroupBy = ss.GroupBy.String()
@@ -323,31 +340,27 @@ func (ss *SourceConf) MarshalJSON() ([]byte, error) {
 // MappingConf is the struct for indicating what path pattern should be mapped
 // to a different target name based on the associated template string.
 type MappingConf struct {
-	Template string         `yaml:"to" json:"to"`
-	Pattern  *regexp.Regexp `json:"-"`
+	Pattern  *regexp.Regexp
+	Template string
 }
 
-type aliasMappingConf MappingConf
 type auxMappingConf struct {
-	Pattern string `yaml:"from" json:"from"`
-	*aliasMappingConf
-}
-
-func (m *MappingConf) getAux() *auxMappingConf {
-	return &auxMappingConf{
-		aliasMappingConf: (*aliasMappingConf)(m),
-	}
+	Pattern  string `yaml:"from" json:"from"`
+	Template string `yaml:"to" json:"to"`
 }
 
 func (m *MappingConf) applyAux(aux *auxMappingConf) (err error) {
-	m.Pattern, err = regexp.Compile(aux.Pattern)
+	if m.Pattern, err = regexp.Compile(aux.Pattern); err != nil {
+		return
+	}
+	m.Template = aux.Template
 	return
 }
 
 // UnmarshalYAML implements the Unmarshaler interface for handling custom
 // member(s): https://godoc.org/gopkg.in/yaml.v2
 func (m *MappingConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
-	aux := m.getAux()
+	aux := &auxMappingConf{}
 	if err = unmarshal(aux); err != nil {
 		return
 	}
@@ -358,7 +371,7 @@ func (m *MappingConf) UnmarshalYAML(unmarshal func(interface{}) error) (err erro
 // UnmarshalJSON implements the Unmarshaler interface for handling custom
 // member(s): https://golang.org/pkg/encoding/json/#Unmarshal
 func (m *MappingConf) UnmarshalJSON(data []byte) (err error) {
-	aux := m.getAux()
+	aux := &auxMappingConf{}
 	if err = json.Unmarshal(data, aux); err != nil {
 		return
 	}
@@ -369,7 +382,8 @@ func (m *MappingConf) UnmarshalJSON(data []byte) (err error) {
 // MarshalJSON implements Marshaler interface for handling custom member(s):
 // https://golang.org/pkg/encoding/json/#Marshal
 func (m *MappingConf) MarshalJSON() ([]byte, error) {
-	aux := m.getAux()
+	aux := &auxMappingConf{}
+	aux.Template = m.Template
 	aux.Pattern = m.Pattern.String()
 	return json.Marshal(aux)
 }
@@ -377,13 +391,13 @@ func (m *MappingConf) MarshalJSON() ([]byte, error) {
 // TagConf is the struct for managing configuration options for "tags" (groups)
 // of files.
 type TagConf struct {
-	Priority    int            `yaml:"priority" json:"priority"`
-	Method      string         `yaml:"method" json:"method"`
-	Order       string         `yaml:"order" json:"order"`
-	LastDelay   time.Duration  `yaml:"last-delay" json:"-"`
-	DeleteDelay time.Duration  `yaml:"delete-delay" json:"-"`
-	Pattern     *regexp.Regexp `json:"-"`
-	Delete      bool           `json:"-"`
+	Priority    int
+	Method      string
+	Order       string
+	Pattern     *regexp.Regexp
+	Delete      bool
+	LastDelay   time.Duration
+	DeleteDelay time.Duration
 
 	// We have to do this mumbo jumbo if we ever want a false value to
 	// override a true value because a false boolean value is the "empty"
@@ -392,22 +406,21 @@ type TagConf struct {
 	isDeleteSet bool
 }
 
-type aliasTagConf TagConf
 type auxTagConf struct {
+	Priority    int      `yaml:"priority" json:"priority"`
+	Method      string   `yaml:"method" json:"method"`
+	Order       string   `yaml:"order" json:"order"`
 	Pattern     string   `yaml:"pattern" json:"pattern"`
 	Delete      string   `yaml:"delete" json:"delete"`
-	LastDelay   Duration `json:"last-delay"`
-	DeleteDelay Duration `json:"delete-delay"`
-	*aliasTagConf
-}
-
-func (t *TagConf) getAux() *auxTagConf {
-	return &auxTagConf{
-		aliasTagConf: (*aliasTagConf)(t),
-	}
+	LastDelay   Duration `yaml:"last-delay" json:"last-delay"`
+	DeleteDelay Duration `yaml:"delete-delay" json:"delete-delay"`
 }
 
 func (t *TagConf) applyAux(aux *auxTagConf) (err error) {
+	t.Priority = aux.Priority
+	t.Method = aux.Method
+	t.LastDelay = aux.LastDelay.Duration
+	t.DeleteDelay = aux.DeleteDelay.Duration
 	if aux.Pattern != defaultTag && aux.Pattern != "" {
 		if t.Pattern, err = regexp.Compile(aux.Pattern); err != nil {
 			return
@@ -432,7 +445,7 @@ func (t *TagConf) applyAux(aux *auxTagConf) (err error) {
 // UnmarshalYAML implements the Unmarshaler interface for handling custom
 // member(s): https://godoc.org/gopkg.in/yaml.v2
 func (t *TagConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
-	aux := t.getAux()
+	aux := &auxTagConf{}
 	if err = unmarshal(aux); err != nil {
 		return
 	}
@@ -443,7 +456,7 @@ func (t *TagConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 // UnmarshalJSON implements the Unmarshaler interface for handling custom
 // member(s): https://golang.org/pkg/encoding/json/#Unmarshal
 func (t *TagConf) UnmarshalJSON(data []byte) (err error) {
-	aux := t.getAux()
+	aux := &auxTagConf{}
 	if err = json.Unmarshal(data, aux); err != nil {
 		return
 	}
@@ -456,7 +469,9 @@ func (t *TagConf) UnmarshalJSON(data []byte) (err error) {
 // MarshalJSON implements Marshaler interface for handling custom member(s):
 // https://golang.org/pkg/encoding/json/#Marshal
 func (t *TagConf) MarshalJSON() ([]byte, error) {
-	aux := t.getAux()
+	aux := &auxTagConf{}
+	aux.Priority = t.Priority
+	aux.Method = t.Method
 	if t.Pattern != nil {
 		aux.Pattern = t.Pattern.String()
 	}
