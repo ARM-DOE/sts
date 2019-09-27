@@ -229,7 +229,7 @@ func (c *clientApp) init() (err error) {
 			Transmitter:  httpClient.Transmit,
 			TxRecoverer:  httpClient.RecoverTransmission,
 			Validator:    httpClient.Validate,
-			Logger:       log.NewSend(c.conf.LogDir),
+			Logger:       log.NewSend(c.conf.LogDir, nil),
 			Renamer:      fileToNewName,
 			Tagger:       nameToTag,
 			CacheAge:     c.conf.CacheAge,

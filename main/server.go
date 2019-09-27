@@ -54,7 +54,7 @@ func (a *serverApp) init() (err error) {
 	}
 	dirs := conf.Dirs
 	log.Init(dirs.LogMsg, a.debug)
-	var dispatcher *dispatch.Queue
+	var dispatcher sts.Dispatcher
 	if conf.Queue != nil {
 		dispatcher, err = dispatch.NewQueue(
 			&aws.Config{Region: aws.String(conf.Queue.Region)},
@@ -69,7 +69,7 @@ func (a *serverApp) init() (err error) {
 			source,
 			filepath.Join(dirs.Stage, source),
 			filepath.Join(dirs.Final, source),
-			log.NewReceive(filepath.Join(dirs.LogIn, source)),
+			log.NewReceive(filepath.Join(dirs.LogIn, source), nil),
 			dispatcher,
 		)
 	}

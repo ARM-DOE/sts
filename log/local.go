@@ -18,15 +18,17 @@ import (
 
 // Send implements sts.SendLogger
 type Send struct {
-	logger *rollingFile
-	lock   sync.RWMutex
+	logger   *rollingFile
+	lock     sync.RWMutex
+	postFunc func(string)
 }
 
 // NewSend creates a new Send logging instance
-func NewSend(rootDir string) *Send {
+func NewSend(rootDir string, postFunc func(string)) *Send {
 	return &Send{
-		logger: newRollingFile(rootDir, "", 0),
-		lock:   sync.RWMutex{},
+		logger:   newRollingFile(rootDir, "", 0),
+		lock:     sync.RWMutex{},
+		postFunc: postFunc,
 	}
 }
 
@@ -42,6 +44,9 @@ func (s *Send) Sent(file sts.Sent) {
 			file.GetSize(),
 			time.Now().Unix(),
 			file.TimeMs()))
+	if s.postFunc != nil {
+		s.postFunc(s.logger.path)
+	}
 }
 
 // WasSent tries to find the path specified between the times specified
@@ -53,15 +58,17 @@ func (s *Send) WasSent(relPath string, after time.Time, before time.Time) bool {
 
 // Receive implements sts.ReceiveLogger
 type Receive struct {
-	logger *rollingFile
-	lock   sync.RWMutex
+	logger   *rollingFile
+	lock     sync.RWMutex
+	postFunc func(string)
 }
 
 // NewReceive creates a new Receive logging instance
-func NewReceive(rootDir string) *Receive {
+func NewReceive(rootDir string, postFunc func(string)) *Receive {
 	return &Receive{
-		logger: newRollingFile(rootDir, "", 0),
-		lock:   sync.RWMutex{},
+		logger:   newRollingFile(rootDir, "", 0),
+		lock:     sync.RWMutex{},
+		postFunc: postFunc,
 	}
 }
 
@@ -77,6 +84,9 @@ func (r *Receive) Received(file sts.Received) {
 			file.GetHash(),
 			file.GetSize(),
 			time.Now().Unix()))
+	if r.postFunc != nil {
+		r.postFunc(r.logger.path)
+	}
 }
 
 // WasReceived tries to find the path specified between the times specified

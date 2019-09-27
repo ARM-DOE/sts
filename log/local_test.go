@@ -28,7 +28,7 @@ func TestDefault(t *testing.T) {
 
 func TestSend(t *testing.T) {
 	tearDown()
-	logger := NewSend(root)
+	logger := NewSend(root, nil)
 	n := 1000
 	start := time.Now()
 	var names []string
@@ -68,7 +68,7 @@ func TestReceive(t *testing.T) {
 	for i := 0; i < n; i++ {
 		host = fmt.Sprintf("host%d", i%2)
 		if logger = byHost[host]; logger == nil {
-			logger = NewReceive(filepath.Join(root, host))
+			logger = NewReceive(filepath.Join(root, host), nil)
 			byHost[host] = logger
 		}
 		name := fmt.Sprintf("file/name-%d.ext", i)
