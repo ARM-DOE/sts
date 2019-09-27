@@ -32,7 +32,6 @@ type Server struct {
 	DecoderFactory    sts.PayloadDecoderFactory
 
 	IsValid       sts.RequestValidator
-	IsKeyValid    sts.IsKeyValid
 	ClientManager sts.ClientManager
 
 	lock sync.RWMutex

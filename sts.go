@@ -148,10 +148,6 @@ type DecodeClientID func(clientID string) (key, uid string)
 // RequestValidator validates an incoming request
 type RequestValidator func(source, key string) bool
 
-// IsKeyValid determines whether or not the provided key is allowed to send the
-// provided file
-type IsKeyValid func(key string, file *Partial) bool
-
 // DecodePartials decodes the input reader into a slice of Partial instance
 // pointers
 type DecodePartials func(r io.Reader) ([]*Partial, error)
