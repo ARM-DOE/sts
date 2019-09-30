@@ -517,7 +517,7 @@ type ServerConf struct {
 	Keys          []string    `yaml:"keys" json:"keys"`
 	Dirs          *ServerDirs `yaml:"dirs" json:"dirs"`
 	Server        *HTTPServer `yaml:"server" json:"server"`
-	Queue         *Queue
+	Queue         *Queue      `yaml:"queue" json:"queue"`
 }
 
 // DBConf is the struct for defining a database connection
