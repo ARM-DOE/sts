@@ -3,7 +3,7 @@
 root="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 proj=$root/../../
 
-goversion=1.12.6
+goversion=1.13.4
 gotarget=`uname -s | awk '{print tolower($0)}'`
 gobundle=go${goversion}.${gotarget}-amd64.tar.gz
 gourl=https://storage.googleapis.com/golang/$gobundle
