@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"time"
 
 	stackimpact "github.com/stackimpact/stackimpact-go"
 
@@ -20,6 +21,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+
+	"github.com/coreos/go-systemd/daemon"
 )
 
 const modeSend = "out"
@@ -173,7 +176,8 @@ func (a *app) run() {
 	// Run until we get a signal to shutdown if running ONLY as a "receiver" or
 	// if configured to run as a sender in a loop.
 	stopFull := true
-	if a.loop || (i && !o) {
+	isDaemon := a.loop || (i && !o)
+	if isDaemon {
 		// if !i {
 		// 	// Start a profiler server only if running solely "out" mode in a
 		// 	// loop.  We can use the "in" server otherwise.
@@ -185,10 +189,25 @@ func (a *app) run() {
 		sc := make(chan os.Signal, 1)
 		signal.Notify(sc, os.Interrupt, os.Kill)
 
-		log.Debug("Waiting for signal...")
+		daemon.SdNotify(false, daemon.SdNotifyReady)
 
-		<-sc // Block until we get a signal.
+		log.Info("Startup complete. Running...")
+
+		go func() {
+			interval, err := daemon.SdWatchdogEnabled(false)
+			if err != nil || interval == 0 {
+				return
+			}
+			for {
+				<-time.After(interval / 3)
+				daemon.SdNotify(false, daemon.SdNotifyWatchdog)
+			}
+		}()
+
+		<-sc // Block until we get a signal
 		stopFull = false
+
+		daemon.SdNotify(false, daemon.SdNotifyStopping)
 	}
 	a.stopClients(stopFull)
 	a.stopServer()

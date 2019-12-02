@@ -8,6 +8,8 @@ User=dsmgr
 Group=data
 RestartSec=5
 ExecStart=/apps/transfer/bin/sts -loop -conf /apps/transfer/conf/sts.yaml
+WatchdogSec=30s
+Restart=on-failure
  
 [Install]
 WantedBy=multi-user.target
