@@ -103,8 +103,7 @@ func (h *Client) Transmit(payload sts.Payload) (n int, err error) {
 	}
 	var gz *gzip.Writer
 	if h.Compression != gzip.NoCompression {
-		gz, err = gzip.NewWriterLevel(nil, h.Compression)
-		if err != nil {
+		if gz, err = gzip.NewWriterLevel(nil, h.Compression); err != nil {
 			return
 		}
 	}
