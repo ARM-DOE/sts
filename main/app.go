@@ -175,8 +175,8 @@ func (a *app) run() {
 	}
 	// Run until we get a signal to shutdown if running ONLY as a "receiver" or
 	// if configured to run as a sender in a loop.
-	stopFull := true
 	isDaemon := a.loop || (i && !o)
+	stopFull := !isDaemon
 	if isDaemon {
 		// if !i {
 		// 	// Start a profiler server only if running solely "out" mode in a
@@ -191,22 +191,33 @@ func (a *app) run() {
 
 		daemon.SdNotify(false, daemon.SdNotifyReady)
 
+		var dogTicker *time.Ticker
+		var dogDone chan bool
+		dogInterval, err := daemon.SdWatchdogEnabled(false)
+		if err == nil && dogInterval > 0 {
+			dogTicker = time.NewTicker(dogInterval / 3)
+			dogDone = make(chan bool)
+			go func() {
+				for {
+					select {
+					case <-dogDone:
+						return
+					case <-dogTicker.C:
+						daemon.SdNotify(false, daemon.SdNotifyWatchdog)
+					}
+				}
+			}()
+		}
+
 		log.Info("Startup complete. Running...")
 
-		go func() {
-			interval, err := daemon.SdWatchdogEnabled(false)
-			if err != nil || interval == 0 {
-				return
-			}
-			for {
-				<-time.After(interval / 3)
-				daemon.SdNotify(false, daemon.SdNotifyWatchdog)
-			}
-		}()
-
 		<-sc // Block until we get a signal
-		stopFull = false
 
+		if dogTicker != nil {
+			// Stop the watchdog goroutine
+			dogTicker.Stop()
+			dogDone <- true
+		}
 		daemon.SdNotify(false, daemon.SdNotifyStopping)
 	}
 	a.stopClients(stopFull)
