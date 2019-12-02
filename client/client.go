@@ -58,14 +58,15 @@ type FileTag struct {
 
 // Broker is the client struct
 type Broker struct {
-	Conf      *Conf
-	tagMap    map[string]*FileTag
-	cleanAll  bool
-	cleanSome bool
-	statSince time.Time
-	sendTimes [][2]int64
-	bytesOut  int64
-	stopFull  bool
+	Conf       *Conf
+	tagMap     map[string]*FileTag
+	cleanAll   bool
+	cleanSome  bool
+	stuckSince time.Time
+	statSince  time.Time
+	sendTimes  [][2]int64
+	bytesOut   int64
+	stopFull   bool
 
 	// Channels
 	chStop        chan bool
@@ -409,6 +410,28 @@ func (broker *Broker) scan() []sts.Hashed {
 	store := broker.Conf.Store
 	cache := broker.Conf.Cache
 
+	if broker.stuckSince.IsZero() {
+		broker.stuckSince = time.Now()
+	} else if time.Now().Sub(broker.stuckSince) > 24*time.Hour {
+		// Every 24 hours, check the files that have been in the cache at least
+		// that long (that aren't done yet) to see if they still exist.  Remove
+		// the ones that don't and simply log the ones that do.  This helps with
+		// pesky files like .nfs000* that come and go from the file system and
+		// need to not linger in our cache.
+		cache.Iterate(func(cached sts.Cached) bool {
+			if !cached.IsDone() && time.Unix(cached.GetTime(), 0).Before(broker.stuckSince) {
+				if _, err := store.Sync(cached); store.IsNotExist(err) {
+					log.Info("No longer sendable:", cached.GetName())
+					cache.Remove(cached.GetName())
+					return false
+				}
+				log.Info("Potentially stuck file:", cached.GetName())
+			}
+			return false
+		})
+		broker.stuckSince = time.Now()
+	}
+
 	// Perform the scan
 	if files, scanTime, err = store.Scan(broker.fromCache); err != nil {
 		log.Error(err)
@@ -438,17 +461,6 @@ func (broker *Broker) scan() []sts.Hashed {
 	}
 	wrapped = wrapped[:i]
 	cache.Iterate(func(cached sts.Cached) bool {
-		// Remove any that no longer exist (.nfs* files, for example)
-		if !cached.IsDone() && time.Unix(cached.GetTime(), 0).Before(age.Add(-1*24*time.Hour)) {
-			// Only check files that are not "done" and that have a mod time
-			// before the cache age boundary minus 24 hours
-			if _, err := store.Sync(cached); store.IsNotExist(err) {
-				log.Info("No longer sendable:", cached.GetName())
-				cache.Remove(cached.GetName())
-				return false
-			}
-			log.Info("Potentially stuck file:", cached.GetName())
-		}
 		switch {
 		// Add any that might have failed the hash calculation last time
 		case cached.GetHash() == "":
