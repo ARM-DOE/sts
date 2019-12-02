@@ -51,7 +51,8 @@ go get github.com/lib/pq
 go get github.com/jmoiron/sqlx
 go get github.com/alecthomas/units
 go get github.com/stackimpact/stackimpact-go
-go get github.com/coreos/go-systemd/daemon
+go get github.com/coreos/go-systemd
+go get github.com/aws/aws-sdk-go
 
 date=`date -u '+%Y-%m-%d %H:%M:%S'`
 vers=$APR_VERSION
