@@ -8,7 +8,9 @@ if [ -z ${STS_TEST+x} ]; then
 fi
 
 bin="$GOPATH/bin/sts"
-debug="--debug "
+# Debug mode slows things waaaay down.  Only use when there is a known issue and
+# consider reducing the number of files dramatically.
+# debug="--debug "
 cmd_server1="$bin$VSERVER1 $debug--mode=in"
 cmd_client1="$bin$VCLIENT1 $debug--mode=out --loop"
 
@@ -162,9 +164,9 @@ done
 sortd=`cut -d ":" -f 1 $STS_HOME/data/log/incoming_from/*/*/* | sort`
 uniqd=`uniq -c <(cat <(echo "$sortd")) | grep -v " 1"`
 if [ "$uniqd" ]; then
-    echo "Incoming Duplicates:"
+    echo "Incoming Duplicates (probably OK):"
     cat <(echo "$uniqd")
-    echo "FAILED!"
+    echo "SUCCESS?"
     exit 0
 fi
 
