@@ -1,10 +1,18 @@
-#!/bin/sh
+#!/bin/bash
 
 if [ -z "$DATAFLOW_HOME" ]; then
     export DATAFLOW_HOME="/apps/transfer"
 fi
 confdir=$DATAFLOW_HOME/conf
+svcname=stsd
 systemdir=/lib/systemd/system
+systemctl=/bin/systemctl
 if [ -w $systemdir ]; then
-    cp $confdir/*.service $systemdir
+    cp $confdir/$svcname.service $systemdir
+    if [ -x $systemctl ]; then
+        $systemctl daemon-reload
+        if [[ $($systemctl is-active $svcname) == "active" ]]; then
+            $systemctl restart $svcname
+        fi
+    fi
 fi
