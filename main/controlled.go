@@ -69,7 +69,7 @@ func decodeClientID(clientID string) (string, string) {
 func runFromServer(jsonEncodedServerConfig string) {
 	help := flag.Bool("help", false, "Print the help message")
 	vers := flag.Bool("version", false, "Print version information")
-	quiet := flag.Bool("quiet", true, "Suppress verbose logic flow messages")
+	quiet := flag.Bool("quiet", false, "Suppress verbose logic flow messages")
 
 	flag.Parse()
 
