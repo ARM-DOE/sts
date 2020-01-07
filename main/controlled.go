@@ -175,18 +175,18 @@ func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 		}
 
 		if len(a.conf.Client.Sources) > 0 {
-			log.Debug("Starting clients...")
+			log.Debug("Starting Client(s)...")
 			a.startClients()
 		}
 
 	wait:
 		select {
 		case <-signalCh:
-			log.Debug("Shutting down clients...")
+			log.Debug("Shutting Down Client(s)...")
 			a.stopClients(false)
 			return
 		case a.conf.Client = <-confCh:
-			log.Debug("Stopping clients...")
+			log.Debug("Stopping Client(s)...")
 			a.stopClients(false)
 			continue
 		}
@@ -228,7 +228,7 @@ func requestClientConf(
 	}
 	log.Debug("Heartbeat:", heartbeat)
 	for {
-		log.Debug("Getting client status:", clientID)
+		log.Debug("Getting Client Status:", clientID)
 		if name, err = os.Hostname(); err != nil {
 			log.Error(err.Error())
 		}
@@ -239,20 +239,20 @@ func requestClientConf(
 		}
 		switch {
 		case status&sts.ClientIsDisabled != 0:
-			log.Debug("Client disabled:", clientID)
+			log.Debug("Client Disabled:", clientID)
 			goto next
 		case status&sts.ClientIsApproved != 0:
 			if status&sts.ClientHasUpdatedConfiguration != 0 || conf == nil {
-				log.Info("Client has [updated] conf:", clientID)
+				log.Info("Client Has [Updated] Configuration:", clientID)
 				if conf, err = manager.GetClientConf(clientID); err != nil {
 					log.Error(err.Error())
 					goto next
 				}
 				if conf == nil {
-					log.Error("An unknown error occurred; check client configuration")
+					log.Error("An Unknown Error Occurred - Check Client Configuration")
 					goto next
 				}
-				log.Info("Applying client configuration ...")
+				log.Info("Applying Client Configuration ...")
 				ch <- conf
 			}
 		}
