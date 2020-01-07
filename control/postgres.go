@@ -81,7 +81,12 @@ func (c *DirsConf) Scan(src interface{}) error {
 	if !ok {
 		return fmt.Errorf("Expected []byte but got %T", src)
 	}
-	return json.Unmarshal(source, c)
+	err := json.Unmarshal(source, c)
+	if err != nil {
+		// Because sqlx does not report this error at all AFAICT
+		log.Error("Directory JSON Error! %s", err.Error())
+	}
+	return err
 }
 
 // SourceConf wraps the sts.SourceConf type
@@ -100,7 +105,12 @@ func (c *SourceConf) Scan(src interface{}) error {
 	if !ok {
 		return fmt.Errorf("Expected []byte but got %T", src)
 	}
-	return json.Unmarshal(source, c)
+	err := json.Unmarshal(source, c)
+	if err != nil {
+		// Because sqlx does not report this error at all AFAICT
+		log.Error("Source JSON Error! %s", err.Error())
+	}
+	return err
 }
 
 type clientCache struct {
