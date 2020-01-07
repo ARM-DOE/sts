@@ -11,6 +11,7 @@ import (
 
 	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/fileutil"
+	"code.arm.gov/dataflow/sts/log"
 )
 
 // disabledName is the file name used to disable scanning externally.
@@ -94,7 +95,8 @@ type Local struct {
 	Include        []*regexp.Regexp
 	Ignore         []*regexp.Regexp
 	FollowSymlinks bool
-	scanTime       time.Time
+	scanTimeStart  time.Time
+	scanTimeEnd    time.Time
 	scanFiles      []sts.File
 	cached         func(string) sts.File
 }
@@ -123,15 +125,19 @@ func (dir *Local) Scan(cached func(string) sts.File) ([]sts.File, time.Time, err
 	if _, err = os.Lstat(filepath.Join(dir.Root, disabledName)); err == nil {
 		return nil, time.Time{}, nil
 	}
-	dir.scanTime = time.Now()
+	dir.scanTimeStart = time.Now()
+	defer func() {
+		dir.scanTimeEnd = time.Now()
+	}()
 	dir.scanFiles = nil
 	dir.cached = cached
+	dir.debug("Scanning Directory:", dir.Root)
 	if err = fileutil.Walk(dir.Root, dir.handleNode, dir.FollowSymlinks); err != nil {
-		return nil, dir.scanTime, err
+		return nil, dir.scanTimeStart, err
 	}
 	return dir.scanFiles,
 		// Subtract the minimum age from the scan time
-		dir.scanTime.Add(-1 * dir.MinAge),
+		dir.scanTimeStart.Add(-1 * dir.MinAge),
 		nil
 }
 
@@ -169,15 +175,19 @@ func (dir *Local) handleNode(path string, info os.FileInfo, err error) error {
 		}
 		return err
 	}
+
 	relPath := dir.getRelPath(path)
 	if info.IsDir() {
 		if dir.shouldIgnore(relPath, true) {
+			dir.debug("Ignored Local Directory:", path)
 			// Best to skip entire directories if they match an ignore pattern.
 			return filepath.SkipDir
 		}
+		dir.debug("Scanning Subdirectory:", path)
 		return nil
 	}
 	if dir.shouldIgnore(relPath, false) {
+		dir.debug("Ignored Local File:", path)
 		return nil
 	}
 	fTime := info.ModTime()
@@ -185,7 +195,7 @@ func (dir *Local) handleNode(path string, info os.FileInfo, err error) error {
 	// determining age to make sure we don't exclude some files from a scan but
 	// not others that shoud have gone later.  This can happen because the
 	// order in which nodes are handled is nondeterministic.
-	fAge := dir.scanTime.Sub(fTime)
+	fAge := dir.scanTimeStart.Sub(fTime)
 	if fAge < dir.MinAge {
 		return nil
 	}
@@ -205,6 +215,7 @@ func (dir *Local) handleNode(path string, info os.FileInfo, err error) error {
 		}
 		return err
 	}
+	dir.debug("Found Local File:", path)
 	dir.scanFiles = append(dir.scanFiles, file)
 	return nil
 }
@@ -263,4 +274,11 @@ func (dir *Local) Open(origFile sts.File) (sts.Readable, error) {
 		}
 	}
 	return os.Open(path)
+}
+
+// debug logs a debug message if and only if this is the first scan
+func (dir *Local) debug(params ...interface{}) {
+	if dir.scanTimeEnd.IsZero() {
+		log.Debug(append([]interface{}{"File Store =>"}, params)...)
+	}
 }

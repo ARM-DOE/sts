@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"code.arm.gov/dataflow/sts"
@@ -113,6 +114,8 @@ func (c *clientApp) init() (err error) {
 	if err = c.setDefaults(); err != nil {
 		return
 	}
+
+	// Configure the file store to be scanned
 	store := &store.Local{
 		Root:           c.conf.OutDir,
 		MinAge:         c.conf.MinAge,
@@ -122,25 +125,50 @@ func (c *clientApp) init() (err error) {
 		FollowSymlinks: c.dirOutFollow,
 	}
 	store.AddStandardIgnore()
+	pfx := "Store =>"
+	log.Debug(pfx, "Root Outgoing Directory:", c.conf.OutDir)
+	log.Debug(pfx, "File Minimum Age:", c.conf.MinAge.String())
+	if c.conf.IncludeHidden {
+		log.Debug(pfx, "Includes Hidden Files")
+	} else {
+		log.Debug(pfx, "Excludes Hidden Files")
+	}
+	if c.dirOutFollow {
+		log.Debug(pfx, "Follows Symbolic Links")
+	} else {
+		log.Debug(pfx, "Does NOT Follow Symbolic Links")
+	}
+	for _, p := range c.conf.Include {
+		log.Debug(pfx, "Has File Include Pattern:", p.String())
+	}
+	for _, p := range c.conf.Ignore {
+		log.Debug(pfx, "Has File Exclude Pattern:", p.String())
+	}
+
+	// Configure the file cache
 	cache, err := cache.NewJSON(c.dirCache, c.conf.OutDir, "")
 	if err != nil {
 		return
 	}
+	pfx = "Cache =>"
+	log.Debug(pfx, "Directory:", c.dirCache)
+
+	// Configure automated file renaming
 	var fileToNewName sts.Rename
 	if len(c.conf.Rename) > 0 {
+		pfx = "Renaming =>"
 		extraVars := map[string]string{
 			"__source": c.conf.Name,
 		}
 		maps := make([]*fileutil.PathMap, len(c.conf.Rename))
 		for i, r := range c.conf.Rename {
-			log.Debug("Rename map found!", r.Pattern.String(), r.Template)
+			log.Debug(pfx, "Map From:", r.Pattern.String(), "To:", r.Template)
 			maps[i] = &fileutil.PathMap{
 				Pattern:   r.Pattern,
 				Template:  r.Template,
 				ExtraVars: extraVars,
 			}
 		}
-		log.Debug("Map count:", len(maps))
 		mapper := &fileutil.PathMapper{
 			Maps:   maps,
 			Logger: log.Get(),
@@ -149,6 +177,10 @@ func (c *clientApp) init() (err error) {
 			return mapper.Translate(file.GetName())
 		}
 	}
+
+	// Configure sorting queue
+	pfx = "Group =>"
+	log.Debug(pfx, "Pattern:", c.conf.GroupBy.String())
 	qtags := make([]*queue.Tag, len(c.conf.Tags))
 	for i, t := range c.conf.Tags {
 		name := ""
@@ -173,7 +205,14 @@ func (c *clientApp) init() (err error) {
 			ChunkSize: int64(c.conf.BinSize),
 			LastDelay: t.LastDelay,
 		}
+		if name == "" {
+			name = "DEFAULT"
+		}
+		log.Debug(pfx, name, "=>", "Priority:", t.Priority)
+		log.Debug(pfx, name, "=>", "Order:", strings.ToUpper(t.Order))
+		log.Debug(pfx, name, "=>", "Delay:", t.LastDelay)
 	}
+
 	grouper := func(name string) (group string) {
 		m := c.conf.GroupBy.FindStringSubmatch(name)
 		if len(m) == 0 {
@@ -208,6 +247,7 @@ func (c *clientApp) init() (err error) {
 			DeleteDelay: c.conf.Tags[i].DeleteDelay,
 		}
 	}
+
 	httpClient := &http.Client{
 		SourceName:      c.conf.Name,
 		TargetHost:      c.host,
@@ -219,6 +259,27 @@ func (c *clientApp) init() (err error) {
 		TLS:             c.tls,
 		PartialsDecoder: stage.ReadCompanions,
 	}
+	pfx = "HTTP Client =>"
+	log.Debug(pfx, "Name:", c.conf.Name)
+	log.Debug(pfx, "Target Host:", c.host)
+	log.Debug(pfx, "Target Port:", c.port)
+	log.Debug(pfx, "Target Path:", c.conf.Target.PathPrefix)
+	log.Debug(pfx, "Compression:", c.conf.Compression)
+	if c.tls == nil {
+		log.Debug(pfx, "TLS: Yes")
+	} else {
+		log.Debug(pfx, "TLS: No")
+	}
+
+	pfx = "Client =>"
+	log.Debug(pfx, "Max Concurrent Requests:", c.conf.Threads)
+	log.Debug(pfx, "Request Size:", c.conf.BinSize.String())
+	log.Debug(pfx, "Cache Age:", c.conf.CacheAge.String())
+	log.Debug(pfx, "Scan Delay:", c.conf.ScanDelay.String())
+	log.Debug(pfx, "Poll Delay:", c.conf.PollDelay.String())
+	log.Debug(pfx, "Poll Interval:", c.conf.PollInterval.String())
+	log.Debug(pfx, "Logging Directory:", c.conf.LogDir)
+
 	c.broker = &client.Broker{
 		Conf: &client.Conf{
 			Store:        store,

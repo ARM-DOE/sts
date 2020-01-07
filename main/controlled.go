@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -66,8 +67,24 @@ func decodeClientID(clientID string) (string, string) {
 }
 
 func runFromServer(jsonEncodedServerConfig string) {
+	help := flag.Bool("help", false, "Print the help message")
+	vers := flag.Bool("version", false, "Print version information")
+	quiet := flag.Bool("quiet", true, "Suppress verbose logic flow messages")
+
+	flag.Parse()
+
+	if *help {
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	if *vers {
+		fmt.Printf("%s (%s) @ %s\n", Version, runtime.Version(), BuildTime)
+		os.Exit(0)
+	}
+
 	log.InitExternal(&logger{
-		debugMode: true,
+		debugMode: !*quiet,
 	})
 
 	bytes := []byte(jsonEncodedServerConfig)
