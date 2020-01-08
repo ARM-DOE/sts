@@ -98,7 +98,7 @@ type Local struct {
 	scanTimeStart  time.Time
 	scanTimeEnd    time.Time
 	scanFiles      []sts.File
-	cached         func(string) sts.File
+	shouldAllow    func(sts.File) bool
 }
 
 // AddStandardIgnore adds standard ignore patterns
@@ -120,7 +120,7 @@ func (dir *Local) AddStandardIgnore() {
 
 // Scan reads the root directory tree and builds a list of files to be returned.
 // A non-nil error will result in no files being returned.
-func (dir *Local) Scan(cached func(string) sts.File) ([]sts.File, time.Time, error) {
+func (dir *Local) Scan(shouldAllow func(sts.File) bool) ([]sts.File, time.Time, error) {
 	var err error
 	if _, err = os.Lstat(filepath.Join(dir.Root, disabledName)); err == nil {
 		return nil, time.Time{}, nil
@@ -130,7 +130,7 @@ func (dir *Local) Scan(cached func(string) sts.File) ([]sts.File, time.Time, err
 		dir.scanTimeEnd = time.Now()
 	}()
 	dir.scanFiles = nil
-	dir.cached = cached
+	dir.shouldAllow = shouldAllow
 	dir.debug("Scanning Directory:", dir.Root)
 	if err = fileutil.Walk(dir.Root, dir.handleNode, dir.FollowSymlinks); err != nil {
 		return nil, dir.scanTimeStart, err
@@ -199,21 +199,16 @@ func (dir *Local) handleNode(path string, info os.FileInfo, err error) error {
 	if fAge < dir.MinAge {
 		return nil
 	}
-	if dir.cached != nil {
-		cached := dir.cached(relPath)
-		if cached != nil {
-			if cached.GetTime() == fTime.Unix() &&
-				cached.GetSize() == info.Size() {
-				return nil
-			}
-		}
-	}
 	var file *localFile
 	if file, err = newLocalFile(path, relPath, info); err != nil {
 		if err == filepath.SkipDir {
 			return nil
 		}
 		return err
+	}
+	if dir.shouldAllow != nil && !dir.shouldAllow(file) {
+		dir.debug("Local File Skipped:", path)
+		return nil
 	}
 	dir.debug("Found Local File:", path)
 	dir.scanFiles = append(dir.scanFiles, file)

@@ -139,12 +139,12 @@ func NewStore(n, size int) *Store {
 }
 
 // Scan implements sts.FileSource.Scan()
-func (s *Store) Scan(cached func(string) sts.File) ([]sts.File, time.Time, error) {
+func (s *Store) Scan(allow func(sts.File) bool) ([]sts.File, time.Time, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	var found []sts.File
 	for _, f := range s.files {
-		if cached(f.GetName()) != nil {
+		if !allow(f) {
 			continue
 		}
 		found = append(found, f)

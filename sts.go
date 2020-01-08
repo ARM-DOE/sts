@@ -70,7 +70,7 @@ type ReceiveLogger interface {
 // FileSource is the interface for reading and deleting from a store of file
 // objects on the client (i.e. sending) side
 type FileSource interface {
-	Scan(func(string) File) ([]File, time.Time, error)
+	Scan(func(File) bool) ([]File, time.Time, error)
 	GetOpener() Open
 	Remove(File) error
 	Sync(File) (File, error)

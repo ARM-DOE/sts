@@ -361,12 +361,28 @@ func (broker *Broker) startScan(wg *sync.WaitGroup) {
 	}
 }
 
-func (broker *Broker) fromCache(key string) sts.File {
-	cached := broker.Conf.Cache.Get(key)
-	if cached != nil {
-		return cached.(sts.File)
+func (broker *Broker) includeScannedFile(file sts.File) bool {
+	if file.GetSize() == 0 {
+		log.Debug("Skipping zero-length file:", file.GetName())
+		return false
 	}
-	return nil
+	cached := broker.Conf.Cache.Get(file.GetName())
+	if cached != nil {
+		// A files in the cache should be ignored unless it has changed
+		changed := cached.GetSize() != file.GetSize() ||
+			cached.GetTime() != file.GetTime()
+		if changed {
+			log.Debug("Detected changed file:", file.GetName())
+		}
+		return changed
+	}
+	if !broker.willDelete(file) && file.GetTime() < broker.Conf.Cache.Boundary().Unix() {
+		// Skip files that aren't marked to be cleaned up and that have mod
+		// times before the scan time minus the minimum age minus the cache age
+		log.Debug("Skipping due to age:", file.GetName())
+		return false
+	}
+	return true
 }
 
 func (broker *Broker) getTag(file sts.File) *FileTag {
@@ -433,7 +449,7 @@ func (broker *Broker) scan() []sts.Hashed {
 	}
 
 	// Perform the scan
-	if files, scanTime, err = store.Scan(broker.fromCache); err != nil {
+	if files, scanTime, err = store.Scan(broker.includeScannedFile); err != nil {
 		log.Error(err)
 		return nil
 	}
@@ -441,29 +457,15 @@ func (broker *Broker) scan() []sts.Hashed {
 
 	// Wrap the scanned file objects in type that can have hash added
 	wrapped := make([]sts.Hashed, len(files))
-	i := 0
-	for _, file := range files {
-		if broker.willDelete(file) && file.GetTime() < age.Unix() {
-			// Skip files that aren't marked to be cleaned up and that have
-			// mod times before the scan time minus the minimum age minus
-			// the cache age
-			log.Debug("Skipping due to age:", file.GetName())
-			continue
-		}
-		if file.GetSize() == 0 {
-			log.Debug("Skipping zero-length file:", file.GetName())
-			continue
-		}
-		wrapped[i] = &hashFile{
-			File: file,
-		}
-		i++
+	for i, file := range files {
+		wrapped[i] = &hashFile{File: file}
 	}
-	wrapped = wrapped[:i]
+
+	// Add any stragglers and clean the cache
 	cache.Iterate(func(cached sts.Cached) bool {
 		switch {
-		// Add any that might have failed the hash calculation last time
 		case cached.GetHash() == "":
+			// Add any that might have failed the hash calculation last time
 			wrapped = append(wrapped, &hashFile{File: cached})
 		case cached.IsDone() && cached.GetTime() < age.Unix():
 			// Clean the cache while we're at it
@@ -478,6 +480,8 @@ func (broker *Broker) scan() []sts.Hashed {
 		}
 		return false
 	})
+
+	// Update the cache
 	var ready []sts.Hashed
 	if len(wrapped) > 0 {
 		var n int
