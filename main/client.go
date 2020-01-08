@@ -125,7 +125,7 @@ func (c *clientApp) init() (err error) {
 		FollowSymlinks: c.dirOutFollow,
 	}
 	store.AddStandardIgnore()
-	pfx := "Store =>"
+	pfx := "CONFIG: Store =>"
 	log.Debug(pfx, "Root Outgoing Directory:", c.conf.OutDir)
 	log.Debug(pfx, "File Minimum Age:", c.conf.MinAge.String())
 	if c.conf.IncludeHidden {
@@ -150,7 +150,7 @@ func (c *clientApp) init() (err error) {
 	if err != nil {
 		return
 	}
-	pfx = "Cache =>"
+	pfx = "CONFIG: Cache =>"
 	log.Debug(pfx, "Directory:", c.dirCache)
 
 	// Configure automated file renaming
@@ -179,7 +179,7 @@ func (c *clientApp) init() (err error) {
 	}
 
 	// Configure sorting queue
-	pfx = "Group =>"
+	pfx = "CONFIG: Group =>"
 	log.Debug(pfx, "Pattern:", c.conf.GroupBy.String())
 	qtags := make([]*queue.Tag, len(c.conf.Tags))
 	for i, t := range c.conf.Tags {
@@ -259,7 +259,7 @@ func (c *clientApp) init() (err error) {
 		TLS:             c.tls,
 		PartialsDecoder: stage.ReadCompanions,
 	}
-	pfx = "HTTP Client =>"
+	pfx = "CONFIG: HTTP Client =>"
 	log.Debug(pfx, "Name:", c.conf.Name)
 	log.Debug(pfx, "Target Host:", c.host)
 	log.Debug(pfx, "Target Port:", c.port)
@@ -271,7 +271,7 @@ func (c *clientApp) init() (err error) {
 		log.Debug(pfx, "TLS: No")
 	}
 
-	pfx = "Client =>"
+	pfx = "CONFIG: Client =>"
 	log.Debug(pfx, "Max Concurrent Requests:", c.conf.Threads)
 	log.Debug(pfx, "Request Size:", c.conf.BinSize.String())
 	log.Debug(pfx, "Cache Age:", c.conf.CacheAge.String())

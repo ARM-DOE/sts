@@ -279,6 +279,6 @@ func (dir *Local) Open(origFile sts.File) (sts.Readable, error) {
 // debug logs a debug message if and only if this is the first scan
 func (dir *Local) debug(params ...interface{}) {
 	if dir.scanTimeEnd.IsZero() {
-		log.Debug(append([]interface{}{"File Store =>"}, params)...)
+		log.Debug(append([]interface{}{"CONFIG: File Store =>"}, params)...)
 	}
 }
