@@ -67,9 +67,12 @@ func decodeClientID(clientID string) (string, string) {
 }
 
 func runFromServer(jsonEncodedServerConfig string) {
+	var err error
+
 	help := flag.Bool("help", false, "Print the help message")
 	vers := flag.Bool("version", false, "Print version information")
-	quiet := flag.Bool("quiet", false, "Suppress verbose logic flow messages")
+	once := flag.Bool("once", false, "Run a single scan/send loop and then quit")
+	verbose := flag.Bool("verbose", false, "Output detailed logic flow messages")
 
 	flag.Parse()
 
@@ -84,7 +87,7 @@ func runFromServer(jsonEncodedServerConfig string) {
 	}
 
 	log.InitExternal(&logger{
-		debugMode: !*quiet,
+		debugMode: *verbose,
 	})
 
 	bytes := []byte(jsonEncodedServerConfig)
@@ -121,10 +124,6 @@ func runFromServer(jsonEncodedServerConfig string) {
 	log.Debug("Server Prefix:", serverConf.PathPrefix)
 	log.Debug("Client ID:", clientID)
 
-	ch := make(chan *sts.ClientConf)
-
-	go requestClientConf(httpClient, clientID, ch)
-
 	rootDir := os.Getenv("STS_HOME")
 	if rootDir == "" {
 		rootDir, err = os.UserCacheDir()
@@ -138,19 +137,33 @@ func runFromServer(jsonEncodedServerConfig string) {
 		loop: true,
 		mode: modeSend,
 		root: rootDir,
-		conf: &sts.Conf{
-			Client: <-ch,
-		},
+		conf: &sts.Conf{},
 	}
 
-	a.runControlledClients(ch)
+	if *once {
+		if a.conf.Client, err = requestClientConf(httpClient, clientID); err != nil {
+			log.Error(err.Error())
+			return
+		}
+		if a.conf.Client != nil {
+			a.runControlledClients(nil)
+		}
+	} else {
+		ch := make(chan *sts.ClientConf)
+		go runConfLoader(httpClient, clientID, ch)
+		a.conf.Client = <-ch
+		a.runControlledClients(ch)
+	}
 
 	log.Debug("Done.")
 }
 
-// runControlledClients runs in a loop waiting for any config changes to be
+// runControlledClients starts the configured client(s) and, if the input
+// channel is not nil, will run in a loop waiting for any config changes to be
 // detected or a signal to be received.  If the former, running clients are
-// stopped (gracefully) and then restarted using the new configuration.
+// stopped (gracefully) and then restarted using the new configuration.  If the
+// input channel is nil, the client(s) will be immediately stopped once they
+// have performed a single send iteration.
 func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 	var err error
 	signalCh := make(chan os.Signal)
@@ -180,6 +193,10 @@ func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 		}
 
 	wait:
+		if confCh == nil {
+			a.stopClients(true)
+			return
+		}
 		select {
 		case <-signalCh:
 			log.Debug("Shutting Down Client(s)...")
@@ -209,16 +226,10 @@ func getMacAddr() ([]string, error) {
 	return addr, nil
 }
 
-// requestClientConf runs in a loop checking the status of this client and
-// getting updated configuration from the server as needed
-func requestClientConf(
-	manager sts.ClientManager,
-	clientID string,
-	ch chan<- *sts.ClientConf,
-) {
+// runConfLoader runs in a loop checking the status of this client and getting
+// updated configuration from the server as needed
+func runConfLoader(manager sts.ClientManager, clientID string, ch chan<- *sts.ClientConf) {
 	var err error
-	var name string
-	var status sts.ClientStatus
 	var conf *sts.ClientConf
 	heartbeat := time.Second * 30
 	if StatusInterval != "" {
@@ -228,35 +239,50 @@ func requestClientConf(
 	}
 	log.Debug("Heartbeat:", heartbeat)
 	for {
-		log.Debug("Getting Client Status:", clientID)
-		if name, err = os.Hostname(); err != nil {
+		if conf, err = requestClientConf(manager, clientID); err != nil {
 			log.Error(err.Error())
 		}
-		status, err = manager.GetClientStatus(clientID, name, runtime.GOOS)
-		if err != nil {
-			log.Debug(err.Error())
-			goto next
+		if conf != nil {
+			ch <- conf
 		}
-		switch {
-		case status&sts.ClientIsDisabled != 0:
-			log.Debug("Client Disabled:", clientID)
-			goto next
-		case status&sts.ClientIsApproved != 0:
-			if status&sts.ClientHasUpdatedConfiguration != 0 || conf == nil {
-				log.Info("Client Has [Updated] Configuration:", clientID)
-				if conf, err = manager.GetClientConf(clientID); err != nil {
-					log.Error(err.Error())
-					goto next
-				}
-				if conf == nil {
-					log.Error("An Unknown Error Occurred - Check Client Configuration")
-					goto next
-				}
-				log.Info("Applying Client Configuration ...")
-				ch <- conf
-			}
-		}
-	next:
 		time.Sleep(heartbeat)
 	}
+}
+
+// requestClientConf checks the status of this client and gets updated
+// configuration from the server if available
+func requestClientConf(
+	manager sts.ClientManager,
+	clientID string,
+) (conf *sts.ClientConf, err error) {
+	var name string
+	var status sts.ClientStatus
+	log.Debug("Getting Client Status:", clientID)
+	if name, err = os.Hostname(); err != nil {
+		log.Error(err.Error())
+	}
+	status, err = manager.GetClientStatus(clientID, name, runtime.GOOS)
+	if err != nil {
+		return
+	}
+	switch {
+	case status&sts.ClientIsDisabled != 0:
+		log.Info("Client Disabled:", clientID)
+		return
+	case status&sts.ClientIsApproved != 0:
+		if status&sts.ClientHasUpdatedConfiguration != 0 || conf == nil {
+			log.Info("Client Has [Updated] Configuration:", clientID)
+			if conf, err = manager.GetClientConf(clientID); err != nil {
+				return
+			}
+			if conf == nil {
+				err = fmt.Errorf("An Unknown Error Occurred - Check Client Configuration")
+				return
+			}
+			if len(conf.Sources) == 0 {
+				log.Info("No Data Sources Configured")
+			}
+		}
+	}
+	return
 }
