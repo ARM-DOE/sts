@@ -500,6 +500,9 @@ func (broker *Broker) scan() []sts.Hashed {
 			cache.Add(file)
 			if n < len(wrapped) && file.GetHash() != "" {
 				ready = append(ready, file)
+				if broker.Conf.Renamer != nil {
+					log.Debug("Rename:", file.GetName(), "->", broker.Conf.Renamer(file))
+				}
 			}
 		}
 	}
