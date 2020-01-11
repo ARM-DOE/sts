@@ -459,6 +459,9 @@ func (broker *Broker) scan() []sts.Hashed {
 	wrapped := make([]sts.Hashed, len(files))
 	for i, file := range files {
 		wrapped[i] = &hashFile{File: file}
+		if broker.Conf.Renamer != nil {
+			log.Debug("Rename:", file.GetName(), "->", broker.Conf.Renamer(file))
+		}
 	}
 
 	// Add any stragglers and clean the cache
@@ -500,9 +503,6 @@ func (broker *Broker) scan() []sts.Hashed {
 			cache.Add(file)
 			if n < len(wrapped) && file.GetHash() != "" {
 				ready = append(ready, file)
-				if broker.Conf.Renamer != nil {
-					log.Debug("Rename:", file.GetName(), "->", broker.Conf.Renamer(file))
-				}
 			}
 		}
 	}
@@ -823,11 +823,6 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 	out := broker.chValidate
 	progress := make(map[string]*progressFile)
 	var waiter sync.WaitGroup
-	done := func(f *progressFile) {
-		defer waiter.Done()
-		waiter.Add(1)
-		out <- f
-	}
 	for {
 		log.Debug("Track loop ...")
 		payload, ok := <-in
@@ -871,7 +866,11 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 				}
 				broker.Conf.Logger.Sent(pFile)
 				delete(progress, key)
-				go done(pFile)
+				waiter.Add(1)
+				go func() {
+					defer waiter.Done()
+					out <- pFile
+				}()
 			}
 		}
 	}
