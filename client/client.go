@@ -368,19 +368,13 @@ func (broker *Broker) includeScannedFile(file sts.File) bool {
 	}
 	cached := broker.Conf.Cache.Get(file.GetName())
 	if cached != nil {
-		// A files in the cache should be ignored unless it has changed
+		// A file in the cache should be ignored unless it has changed
 		changed := cached.GetSize() != file.GetSize() ||
 			cached.GetTime() != file.GetTime()
 		if changed {
 			log.Debug("Detected changed file:", file.GetName())
 		}
 		return changed
-	}
-	if !broker.willDelete(file) && file.GetTime() < broker.Conf.Cache.Boundary().Unix() {
-		// Skip files that aren't marked to be cleaned up and that have mod
-		// times before the scan time minus the minimum age minus the cache age
-		log.Debug("Skipping due to age:", file.GetName())
-		return false
 	}
 	return true
 }
@@ -430,18 +424,23 @@ func (broker *Broker) scan() []sts.Hashed {
 		broker.stuckSince = time.Now()
 	} else if time.Now().Sub(broker.stuckSince) > 24*time.Hour {
 		// Every 24 hours, check the files that have been in the cache at least
-		// that long (that aren't done yet) to see if they still exist.  Remove
-		// the ones that don't and simply log the ones that do.  This helps with
-		// pesky files like .nfs000* that come and go from the file system and
-		// need to not linger in our cache.
+		// that long to see if they still exist.  Remove the ones that don't
+		// and simply log the ones that do and aren't "done" yet.
+		//
+		// This helps with pesky files like .nfs000* that come and go from the
+		// file system and need to not linger in our cache.  It also helps in
+		// the case where files are NOT cleaned up by STS but are cleaned up
+		// outside of STS.
 		cache.Iterate(func(cached sts.Cached) bool {
-			if !cached.IsDone() && time.Unix(cached.GetTime(), 0).Before(broker.stuckSince) {
+			if time.Unix(cached.GetTime(), 0).Before(broker.stuckSince) {
 				if _, err := store.Sync(cached); store.IsNotExist(err) {
-					log.Info("No longer sendable:", cached.GetName())
+					log.Info("Not found--removing from cache:", cached.GetName())
 					cache.Remove(cached.GetName())
 					return false
 				}
-				log.Info("Potentially stuck file:", cached.GetName())
+				if !cached.IsDone() {
+					log.Info("Potentially stuck file:", cached.GetName())
+				}
 			}
 			return false
 		})
@@ -464,19 +463,15 @@ func (broker *Broker) scan() []sts.Hashed {
 		}
 	}
 
-	// Add any stragglers and clean the cache
+	// Add any stragglers and clean the cache (and store, if applicable)
 	cache.Iterate(func(cached sts.Cached) bool {
 		switch {
 		case cached.GetHash() == "":
 			// Add any that might have failed the hash calculation last time
 			wrapped = append(wrapped, &hashFile{File: cached})
-		case cached.IsDone() && cached.GetTime() < age.Unix():
-			// Clean the cache while we're at it
-			if broker.canDelete(cached) {
-				broker.Conf.Store.Remove(cached)
+		case cached.IsDone() && cached.GetTime() < age.Unix() && broker.canDelete(cached):
+			if err = broker.Conf.Store.Remove(cached); err == nil {
 				log.Debug("Deleted aged file:", cached.GetName())
-			} else if broker.willDelete(cached) {
-				break
 			}
 			cache.Remove(cached.GetName())
 			log.Debug("Removed from cache:", cached.GetName())
