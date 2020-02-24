@@ -650,7 +650,10 @@ func (s *Stage) isReady(file *finalFile) bool {
 				file.prevScan = time.Now()
 				len := time.Duration(time.Since(file.time).Minutes()) * time.Hour * 6
 				end := file.prevScanBeg
-				if end.IsZero() {
+				if end.IsZero() || end.Year() < 2010 {
+					// Start over if we end up farther back than something
+					// reasonable; 2010 predates this program, so that's a
+					// pretty safe bet
 					end = s.getCacheStartTime()
 				}
 				beg := end.Add(-1 * len)
