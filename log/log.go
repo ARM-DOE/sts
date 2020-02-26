@@ -5,14 +5,14 @@ import "code.arm.gov/dataflow/sts"
 var std sts.Logger
 
 // Init creates a single logger instance for general logging
-func Init(rootDir string, debug bool) {
+func Init(rootDir string, debug bool, mkdir MakeDir, open OpenFile) {
 	if std != nil {
 		if g, ok := std.(*General); ok && g.logger.root != rootDir {
 			panic("Logger already initialized with a different path")
 		}
 		return
 	}
-	std = NewGeneral(rootDir, debug)
+	std = NewGeneral(rootDir, debug, mkdir, open)
 	std.(*General).calldepth = 2
 }
 

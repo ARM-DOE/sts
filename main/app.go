@@ -279,7 +279,7 @@ func (a *app) startClients() bool {
 	}
 	var err error
 	dirs := a.conf.Client.Dirs
-	log.Init(dirs.LogMsg, a.debug)
+	log.Init(dirs.LogMsg, a.debug, nil, nil)
 	a.clients = []*clientApp{}
 	a.clientStop = make(map[chan<- bool]<-chan bool)
 	watching := make(map[string]bool)

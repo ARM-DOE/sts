@@ -16,19 +16,23 @@ import (
 	"code.arm.gov/dataflow/sts/fileutil"
 )
 
+// MakeDir creates the full path to a directory
+type MakeDir func(path string, perm os.FileMode) (err error)
+
+// OpenFile opens a file
+type OpenFile func(path string, flag int, perm os.FileMode) (f *os.File, err error)
+
 // Send implements sts.SendLogger
 type Send struct {
-	logger   *rollingFile
-	lock     sync.RWMutex
-	postFunc func(string)
+	logger *rollingFile
+	lock   sync.RWMutex
 }
 
 // NewSend creates a new Send logging instance
-func NewSend(rootDir string, postFunc func(string)) *Send {
+func NewSend(rootDir string, mkdir MakeDir, open OpenFile) *Send {
 	return &Send{
-		logger:   newRollingFile(rootDir, "", 0),
-		lock:     sync.RWMutex{},
-		postFunc: postFunc,
+		logger: newRollingFile(rootDir, "", 0, mkdir, open),
+		lock:   sync.RWMutex{},
 	}
 }
 
@@ -44,9 +48,6 @@ func (s *Send) Sent(file sts.Sent) {
 			file.GetSize(),
 			time.Now().Unix(),
 			file.TimeMs()))
-	if s.postFunc != nil {
-		s.postFunc(s.logger.path)
-	}
 }
 
 // WasSent tries to find the path specified between the times specified
@@ -58,17 +59,15 @@ func (s *Send) WasSent(relPath string, after time.Time, before time.Time) bool {
 
 // Receive implements sts.ReceiveLogger
 type Receive struct {
-	logger   *rollingFile
-	lock     sync.RWMutex
-	postFunc func(string)
+	logger *rollingFile
+	lock   sync.RWMutex
 }
 
 // NewReceive creates a new Receive logging instance
-func NewReceive(rootDir string, postFunc func(string)) *Receive {
+func NewReceive(rootDir string, mkdir MakeDir, open OpenFile) *Receive {
 	return &Receive{
-		logger:   newRollingFile(rootDir, "", 0),
-		lock:     sync.RWMutex{},
-		postFunc: postFunc,
+		logger: newRollingFile(rootDir, "", 0, mkdir, open),
+		lock:   sync.RWMutex{},
 	}
 }
 
@@ -84,9 +83,6 @@ func (r *Receive) Received(file sts.Received) {
 			file.GetHash(),
 			file.GetSize(),
 			time.Now().Unix()))
-	if r.postFunc != nil {
-		r.postFunc(r.logger.path)
-	}
 }
 
 // WasReceived tries to find the path specified between the times specified
@@ -134,9 +130,9 @@ type General struct {
 }
 
 // NewGeneral creates a new General logging instance
-func NewGeneral(rootDir string, debug bool) *General {
+func NewGeneral(rootDir string, debug bool, mkdir MakeDir, open OpenFile) *General {
 	return &General{
-		logger:    newRollingFile(rootDir, "", log.Ldate|log.Ltime),
+		logger:    newRollingFile(rootDir, "", log.Ldate|log.Ltime, mkdir, open),
 		lock:      sync.Mutex{},
 		debug:     debug,
 		debugMux:  sync.RWMutex{},
@@ -209,13 +205,23 @@ type rollingFile struct {
 	logger *log.Logger
 	root   string
 	path   string
+	mkdir  MakeDir
+	open   OpenFile
 	fh     *os.File
 }
 
-func newRollingFile(root, prefix string, flags int) *rollingFile {
+func newRollingFile(root, prefix string, flags int, mkdir MakeDir, open OpenFile) *rollingFile {
+	if mkdir == nil {
+		mkdir = os.MkdirAll
+	}
+	if open == nil {
+		open = os.OpenFile
+	}
 	rf := &rollingFile{
 		logger: log.New(nil, prefix, flags),
 		root:   root,
+		mkdir:  mkdir,
+		open:   open,
 	}
 	return rf
 }
@@ -237,8 +243,8 @@ func (rf *rollingFile) rotate() {
 	if rf.path != path || os.IsNotExist(err) || rf.fh == nil {
 		rf.close()
 		rf.path = path
-		os.MkdirAll(filepath.Dir(path), os.ModePerm)
-		rf.fh, err = os.OpenFile(path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0644)
+		rf.mkdir(filepath.Dir(path), os.ModePerm)
+		rf.fh, err = rf.open(path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0644)
 		if err != nil {
 			panic(fmt.Sprintf("Failed to open log file: %s", err.Error()))
 		}

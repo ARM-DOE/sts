@@ -20,7 +20,7 @@ func tearDown() {
 
 func TestDefault(t *testing.T) {
 	tearDown()
-	Init(root, true)
+	Init(root, true, nil, nil)
 	Debug("This is a debug log message")
 	Info("This is an info log message")
 	Error("This is an error log message")
@@ -28,7 +28,7 @@ func TestDefault(t *testing.T) {
 
 func TestSend(t *testing.T) {
 	tearDown()
-	logger := NewSend(root, nil)
+	logger := NewSend(root, nil, nil)
 	n := 1000
 	start := time.Now()
 	var names []string
@@ -68,7 +68,7 @@ func TestReceive(t *testing.T) {
 	for i := 0; i < n; i++ {
 		host = fmt.Sprintf("host%d", i%2)
 		if logger = byHost[host]; logger == nil {
-			logger = NewReceive(filepath.Join(root, host), nil)
+			logger = NewReceive(filepath.Join(root, host), nil, nil)
 			byHost[host] = logger
 		}
 		name := fmt.Sprintf("file/name-%d.ext", i)
