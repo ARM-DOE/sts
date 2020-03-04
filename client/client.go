@@ -705,12 +705,12 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 			}
 			nErr++
 			log.Error("Payload send failed:", err.Error())
-			if n > 0 && n < len(payload.GetParts()) {
-				next := payload.Split(n)
-				out <- payload
-				payload = next
-			} else {
-				payload = broker.handleSendError(payload)
+			payload = broker.handleSendError(payload, n)
+			if len(payload.GetParts()) == 0 {
+				// It's entirely possible that the problem occurred after all
+				// parts were received by the server and we can simply move on
+				payload = nil
+				break
 			}
 			// Check each file in the payload to make sure none of them
 			// has changed and remove the ones that have
@@ -731,19 +731,28 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 			// Wait longer the more it fails
 			time.Sleep(time.Duration(nErr) * time.Second)
 		}
-		broker.stat(payload)
-		out <- payload
+		if payload != nil {
+			broker.stat(payload)
+			out <- payload
+		}
 	}
 }
 
-func (broker *Broker) handleSendError(payload sts.Payload) sts.Payload {
+func (broker *Broker) handleSendError(payload sts.Payload, nPartsReceived int) sts.Payload {
 	nErr := 0
+	var n int
+	var err error
 	for {
-		n, err := broker.Conf.TxRecoverer(payload)
+		if nPartsReceived == 0 {
+			// If the server didn't respond with a number of parts received, we
+			// need to make that request explicitly
+			n, err = broker.Conf.TxRecoverer(payload)
+		}
 		if err == nil {
-			log.Debug("Transmission recovery:", n, "of", len(payload.GetParts()))
-			if n > 0 && n < len(payload.GetParts()) {
+			log.Info("Transmission recovery:", n, "of", len(payload.GetParts()))
+			if n > 0 {
 				next := payload.Split(n)
+				broker.stat(payload)
 				broker.chTransmitted <- payload
 				payload = next
 			}
