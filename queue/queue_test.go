@@ -44,7 +44,7 @@ func q(tags []*Tag) *Tagged {
 func TestRecover(t *testing.T) {
 	log.InitExternal(&mock.Logger{DebugMode: true})
 	tags := []*Tag{
-		&Tag{
+		{
 			Name:  "^g1",
 			Order: sts.OrderFIFO,
 		},
@@ -117,17 +117,17 @@ func TestRecover(t *testing.T) {
 func TestGeneral(t *testing.T) {
 	log.InitExternal(&mock.Logger{DebugMode: true})
 	tags := []*Tag{
-		&Tag{
+		{
 			Name:     "^g1",
 			Order:    sts.OrderFIFO,
 			Priority: 1,
 		},
-		&Tag{
+		{
 			Name:     "^g2",
 			Order:    sts.OrderLIFO,
 			Priority: 1,
 		},
-		&Tag{
+		{
 			Name:     "^g3",
 			Order:    sts.OrderAlpha,
 			Priority: 0,

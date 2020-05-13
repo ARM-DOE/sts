@@ -558,7 +558,7 @@ func (broker *Broker) hash(
 		size = 0
 	}
 	if j < len(scanned) {
-		ch <- scanned[j:len(scanned)]
+		ch <- scanned[j:]
 	}
 	close(ch)
 	wg.Wait()
@@ -1045,7 +1045,7 @@ func (broker *Broker) startRetry(wg *sync.WaitGroup) {
 		broker.chScanned <- []sts.Hashed{&recoverFile{
 			Cached: cached,
 			prev:   file.GetPrev(),
-			left:   []*sts.ByteRange{&sts.ByteRange{Beg: 0, End: cached.GetSize()}},
+			left:   []*sts.ByteRange{{Beg: 0, End: cached.GetSize()}},
 		}}
 	}
 }
