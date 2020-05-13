@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -202,7 +201,7 @@ func (s *Stage) Scan(version string) (jsonBytes []byte, err error) {
 func (s *Stage) initStageFile(path string, size int64) error {
 	var err error
 	info, err := os.Stat(path + partExt)
-	if !os.IsNotExist(err) && info.Size() == size {
+	if err == nil && info.Size() == size {
 		return nil
 	}
 	if _, err = os.Stat(path + compExt); !os.IsNotExist(err) {
@@ -641,35 +640,32 @@ func (s *Stage) isReady(file *finalFile) bool {
 			log.Debug("Previous file in progress:", file.name, "<-", file.prev)
 			break
 		}
-		// If this file has been waiting for more than a minute...
-		if time.Since(file.time) > time.Minute {
-			t := file.prevScan
-			// ...and if this is the first time here or there has been file
-			// reception activity since the last time we were here...
-			if t.IsZero() || t.Before(s.getLastIn()) {
-				file.prevScan = time.Now()
-				len := time.Duration(time.Since(file.time).Minutes()) * time.Hour * 6
-				end := file.prevScanBeg
-				if end.IsZero() || end.Year() < 2010 {
-					// Start over if we end up farther back than something
-					// reasonable; 2010 predates this program, so that's a
-					// pretty safe bet
-					end = s.getCacheStartTime()
-				}
-				beg := end.Add(-1 * len)
-				file.prevScanBeg = beg
-				// ...then check the log increasingly farther back each time we
-				// get here to try to find this file's predecessor
-				if s.logger.WasReceived(file.prev, beg, end) {
-					log.Info("Found previous in log:",
-						file.name, "<-", file.prev, "--", beg, "-", end)
-					return true
-				}
-				log.Info("Previous file not found in log:",
-					file.name, "<-", file.prev, "--", beg, "-", end)
-			}
+		file.prevScan = time.Now()
+		len := time.Duration(time.Since(file.time).Minutes()) * time.Hour * 6
+		end := file.prevScanBeg
+		if end.IsZero() || end.Year() < 2010 {
+			// Start over if we end up farther back than something
+			// reasonable; 2010 predates this program, so that's a
+			// pretty safe bet
+			end = s.getCacheStartTime()
 		}
-		log.Debug("No sign of previous file:", file.name, "<-", file.prev)
+		beg := end.Add(-1 * len)
+		// ...then check the log increasingly farther back each time we
+		// get here to try to find this file's predecessor
+		file.prevScanBeg = beg
+		t := time.Now()
+		found := s.logger.WasReceived(file.prev, beg, end)
+		took := fmt.Sprintf("(took %s)", time.Since(t))
+		tfmt := "20060102"
+		if found {
+			log.Info("Found previous in log:",
+				file.name, "<-", file.prev, "--", beg.Format(tfmt), "-", end.Format(tfmt), took)
+			return true
+		}
+		log.Info("Previous file not found in log:",
+			file.name, "<-", file.prev, "--", beg.Format(tfmt), "-", end.Format(tfmt), took)
+		s.toWait(prevPath, file, time.Second*10)
+		return false
 
 	case prev.state == stateReceived:
 		log.Debug("Waiting for previous file:",
@@ -695,7 +691,7 @@ func (s *Stage) isReady(file *finalFile) bool {
 		return true
 	}
 
-	s.toWait(prevPath, file)
+	s.toWait(prevPath, file, time.Minute*5)
 	return false
 }
 
@@ -843,17 +839,16 @@ func (s *Stage) fromWait(prevPath string) []*finalFile {
 	return nil
 }
 
-func (s *Stage) toWait(prevPath string, next *finalFile) {
+func (s *Stage) toWait(prevPath string, next *finalFile, howLong time.Duration) {
 	s.waitLock.Lock()
 	defer s.waitLock.Unlock()
-	// Set a timer to check this file again in case there is a wait loop.
-	// Wait longer the more files we have that are waiting.
-	wait := time.Second * time.Duration(
-		math.Max(float64(len(s.wait)), 30))
 	if next.wait != nil {
 		next.wait.Stop()
 	}
-	next.wait = time.AfterFunc(wait, func(handle func(*finalFile), f *finalFile) func() {
+	// Set a timer to check this file again in case there is a wait loop or in
+	// case the predecessor was received so long ago we have to dig through the
+	// logs to find it
+	next.wait = time.AfterFunc(howLong, func(handle func(*finalFile), f *finalFile) func() {
 		return func() {
 			log.Debug("Attempting finalize again:", f.name)
 			handle(f)
