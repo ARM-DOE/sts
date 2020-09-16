@@ -572,11 +572,15 @@ func NewConf(path string) (*Conf, error) {
 	if err != nil {
 		panic("Configuration file not found: " + path)
 	}
-	switch filepath.Ext(path) {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yml":
+		fallthrough
 	case ".yaml":
 		err = yaml.Unmarshal(fh, conf)
 	case ".json":
 		err = json.Unmarshal(fh, conf)
+	default:
+		panic(fmt.Sprintf("Unsupported configuration file format: %s", filepath.Ext(path)))
 	}
 	if err != nil {
 		return nil, err
