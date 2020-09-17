@@ -131,10 +131,12 @@ func (c *clientCache) build(datasets []*Dataset) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	c.clients = make(map[string][]string)
+	log.Info("Building Client Cache ...")
 	for _, d := range datasets {
 		if !d.ClientID.Valid {
 			continue
 		}
+		log.Info("Adding Client to Cache:", d.Name, d.ClientID.String)
 		c.clients[d.ClientID.String] = append(
 			c.clients[d.ClientID.String], d.Name,
 		)
