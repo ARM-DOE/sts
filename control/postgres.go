@@ -237,7 +237,7 @@ func (p *Postgres) connect() (err error) {
 			clients: make(map[string][]string),
 		}
 		if datasets, err := p.getDatasets(); err == nil {
-			p.cache.rebuild("", datasets)
+			p.cache.build(datasets)
 		}
 	}
 	return
