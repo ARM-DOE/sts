@@ -114,41 +114,64 @@ func (c *SourceConf) Scan(src interface{}) error {
 }
 
 type clientCache struct {
-	clients map[string][]string
-	lock    sync.RWMutex
+	datasets    map[string]string
+	clientKeys  map[string]string
+	clientNames map[string]string
+	lock        sync.RWMutex
 }
 
-func (c *clientCache) getApprovedDatasetNames(uid string) []string {
+func (c *clientCache) getClientKey(id string) (key string, ok bool) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
-	if names, ok := c.clients[uid]; ok {
-		return names
-	}
-	return nil
+	key, ok = c.clientKeys[id]
+	return
 }
 
-func (c *clientCache) build(datasets []*Dataset) {
+func (c *clientCache) getClientName(id string) (name string, ok bool) {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	name, ok = c.clientNames[id]
+	return
+}
+
+func (c *clientCache) getDatasetClientID(name string) (id string, ok bool) {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	id, ok = c.datasets[name]
+	return
+}
+
+func (c *clientCache) build(clients []*Client, datasets []*Dataset) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	c.clients = make(map[string][]string)
+	c.clientKeys = make(map[string]string)
+	c.clientNames = make(map[string]string)
+	c.datasets = make(map[string]string)
 	log.Info("Building Client Cache ...")
-	for _, d := range datasets {
-		if !d.ClientID.Valid {
+	for _, client := range clients {
+		log.Info("Adding Client to Cache:", client.Name, "ID:", client.ID, "Key:", client.Key)
+		c.clientKeys[client.ID] = client.Key
+		c.clientNames[client.ID] = client.Name
+	}
+	for _, dataset := range datasets {
+		if !dataset.ClientID.Valid {
 			continue
 		}
-		log.Info("Adding Client to Cache:", d.Name, d.ClientID.String)
-		c.clients[d.ClientID.String] = append(
-			c.clients[d.ClientID.String], d.Name,
+		log.Info(
+			"Adding Dataset (Source) to Cache:", dataset.Name,
+			"Client ID:", dataset.ClientID.String,
 		)
+		c.datasets[dataset.Name] = dataset.ClientID.String
 	}
 }
 
-func (c *clientCache) rebuild(uid string, datasets []*Dataset) {
+func (c *clientCache) rebuild(client *Client, datasets []*Dataset) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	c.clients[uid] = make([]string, len(datasets))
-	for i, d := range datasets {
-		c.clients[uid][i] = d.Name
+	c.clientKeys[client.ID] = client.Key
+	c.clientNames[client.ID] = client.Name
+	for _, d := range datasets {
+		c.datasets[d.Name] = client.ID
 	}
 	return
 }
@@ -235,11 +258,11 @@ func (p *Postgres) connect() (err error) {
 		),
 	)
 	if p.cache == nil {
-		p.cache = &clientCache{
-			clients: make(map[string][]string),
-		}
+		p.cache = &clientCache{}
 		if datasets, err := p.getDatasets(); err == nil {
-			p.cache.build(datasets)
+			if clients, err := p.getClients(); err == nil {
+				p.cache.build(clients, datasets)
+			}
 		}
 	}
 	return
@@ -269,6 +292,18 @@ func (p *Postgres) initClient(id, key, name, os string) (err error) {
 			"os":   os,
 			"now":  time.Now(),
 		},
+	)
+	return
+}
+
+func (p *Postgres) getClients() (clients []*Client, err error) {
+	p.db.Select(
+		&clients,
+		fmt.Sprintf(`
+            SELECT id, upload_key, name, alias, os, dirs_conf,
+            created_at, updated_at, pinged_at, loaded_at, verified_at
+			FROM %s
+        `, p.clientsTable),
 	)
 	return
 }
@@ -400,7 +435,7 @@ func (p *Postgres) GetClientConf(clientID string) (conf *sts.ClientConf, err err
 	}
 	// Whenever a client gets an updated conf, let's rebuild the cache to make
 	// sure we're current
-	p.cache.rebuild(uid, datasets)
+	p.cache.rebuild(client, datasets)
 	return
 }
 
@@ -416,17 +451,25 @@ func (p *Postgres) SetClientConfReceived(clientID string, when time.Time) error 
 
 // IsValid fulfills sts.IsKeyValid and determines whether or not the input key
 // (client ID) is allowed to send a file that looks like the input file struct
-func (p *Postgres) IsValid(dataset, clientID string) bool {
+func (p *Postgres) IsValid(source, clientID string) bool {
 	if p.cache == nil {
 		// A connection will build the cache
 		p.connect()
 		p.disconnect()
 	}
-	_, uid := p.idDecoder(clientID)
-	for _, name := range p.cache.getApprovedDatasetNames(uid) {
-		if name == dataset {
-			return true
-		}
+	key, cid := p.idDecoder(clientID)
+	if k, ok := p.cache.getClientKey(cid); !ok || k != key {
+		return false
 	}
-	return false
+	if cname, ok := p.cache.getClientName(cid); ok && cname == source {
+		// This only happens in a hybrid scenario where the "source" is the
+		// name of the client and not the dataset.  In this case, the client
+		// is using manual configuration provided by the DAP and NOT automated
+		// config provided by the server.
+		return true
+	}
+	if id, ok := p.cache.getDatasetClientID(source); !ok || id != cid {
+		return false
+	}
+	return true
 }
