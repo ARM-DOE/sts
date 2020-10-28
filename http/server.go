@@ -301,7 +301,7 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 		err = gateKeeper.Receive(file, next)
 		if err != nil {
 			log.Error(err.Error())
-			w.Header().Add(HeaderPartCount, strconv.Itoa(len(parts)))
+			w.Header().Add(HeaderPartCount, strconv.Itoa(index))
 			w.WriteHeader(http.StatusPartialContent) // respond with a 206
 			break
 		}
