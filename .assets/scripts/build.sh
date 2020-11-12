@@ -62,7 +62,7 @@ if [ -z "$vers" ]; then
     fi
 fi
 
-echo "-- Building Executable"
+echo "-- Building Executable (GOOS='$GOOS', GOARCH='$GOARCH')"
 go build -o $outdir/$outname $race \
     -ldflags="-X 'main.BuildTime=$date UTC' -X 'main.Version=$vers' $ldflags" \
     $GOPATH/src/code.arm.gov/dataflow/sts/main/*.go
