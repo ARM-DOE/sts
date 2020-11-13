@@ -96,6 +96,15 @@ func appFromCLI() *app {
 			modeSend, modeRecv, modeAuto))
 	loop := flag.Bool("loop", false,
 		"Run in a loop, i.e. don't exit until interrupted")
+	rootPath := flag.String(
+		"root",
+		os.Getenv("STS_HOME"),
+		strings.Join([]string{
+			"Root path for both finding the configuration file",
+			"as well as for evaluating relative paths within",
+			"the configuration (defaults to $STS_HOME)",
+		}, "\n"),
+	)
 	confPath := flag.String("conf", "", "Configuration file path")
 	internalPort := flag.Int("iport", 0,
 		"TCP port for internal command server")
@@ -119,7 +128,7 @@ func appFromCLI() *app {
 		mode:     strings.ToLower(*mode),
 		loop:     *loop,
 		confPath: *confPath,
-		root:     os.Getenv("STS_HOME"),
+		root:     *rootPath,
 		iPort:    *internalPort,
 	}
 
@@ -129,26 +138,48 @@ func appFromCLI() *app {
 			panic(err)
 		}
 		a.root = filepath.Dir(ex)
+	} else if !filepath.IsAbs(a.root) {
+		a.root, err = filepath.Abs(a.root)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	// Parse configuration
 	if a.confPath == "" {
-		// Find the configuration file based on $STS_HOME
-		if a.mode == modeAuto {
-			a.confPath = filepath.Join(a.root, "conf", "sts.yaml")
-		} else {
-			a.confPath = filepath.Join(a.root, "conf", "sts."+a.mode+".yaml")
+		attempts := []string{
+			filepath.Join(a.root, "sts"),
+			filepath.Join(a.root, "conf", "sts"),
+		}
+		if a.mode != modeAuto {
+			for _, p := range attempts {
+				attempts = append(attempts, fmt.Sprintf("%s.%s", p, a.mode))
+			}
+		}
+		attempted := []string{}
+		for _, p := range attempts {
+			for _, ext := range []string{"yaml", "json"} {
+				path := fmt.Sprintf("%s.%s", p, ext)
+				if _, err := os.Stat(path); err == nil {
+					a.confPath = path
+					break
+				}
+				attempted = append(attempted, path)
+			}
+		}
+		if a.confPath == "" {
+			panic(
+				fmt.Sprintf(
+					"Failed to find configuration file:\n- %s\n",
+					strings.Join(attempted, " OR\n- "),
+				),
+			)
 		}
 	} else if !filepath.IsAbs(a.confPath) {
 		// Find the configuration based on the relative path provided
 		if a.confPath, err = filepath.Abs(a.confPath); err != nil {
 			panic(err.Error())
 		}
-	}
-
-	// Fall back to JSON if the YAML file doesn't exist
-	if _, err := os.Stat(a.confPath); os.IsNotExist(err) {
-		a.confPath = strings.TrimSuffix(a.confPath, filepath.Ext(a.confPath)) + ".json"
 	}
 
 	// Read the local configuration file
