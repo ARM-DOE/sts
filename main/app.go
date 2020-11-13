@@ -123,23 +123,26 @@ func appFromCLI() *app {
 		iPort:    *internalPort,
 	}
 
+	if a.root == "" {
+		ex, err := os.Executable()
+		if err != nil {
+			panic(err)
+		}
+		a.root = filepath.Dir(ex)
+	}
+
 	// Parse configuration
 	if a.confPath == "" {
-		if a.root != "" {
-			// Find the configuration file based on $STS_HOME
-			if a.mode == modeAuto {
-				a.confPath = filepath.Join(a.root, "conf", "sts.yaml")
-			} else {
-				a.confPath = filepath.Join(a.root, "conf", "sts."+a.mode+".yaml")
-			}
+		// Find the configuration file based on $STS_HOME
+		if a.mode == modeAuto {
+			a.confPath = filepath.Join(a.root, "conf", "sts.yaml")
+		} else {
+			a.confPath = filepath.Join(a.root, "conf", "sts."+a.mode+".yaml")
 		}
 	} else if !filepath.IsAbs(a.confPath) {
-		// Find the configuration based on the full path provided
+		// Find the configuration based on the relative path provided
 		if a.confPath, err = filepath.Abs(a.confPath); err != nil {
 			panic(err.Error())
-		}
-		if a.root == "" {
-			a.root = filepath.Dir(a.confPath)
 		}
 	}
 
