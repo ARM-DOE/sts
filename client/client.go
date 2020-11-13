@@ -494,7 +494,14 @@ func (broker *Broker) scan() []sts.Hashed {
 		}
 		for _, file := range wrapped {
 			// Update the cache with all files--even those without a hash (will
-			// try again next time)
+			// try again next time)--unless the file is missing
+			if file.GetHash() == "" {
+				if _, err = store.Sync(file); store.IsNotExist(err) {
+					log.Info("Removed missing file from cache:", file.GetName())
+					cache.Remove(file.GetName())
+					continue
+				}
+			}
 			cache.Add(file)
 			if n < len(wrapped) && file.GetHash() != "" {
 				ready = append(ready, file)
