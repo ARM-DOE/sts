@@ -641,7 +641,10 @@ func (s *Stage) isReady(file *finalFile) bool {
 			break
 		}
 		file.prevScan = time.Now()
-		len := time.Duration(time.Since(file.time).Minutes()) * time.Hour * 6
+		len := time.Duration(time.Since(file.time).Minutes()) * time.Hour * 24
+		if len == 0 {
+			len = time.Hour * 24
+		}
 		end := file.prevScanBeg
 		if end.IsZero() || end.Year() < 2010 {
 			// Start over if we end up farther back than something
