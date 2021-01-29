@@ -78,7 +78,8 @@ func NewJSON(cacheDir, fileRoot, key string) (j *JSON, err error) {
 	}
 	if err = fileutil.LoadJSON(j.path, j); err != nil && !os.IsNotExist(err) {
 		jOld := &oldJSON{}
-		if err = fileutil.LoadJSON(j.path, jOld); err != nil {
+		if oldErr := fileutil.LoadJSON(j.path, jOld); oldErr != nil {
+			err = fmt.Errorf("%s, %s", err.Error(), oldErr.Error())
 			return
 		}
 		j.Time = time.Unix(jOld.Time, 0)
