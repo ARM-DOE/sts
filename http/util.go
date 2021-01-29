@@ -2,6 +2,7 @@ package http
 
 import (
 	"compress/gzip"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -231,7 +232,7 @@ func (s *GracefulServer) Serve(l net.Listener) error {
 // any open connections.
 func (s *GracefulServer) Close() error {
 	// s.Shutdown() is more graceful than l.Close() (available as of Go 1.8)
-	return s.s.Shutdown(nil)
+	return s.s.Shutdown(context.Background())
 }
 
 // gracefulListener implements the net.Listener interface. When accept
