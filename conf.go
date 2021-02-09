@@ -26,6 +26,9 @@ const (
 	// OrderLIFO indicates last-in, first-out sorting
 	OrderLIFO = "lifo"
 
+	// OrderNone indicates ordering is not important
+	OrderNone = "none"
+
 	// OrderAlpha indicates alphabetic ordering
 	OrderAlpha = ""
 )
@@ -264,7 +267,7 @@ func (ss *SourceConf) applyAux(aux *auxSourceConf) (err error) {
 		patterns = append(patterns, p)
 	}
 	ss.Include = patterns[0:len(aux.Include)]
-	ss.Ignore = patterns[len(aux.Include):len(patterns)]
+	ss.Ignore = patterns[len(aux.Include):]
 	return
 }
 
@@ -333,7 +336,7 @@ func (ss *SourceConf) MarshalJSON() ([]byte, error) {
 		strings = append(strings, p.String())
 	}
 	aux.Include = strings[0:len(ss.Include)]
-	aux.Ignore = strings[len(ss.Include):len(strings)]
+	aux.Ignore = strings[len(ss.Include):]
 	return json.Marshal(aux)
 }
 

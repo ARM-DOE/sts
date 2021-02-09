@@ -132,6 +132,11 @@ func TestGeneral(t *testing.T) {
 			Order:    sts.OrderAlpha,
 			Priority: 0,
 		},
+		{
+			Name:     "^g4",
+			Order:    sts.OrderNone,
+			Priority: -1,
+		},
 	}
 	n := 1000
 	queue := q(tags)
@@ -141,6 +146,9 @@ func TestGeneral(t *testing.T) {
 		mt := time.Now()
 		if i%3 == 0 {
 			g = 3
+			if i%5 == 0 {
+				g = 4
+			}
 		} else if i%2 == 0 {
 			g = 2
 			mt = mt.Add(time.Minute * time.Duration(i))
@@ -193,14 +201,20 @@ func TestGeneral(t *testing.T) {
 				if f.GetTime() > gFiles[i].GetTime() {
 					t.Error(f.GetName(), "should not follow", gFiles[i].GetName())
 				}
+			case "g4":
+				if f.GetPrev() != "" {
+					t.Error(f.GetName(), "has a predessor but shouldn't")
+				}
 			}
 		}
 	}
 	for i, f := range done {
-		// g1 and g2 should alternate and g3 should be at the end if sorting is
-		// done correctly.
+		// g1 and g2 should alternate with g3 followed by g4 at the end if
+		// sorting is done correctly.
 		g := 1
-		if i >= len(done)-len(doneByGroup["g3"]) {
+		if i >= len(done)-len(doneByGroup["g4"]) {
+			g = 4
+		} else if i >= len(done)-len(doneByGroup["g4"])-len(doneByGroup["g3"]) {
 			g = 3
 		} else if i%2 == 0 {
 			g = 2

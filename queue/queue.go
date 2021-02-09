@@ -3,6 +3,7 @@ package queue
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"sync"
 	"time"
 
@@ -240,6 +241,7 @@ type Tag struct {
 type Tagged struct {
 	byFile    map[string]*sortedFile
 	byGroup   map[string]*sortedGroup
+	list      map[string][]*sortedFile
 	headFile  map[string]*sortedFile
 	headGroup *sortedGroup
 	tags      []*Tag
@@ -258,6 +260,7 @@ func NewTagged(tags []*Tag, tagger sts.Translate, grouper sts.Translate) *Tagged
 	q.byFile = make(map[string]*sortedFile)
 	q.byGroup = make(map[string]*sortedGroup)
 	q.headFile = make(map[string]*sortedFile)
+	q.list = make(map[string][]*sortedFile)
 	return q
 }
 
@@ -266,17 +269,26 @@ func (q *Tagged) Push(files []sts.Hashed) {
 	q.mux.Lock()
 	defer q.mux.Unlock()
 	for _, file := range files {
-		if orig, ok := q.byFile[file.GetName()]; ok {
-			// If a file by this name is already here, let's start over
-			q.removeFile(orig)
-			orig.unlink()
-		}
 		groupName := q.grouper(file.GetName())
 		group := q.getGroup(groupName)
 		if group == nil {
 			log.Info(fmt.Sprintf("Q: No matching tag found: %s",
 				file.GetName()))
 			continue
+		}
+		if orig, ok := q.byFile[file.GetName()]; ok {
+			// If a file by this name is already here, let's start over
+			q.removeFile(orig)
+			orig.unlink()
+			list := q.list[group.name]
+			// Have to brute force this since the list may not be sorted by
+			// name
+			for i, f := range list {
+				if f.orig.GetName() == file.GetName() {
+					q.list[group.name] = append(list[:i], list[i+1:]...)
+					break
+				}
+			}
 		}
 		fileWrapper := &sortedFile{
 			orig:  file,
@@ -300,6 +312,7 @@ func (q *Tagged) Pop() sts.Sendable {
 	var next *sortedFile
 	for g != nil {
 		next = q.headFile[g.name]
+		advance := 0
 		for next != nil && next.isAllocated() {
 			if next.next == nil {
 				// The head file should stay
@@ -308,12 +321,16 @@ func (q *Tagged) Pop() sts.Sendable {
 			}
 			// Remove allocated files that may have been inserted simply for
 			// getting files in the right order
+			advance++
 			q.removeFile(next)
 			prev = next.prev
 			next = next.next
 			if prev != nil {
 				prev.unlink()
 			}
+		}
+		if advance > 0 {
+			q.list[g.name] = q.list[g.name][advance:]
 		}
 		if next == nil {
 			g = g.next
@@ -335,14 +352,18 @@ func (q *Tagged) Pop() sts.Sendable {
 		return nil
 	}
 	offset, length := next.allocate(g.conf.ChunkSize)
+	prevName := ""
+	if next.group.conf.Order != sts.OrderNone {
+		prevName = next.getPrevName()
+	}
 	chunk := &sendable{
 		Hashed: next.orig,
-		prev:   next.getPrevName(),
+		prev:   prevName,
 		offset: offset,
 		length: length,
 		send:   next.getSendSize(),
 	}
-	if chunk.prev == chunk.Hashed.GetName() {
+	if chunk.prev != "" && chunk.prev == chunk.Hashed.GetName() {
 		// It's possible to send a file by the same name again and we don't want
 		// it to be dependent on itself
 		chunk.prev = ""
@@ -352,6 +373,7 @@ func (q *Tagged) Pop() sts.Sendable {
 		log.Debug("Q Done:", next.orig.GetName(), ":", next.orig.GetSize())
 		// File is fully allocated and can be removed from the Q
 		q.removeFile(next)
+		q.list[next.group.name] = q.list[next.group.name][1:]
 		for next.prev != nil {
 			// Unlink all previous files because they are no longer needed
 			next.prev.unlink()
@@ -436,51 +458,53 @@ func (q *Tagged) addGroup(group *sortedGroup) {
 func (q *Tagged) addFile(file *sortedFile) {
 	q.byFile[file.orig.GetName()] = file
 	head := q.headFile[file.group.name]
+	list := q.list[file.group.name]
 	if head == nil {
 		q.headFile[file.group.name] = file
+		q.list[file.group.name] = append(list, file)
 		return
 	}
-	f := head
-	t1 := file.orig.GetTime()
-	n1 := file.orig.GetName()
 	order := file.group.conf.Order
-loop:
-	for f != nil {
-		t0 := f.orig.GetTime()
-		n0 := f.orig.GetName()
-		switch {
-		case order == sts.OrderAlpha || t0 == t1:
-			if n1 < n0 {
-				goto before
-			}
-		case order == sts.OrderFIFO:
-			if t1 < t0 {
-				goto before
-			}
-		case order == sts.OrderLIFO:
-			if t1 > t0 {
-				goto before
-			}
+	var matcher func(int) bool
+	switch order {
+	case sts.OrderAlpha:
+		matcher = func(i int) bool {
+			return list[i].orig.GetName() > file.orig.GetName()
 		}
-		if f.next == nil {
-			goto after
+	case sts.OrderLIFO:
+		fallthrough
+	case sts.OrderFIFO:
+		matcher = func(i int) bool {
+			f0 := list[i].orig
+			f1 := file.orig
+			t0 := f0.GetTime()
+			t1 := f1.GetTime()
+			if t0 == t1 {
+				return f0.GetName() > f1.GetName()
+			}
+			if order == sts.OrderFIFO {
+				return t0 > t1
+			}
+			return t0 < t1
 		}
-		f = f.next
-		continue
-	before:
-		log.Debug("Q Insert:", file.orig.GetName(), "->", f.orig.GetName())
-		file.insertBefore(f)
-		break loop
-	after:
-		log.Debug("Q Insert:", file.orig.GetName(), "<-", f.orig.GetName())
-		file.insertAfter(f)
-		break loop
 	}
-	// Update the head file if we inserted before it or if we inserted after it
-	// and it's already allocated
-	if f == head && (f.prev == file || f.isAllocated()) {
-		log.Debug("Q Head:", file.orig.GetName())
-		q.headFile[file.group.name] = file
+	i := len(list)
+	if matcher != nil {
+		i = sort.Search(len(list), matcher)
+	}
+	if i == len(list) {
+		q.list[file.group.name] = append(list, file)
+	} else {
+		list = append(list[:i+1], list[i:]...)
+		list[i] = file
+		q.list[file.group.name] = list
+	}
+	list = q.list[file.group.name]
+	q.headFile[file.group.name] = list[0]
+	if i == 0 {
+		file.insertBefore(list[1])
+	} else {
+		file.insertAfter(list[i-1])
 	}
 }
 
