@@ -274,7 +274,8 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 		})
 		return false
 	})
-	for len(poll) > 0 {
+	nPoll := len(poll)
+	for nPoll > 0 {
 		pollNow := poll
 		if len(poll) > maxPoll {
 			pollNow = poll[:maxPoll]
@@ -283,8 +284,9 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 			poll = nil
 		}
 		log.Info(fmt.Sprintf(
-			"RECOVERY: Asking target host if %d files were fully sent ...",
+			"RECOVERY: Asking target host if %d (of %d) files were fully sent ...",
 			len(pollNow),
+			nPoll,
 		))
 		var polled []sts.Polled
 		if polled, err = broker.Conf.Validator(pollNow); err != nil {
