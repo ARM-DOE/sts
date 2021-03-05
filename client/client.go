@@ -274,10 +274,13 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 		})
 		return false
 	})
-	nPoll := len(poll)
-	for nPoll > 0 {
+	for {
+		nPoll := len(poll)
+		if nPoll == 0 {
+			break
+		}
 		pollNow := poll
-		if len(poll) > maxPoll {
+		if nPoll > maxPoll {
 			pollNow = poll[:maxPoll]
 			poll = poll[maxPoll:]
 		} else {
