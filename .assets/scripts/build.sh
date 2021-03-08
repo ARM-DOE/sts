@@ -45,7 +45,7 @@ echo "-- Preparing"
 mkdir -p $outdir
 
 echo "-- Building Dependencies"
-HTTPS_PROXY= https_proxy= go mod download
+go mod download
 
 date=`date -u '+%Y-%m-%d %H:%M:%S'`
 vers=$APR_VERSION
