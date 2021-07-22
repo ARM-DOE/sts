@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"code.arm.gov/dataflow/sts"
@@ -166,8 +167,8 @@ func runFromServer(jsonEncodedServerConfig string) {
 // have performed a single send iteration.
 func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 	var err error
-	signalCh := make(chan os.Signal)
-	signal.Notify(signalCh, os.Interrupt, os.Kill)
+	signalCh := make(chan os.Signal, 2)
+	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
 	for {
 		if a.conf.Client.Dirs == nil {
 			a.conf.Client.Dirs = &sts.ClientDirs{}
@@ -269,19 +270,17 @@ func requestClientConf(
 	case status&sts.ClientIsDisabled != 0:
 		log.Info("Client Disabled:", clientID)
 		return
-	case status&sts.ClientIsApproved != 0:
-		if status&sts.ClientHasUpdatedConfiguration != 0 || conf == nil {
-			log.Info("Client Has [Updated] Configuration:", clientID)
-			if conf, err = manager.GetClientConf(clientID); err != nil {
-				return
-			}
-			if conf == nil {
-				err = fmt.Errorf("An Unknown Error Occurred - Check Client Configuration")
-				return
-			}
-			if len(conf.Sources) == 0 {
-				log.Info("No Data Sources Configured")
-			}
+	case status&sts.ClientIsApproved != 0 && status&sts.ClientHasUpdatedConfiguration != 0:
+		log.Info("Client Has [Updated] Configuration:", clientID)
+		if conf, err = manager.GetClientConf(clientID); err != nil {
+			return
+		}
+		if conf == nil {
+			err = fmt.Errorf("an unknown error occurred - check client configuration")
+			return
+		}
+		if len(conf.Sources) == 0 {
+			log.Info("No Data Sources Configured")
 		}
 	}
 	return
