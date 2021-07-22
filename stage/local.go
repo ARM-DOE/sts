@@ -147,11 +147,11 @@ func (s *Stage) hasWriteLock(key string) bool {
 	return ok
 }
 
-func (s *Stage) getLastIn() time.Time {
-	s.writeLock.RLock()
-	defer s.writeLock.RUnlock()
-	return s.lastIn
-}
+// func (s *Stage) getLastIn() time.Time {
+// 	s.writeLock.RLock()
+// 	defer s.writeLock.RUnlock()
+// 	return s.lastIn
+// }
 
 func (s *Stage) pathToName(path, stripExt string) (name string) {
 	// Strip the root directory
@@ -222,7 +222,7 @@ func (s *Stage) initStageFile(path string, size int64) error {
 	log.Debug(fmt.Sprintf("Creating Empty File: %s (%d B)", path, size))
 	if err != nil {
 		return fmt.Errorf(
-			"Failed to create empty file at %s%s with size %d: %s",
+			"failed to create empty file at %s%s with size %d: %s",
 			path, partExt, size, err.Error())
 	}
 	defer fh.Close()
@@ -249,7 +249,7 @@ func (s *Stage) Prepare(parts []sts.Binned) {
 func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 	if len(file.Parts) != 1 {
 		err = fmt.Errorf(
-			"Can only receive a single part for a single reader (%d given)",
+			"can only receive a single part for a single reader (%d given)",
 			len(file.Parts))
 		return
 	}
@@ -259,7 +259,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 	// Read the part and write it to the right place in the staged "partial"
 	fh, err := os.OpenFile(path+partExt, os.O_WRONLY, 0600)
 	if err != nil {
-		err = fmt.Errorf("Failed to open file while trying to write part: %s",
+		err = fmt.Errorf("failed to open file while trying to write part: %s",
 			err.Error())
 		return
 	}
@@ -282,7 +282,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 
 	addCompanionPart(cmp, part.Beg, part.End)
 	if err = writeCompanion(path, cmp); err != nil {
-		err = fmt.Errorf("Failed to write updated companion: %s", err.Error())
+		err = fmt.Errorf("failed to write updated companion: %s", err.Error())
 		return
 	}
 
@@ -304,7 +304,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 			return
 		}
 		if err = os.Rename(path+partExt, path+fullExt); err != nil {
-			err = fmt.Errorf("Failed to swap in the \"full\" extension: %s",
+			err = fmt.Errorf("failed to swap in the \"full\" extension: %s",
 				err.Error())
 			s.toCache(final, stateFailed)
 			return
@@ -591,8 +591,9 @@ func (s *Stage) process(file *finalFile) {
 	}
 
 	if err = os.Rename(file.path+fullExt, file.path+waitExt); err != nil {
-		err = fmt.Errorf("Failed to swap in \"wait\" extension: %s",
-			err.Error())
+		log.Error(fmt.Sprintf(
+			"Failed to swap in \"wait\" extension: %s",
+			err.Error()))
 		s.toCache(file, stateFailed)
 		return
 	}
@@ -754,7 +755,7 @@ func (s *Stage) putFileAway(file *finalFile) (targetPath string, err error) {
 	os.MkdirAll(filepath.Dir(targetPath), 0775)
 	if err = fileutil.Move(file.path+waitExt, targetPath); err != nil {
 		err = fmt.Errorf(
-			"Failed to move %s to %s: %s",
+			"failed to move %s to %s: %s",
 			file.path+waitExt, targetPath, err.Error())
 		// If the file doesn't exist then something is really wrong.
 		// Either we somehow have two instances running that are stepping
@@ -874,8 +875,7 @@ func (s *Stage) toWait(prevPath string, next *finalFile, howLong time.Duration) 
 func (s *Stage) fromCache(path string) *finalFile {
 	s.cacheLock.RLock()
 	defer s.cacheLock.RUnlock()
-	file, _ := s.cache[path]
-	return file
+	return s.cache[path]
 }
 
 func (s *Stage) inPipe() int {

@@ -78,10 +78,7 @@ func TestJSON(t *testing.T) {
 	i := 0
 	cache.Iterate(func(f sts.Cached) bool {
 		i++
-		if i > n/2 {
-			return true
-		}
-		return false
+		return i > n/2
 	})
 	if i <= n/2 {
 		t.Fatal("Iterate failed")

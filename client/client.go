@@ -361,7 +361,6 @@ func (broker *Broker) startScan(wg *sync.WaitGroup) {
 		case broker.stopFull = <-broker.chStop:
 			return
 		case <-wait:
-			break
 		}
 	}
 }
@@ -392,16 +391,6 @@ func (broker *Broker) getTag(file sts.File) *FileTag {
 	return nil
 }
 
-func (broker *Broker) willDelete(file sts.File) bool {
-	if !broker.cleanSome {
-		return false
-	}
-	if tag := broker.getTag(file); tag != nil {
-		return tag.Delete
-	}
-	return false
-}
-
 func (broker *Broker) canDelete(file sts.File) bool {
 	if !broker.cleanSome {
 		return false
@@ -427,7 +416,7 @@ func (broker *Broker) scan() []sts.Hashed {
 
 	if broker.stuckSince.IsZero() {
 		broker.stuckSince = time.Now()
-	} else if time.Now().Sub(broker.stuckSince) > 24*time.Hour {
+	} else if time.Since(broker.stuckSince) > 24*time.Hour {
 		// Every 24 hours, check the files that have been in the cache at least
 		// that long to see if they still exist.  Remove the ones that don't
 		// and simply log the ones that do and aren't "done" yet.
@@ -611,7 +600,6 @@ func (broker *Broker) startQueue(wg *sync.WaitGroup) {
 				in = nil
 			}
 			block = false
-			break
 		case <-wait:
 			next := broker.Conf.Queue.Pop()
 			if next == nil {
@@ -624,7 +612,6 @@ func (broker *Broker) startQueue(wg *sync.WaitGroup) {
 				continue
 			}
 			out <- next
-			break
 		}
 	}
 }
@@ -656,7 +643,7 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 					current = &binnable{
 						Sendable: sendable,
 						tag:      tagName,
-						noPrev:   tag == nil || tag.InOrder == false,
+						noPrev:   tag == nil || !tag.InOrder,
 					}
 				}
 				if !ok {
@@ -924,9 +911,7 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 				// remaining files to be polled
 				in = nil
 			}
-			break
 		case <-wait:
-			break
 		}
 		if sent != nil {
 			poll[sent.GetName()] = sent.(*progressFile)
@@ -940,7 +925,7 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 		// Build the list of pollable files
 		ready = nil
 		for _, f := range poll {
-			if time.Now().Sub(f.completed) >= broker.Conf.PollDelay {
+			if time.Since(f.completed) >= broker.Conf.PollDelay {
 				log.Debug("Polling:", f.GetName())
 				ready = append(ready, f)
 				// Let's limit the number of files polled in a single request

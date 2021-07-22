@@ -240,10 +240,8 @@ func (ss *SourceConf) applyAux(aux *auxSourceConf) (err error) {
 	switch {
 	case strings.ToLower(aux.StatPayload) == "true":
 		ss.StatPayload = true
-		break
 	case strings.ToLower(aux.StatPayload) == "false":
 		ss.isStatPayloadSet = true
-		break
 	}
 	if aux.GroupBy != "" {
 		if ss.GroupBy, err = regexp.Compile(aux.GroupBy); err != nil {
@@ -253,10 +251,8 @@ func (ss *SourceConf) applyAux(aux *auxSourceConf) (err error) {
 	switch {
 	case strings.ToLower(aux.IncludeHidden) == "true":
 		ss.IncludeHidden = true
-		break
 	case strings.ToLower(aux.IncludeHidden) == "false":
 		ss.IncludeHidden = false
-		break
 	}
 	var patterns []*regexp.Regexp
 	for _, s := range append(aux.Include, aux.Ignore...) {
@@ -436,11 +432,9 @@ func (t *TagConf) applyAux(aux *auxTagConf) (err error) {
 	switch {
 	case strings.ToLower(aux.Delete) == "true":
 		t.Delete = true
-		break
 	case strings.ToLower(aux.Delete) == "false":
 		t.Delete = false
 		t.isDeleteSet = true
-		break
 	}
 	return
 }
@@ -507,7 +501,7 @@ func (t *TargetConf) ParseHost() (host string, port int, err error) {
 	if len(hostParts) > 1 {
 		host = hostParts[0]
 		if port, err = strconv.Atoi(hostParts[1]); err != nil {
-			err = fmt.Errorf("Cannot parse port: %s", t.Host)
+			err = fmt.Errorf("cannot parse port: %s", t.Host)
 		}
 	}
 	return

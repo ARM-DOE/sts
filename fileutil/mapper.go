@@ -30,7 +30,7 @@ func (pm *PathMap) Translate(
 	matches := pm.Pattern.FindStringSubmatch(inputPath)
 	if matches == nil {
 		err = fmt.Errorf(
-			"Path \"%s\" does not match: %s",
+			"path \"%s\" does not match: %s",
 			inputPath,
 			pm.Pattern.String(),
 		)

@@ -110,13 +110,13 @@ func (f *sortedFile) unlink() {
 	unlink(f)
 }
 
-func (f *sortedFile) addAfter(prev *sortedFile) {
-	addAfter(f, prev)
-}
+// func (f *sortedFile) addAfter(prev *sortedFile) {
+// 	addAfter(f, prev)
+// }
 
-func (f *sortedFile) addBefore(next *sortedFile) {
-	addBefore(f, next)
-}
+// func (f *sortedFile) addBefore(next *sortedFile) {
+// 	addBefore(f, next)
+// }
 
 func (f *sortedFile) insertAfter(prev *sortedFile) {
 	insertAfter(f, prev)
@@ -186,9 +186,9 @@ func (g *sortedGroup) setPrev(prev link) {
 	g.prev = p
 }
 
-func (g *sortedGroup) remove() {
-	unlink(g)
-}
+// func (g *sortedGroup) remove() {
+// 	unlink(g)
+// }
 
 func (g *sortedGroup) addAfter(prev *sortedGroup) {
 	addAfter(g, prev)
@@ -202,9 +202,9 @@ func (g *sortedGroup) insertAfter(prev *sortedGroup) {
 	insertAfter(g, prev)
 }
 
-func (g *sortedGroup) insertBefore(next *sortedGroup) {
-	insertBefore(g, next)
-}
+// func (g *sortedGroup) insertBefore(next *sortedGroup) {
+// 	insertBefore(g, next)
+// }
 
 type sendable struct {
 	sts.Hashed
@@ -337,7 +337,7 @@ func (q *Tagged) Pop() sts.Sendable {
 			continue
 		}
 		if g.conf.LastDelay > 0 && next.next == nil {
-			if time.Now().Sub(time.Unix(next.orig.GetTime(), 0)) < g.conf.LastDelay {
+			if time.Since(time.Unix(next.orig.GetTime(), 0)) < g.conf.LastDelay {
 				// This is the last file in the group and it's not old enough
 				// to send yet.
 				next = nil

@@ -28,7 +28,7 @@ func InitPath(root string, path string, isdir bool) (string, error) {
 	if !filepath.IsAbs(path) {
 		if root == "" {
 			return path, fmt.Errorf(
-				"Cannot use a relative path with an empty root: %s", path)
+				"cannot use a relative path with an empty root: %s", path)
 		}
 		path, err = filepath.Abs(filepath.Join(root, path))
 		if err != nil {

@@ -89,7 +89,7 @@ func (s *Server) handleValidate(next http.Handler) http.Handler {
 		source := r.Header.Get(HeaderSourceName)
 		key := r.Header.Get(HeaderKey)
 		if !s.IsValid(source, key) {
-			log.Error(fmt.Errorf("Unknown Source:Key => %s:%s", source, key))
+			log.Error(fmt.Errorf("unknown source:key => %s:%s", source, key))
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}

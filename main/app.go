@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"syscall"
 	"time"
 
 	stackimpact "github.com/stackimpact/stackimpact-go"
@@ -66,9 +67,8 @@ type app struct {
 
 func newApp() *app {
 	var err error
-	var a *app
 
-	a = appFromCLI()
+	a := appFromCLI()
 
 	err = sts.InitPaths(
 		a.conf,
@@ -221,7 +221,7 @@ func (a *app) run() {
 		// 	}()
 		// }
 		sc := make(chan os.Signal, 1)
-		signal.Notify(sc, os.Interrupt, os.Kill)
+		signal.Notify(sc, os.Interrupt, syscall.SIGTERM)
 
 		daemon.SdNotify(false, daemon.SdNotifyReady)
 

@@ -148,11 +148,11 @@ func (h *Client) Transmit(payload sts.Payload) (n int, err error) {
 	if resp.StatusCode == http.StatusPartialContent {
 		n, _ = strconv.Atoi(resp.Header.Get(HeaderPartCount))
 		err = fmt.Errorf(
-			"Bin failed validation. Successful part(s): %s",
+			"bin failed validation; successful part(s): %s",
 			resp.Header.Get(HeaderPartCount))
 		return
 	} else if resp.StatusCode != http.StatusOK {
-		err = fmt.Errorf("Bin failed with response code: %d", resp.StatusCode)
+		err = fmt.Errorf("bin failed with response code: %d", resp.StatusCode)
 		return
 	}
 	n = len(payload.GetParts())
@@ -212,7 +212,7 @@ func (h *Client) RecoverTransmission(payload sts.Payload) (n int, err error) {
 		return
 	default:
 		err = fmt.Errorf(
-			"Transmission recovery request failed with response code: %d",
+			"transmission recovery request failed with response code: %d",
 			resp.StatusCode)
 	}
 	return
@@ -256,7 +256,7 @@ func (h *Client) Validate(sent []sts.Pollable) (polled []sts.Polled, err error) 
 		return
 	}
 	if resp.StatusCode != 200 {
-		err = fmt.Errorf("Poll request failed: %d", resp.StatusCode)
+		err = fmt.Errorf("poll request failed: %d", resp.StatusCode)
 		return
 	}
 	sep := resp.Header.Get(HeaderSep)

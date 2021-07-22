@@ -78,8 +78,7 @@ func (a *serverApp) init() (err error) {
 		return
 	}
 	var stager sts.GateKeeper
-	var stagers map[string]sts.GateKeeper
-	stagers = make(map[string]sts.GateKeeper)
+	stagers := make(map[string]sts.GateKeeper)
 	for _, node := range nodes {
 		if node.IsDir() {
 			stager = newStage(node.Name())

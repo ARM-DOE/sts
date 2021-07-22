@@ -79,7 +79,7 @@ func (c *DirsConf) Value() (driver.Value, error) {
 func (c *DirsConf) Scan(src interface{}) error {
 	source, ok := src.([]byte)
 	if !ok {
-		return fmt.Errorf("Expected []byte but got %T", src)
+		return fmt.Errorf("expected []byte but got %T", src)
 	}
 	err := json.Unmarshal(source, c)
 	if err != nil {
@@ -103,7 +103,7 @@ func (c *SourceConf) Value() (driver.Value, error) {
 func (c *SourceConf) Scan(src interface{}) error {
 	source, ok := src.([]byte)
 	if !ok {
-		return fmt.Errorf("Expected []byte but got %T", src)
+		return fmt.Errorf("expected []byte but got %T", src)
 	}
 	err := json.Unmarshal(source, c)
 	if err != nil {
@@ -173,7 +173,6 @@ func (c *clientCache) rebuild(client *Client, datasets []*Dataset) {
 	for _, d := range datasets {
 		c.datasets[d.Name] = client.ID
 	}
-	return
 }
 
 // Postgres fulfills the sts.ClientManager interface
@@ -332,15 +331,16 @@ func (p *Postgres) getDatasetsByClient(uid string) (datasets []*Dataset, err err
 	return
 }
 
-func (p *Postgres) getDatasetByName(name string) (dataset *Dataset, err error) {
-	dataset = &Dataset{}
-	err = p.db.Get(dataset, fmt.Sprintf(`
-		SELECT name, source_conf, client_id, created_at, updated_at
-		FROM %s
-		WHERE name=$1
-	`, p.datasetsTable), name)
-	return
-}
+// Not used...
+// func (p *Postgres) getDatasetByName(name string) (dataset *Dataset, err error) {
+// 	dataset = &Dataset{}
+// 	err = p.db.Get(dataset, fmt.Sprintf(`
+// 		SELECT name, source_conf, client_id, created_at, updated_at
+// 		FROM %s
+// 		WHERE name=$1
+// 	`, p.datasetsTable), name)
+// 	return
+// }
 
 func (p *Postgres) getDatasets() (datasets []*Dataset, err error) {
 	p.db.Select(&datasets, fmt.Sprintf(`

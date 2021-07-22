@@ -299,13 +299,13 @@ func (b *Encoder) startNextPart() error {
 	b.partIndex++
 	if b.handle, err = b.bin.opener(b.binPart.Binnable); err != nil {
 		return fmt.Errorf(
-			"Failed to open %s for bin writing: %s",
+			"failed to open %s for bin writing: %s",
 			b.binPart.GetPath(),
 			err.Error())
 	}
 	if _, err = b.handle.Seek(b.binPart.beg, 0); err != nil {
 		return fmt.Errorf(
-			"Failed to seek %s:%d while writing bin: %s",
+			"failed to seek %s:%d while writing bin: %s",
 			b.binPart.GetPath(),
 			b.binPart.beg,
 			err.Error())

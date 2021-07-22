@@ -185,7 +185,7 @@ func (s *Store) opener(file sts.File) (sts.Readable, error) {
 		return Readable{bytes.NewReader(f.data)}, nil
 	}
 	return nil, MissingError{
-		fmt.Errorf("Unknown file: %s", file.GetPath()),
+		fmt.Errorf("unknown file: %s", file.GetPath()),
 	}
 }
 

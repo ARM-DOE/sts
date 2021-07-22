@@ -46,15 +46,15 @@ type clientApp struct {
 
 func (c *clientApp) setDefaults() (err error) {
 	if c.conf.Name == "" {
-		err = fmt.Errorf("Source name missing from configuration")
+		err = fmt.Errorf("source name missing from configuration")
 		return
 	}
 	if c.conf.Target == nil {
-		err = fmt.Errorf("Target missing from configuration")
+		err = fmt.Errorf("target missing from configuration")
 		return
 	}
 	if c.conf.Target.Host == "" {
-		err = fmt.Errorf("Target host missing from configuration")
+		err = fmt.Errorf("target host missing from configuration")
 		return
 	}
 	if c.host, c.port, err = c.conf.Target.ParseHost(); err != nil {
@@ -186,7 +186,6 @@ func (c *clientApp) init() (err error) {
 		name := ""
 		switch t.Method {
 		case sts.MethodHTTP:
-			break
 		default:
 			// Ignore unknown methods. This allows us to extend the
 			// configuration for outside uses like disk mode, which is not

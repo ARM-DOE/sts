@@ -8,7 +8,7 @@ import (
 
 // Queue wraps an SQS reference
 type Queue struct {
-	name string
+	// name string
 	url  string
 	conn *sqs.SQS
 }
@@ -16,7 +16,11 @@ type Queue struct {
 // NewQueue initializes the state of the queue struct by fetching the queue URL
 // from AWS
 func NewQueue(config *aws.Config, name string) (q *Queue, err error) {
-	conn := sqs.New(session.New(config))
+	var sn *session.Session
+	if sn, err = session.NewSession(config); err != nil {
+		return
+	}
+	conn := sqs.New(sn)
 
 	qInput := &sqs.GetQueueUrlInput{}
 	qInput.SetQueueName(name)
