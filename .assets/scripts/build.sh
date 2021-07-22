@@ -35,6 +35,9 @@ if [[ "$GOOS" == "windows" ]]; then
 fi
 
 basedir=$(dirname $0)
+rootdir="$basedir/../../"
+
+cd $rootdir
 
 if [ -f $outdir/$outname ]; then
     echo "-- Cleaning Old Build"
@@ -59,4 +62,4 @@ fi
 echo "-- Building Executable (GOOS='$GOOS', GOARCH='$GOARCH')"
 go build -o $outdir/$outname $race \
     -ldflags="-X 'main.BuildTime=$date UTC' -X 'main.Version=$vers' $ldflags" \
-    $GOPATH/src/code.arm.gov/dataflow/sts/main/*.go
+    ./main/*.go
