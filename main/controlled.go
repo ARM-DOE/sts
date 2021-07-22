@@ -142,7 +142,7 @@ func runFromServer(jsonEncodedServerConfig string) {
 	}
 
 	if *once {
-		if a.conf.Client, err = requestClientConf(httpClient, clientID); err != nil {
+		if a.conf.Client, err = requestClientConf(httpClient, clientID, true); err != nil {
 			log.Error(err.Error())
 			return
 		}
@@ -240,7 +240,7 @@ func runConfLoader(manager sts.ClientManager, clientID string, ch chan<- *sts.Cl
 	}
 	log.Debug("Heartbeat:", heartbeat)
 	for {
-		if conf, err = requestClientConf(manager, clientID); err != nil {
+		if conf, err = requestClientConf(manager, clientID, conf == nil); err != nil {
 			log.Error(err.Error())
 		}
 		if conf != nil {
@@ -255,6 +255,7 @@ func runConfLoader(manager sts.ClientManager, clientID string, ch chan<- *sts.Cl
 func requestClientConf(
 	manager sts.ClientManager,
 	clientID string,
+	force bool,
 ) (conf *sts.ClientConf, err error) {
 	var name string
 	var status sts.ClientStatus
@@ -270,17 +271,19 @@ func requestClientConf(
 	case status&sts.ClientIsDisabled != 0:
 		log.Info("Client Disabled:", clientID)
 		return
-	case status&sts.ClientIsApproved != 0 && status&sts.ClientHasUpdatedConfiguration != 0:
-		log.Info("Client Has [Updated] Configuration:", clientID)
-		if conf, err = manager.GetClientConf(clientID); err != nil {
-			return
-		}
-		if conf == nil {
-			err = fmt.Errorf("an unknown error occurred - check client configuration")
-			return
-		}
-		if len(conf.Sources) == 0 {
-			log.Info("No Data Sources Configured")
+	case status&sts.ClientIsApproved != 0:
+		if force || status&sts.ClientHasUpdatedConfiguration != 0 {
+			log.Info("Client Has [Updated] Configuration:", clientID)
+			if conf, err = manager.GetClientConf(clientID); err != nil {
+				return
+			}
+			if conf == nil {
+				err = fmt.Errorf("an unknown error occurred - check client configuration")
+				return
+			}
+			if len(conf.Sources) == 0 {
+				log.Info("No Data Sources Configured")
+			}
 		}
 	}
 	return
