@@ -171,6 +171,7 @@ func (dir *Local) handleNode(path string, info os.FileInfo, err error) error {
 		// If a file just doesn't exist anymore, we probably don't need to stop
 		// the scan for that.
 		if os.IsNotExist(err) {
+			dir.debug("Local File Vanished:", path)
 			return nil
 		}
 		return err
@@ -197,6 +198,7 @@ func (dir *Local) handleNode(path string, info os.FileInfo, err error) error {
 	// order in which nodes are handled is nondeterministic.
 	fAge := dir.scanTimeStart.Sub(fTime)
 	if fAge < dir.MinAge {
+		dir.debug("Local File Too New:", path, "(", fAge, ",", dir.MinAge, ")")
 		return nil
 	}
 	var file *localFile

@@ -156,7 +156,7 @@ func (c *clientApp) init() (err error) {
 	// Configure automated file renaming
 	var fileToNewName sts.Rename
 	if len(c.conf.Rename) > 0 {
-		pfx = "Renaming =>"
+		pfx = "CONFIG: Renaming =>"
 		extraVars := map[string]string{
 			"__source": c.conf.Name,
 		}
