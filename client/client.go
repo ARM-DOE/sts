@@ -705,7 +705,7 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 			nErr++
 			log.Error("Payload send failed:", err.Error())
 			payload = broker.handleSendError(payload, n)
-			if len(payload.GetParts()) == 0 {
+			if payload == nil || len(payload.GetParts()) == 0 {
 				// It's entirely possible that the problem occurred after all
 				// parts were received by the server and we can simply move on
 				payload = nil
