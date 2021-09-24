@@ -23,6 +23,7 @@ export PATH=$GOROOT/bin:$PATH
 export GOPATH
 
 # Clean up previous build
+chmod -R u+w $GOPATH  # Directories with 555 perms make cleanup difficult
 rm -rf $GOPATH
 mkdir -p $GOPATH
 
