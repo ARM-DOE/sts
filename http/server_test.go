@@ -98,6 +98,9 @@ func TestCRUD(t *testing.T) {
 		ServeDir: filepath.Join(root, "serve"),
 		Host:     "localhost",
 		Port:     1992,
+		IsValid: func(source, key string) bool {
+			return true
+		},
 	}
 	stop := make(chan bool)
 	done := make(chan bool)
