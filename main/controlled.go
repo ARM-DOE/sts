@@ -232,6 +232,7 @@ func getMacAddr() ([]string, error) {
 func runConfLoader(manager sts.ClientManager, clientID string, ch chan<- *sts.ClientConf) {
 	var err error
 	var conf *sts.ClientConf
+	var newConf *sts.ClientConf
 	heartbeat := time.Second * 30
 	if StatusInterval != "" {
 		if nSec, err := strconv.Atoi(StatusInterval); err == nil {
@@ -240,10 +241,11 @@ func runConfLoader(manager sts.ClientManager, clientID string, ch chan<- *sts.Cl
 	}
 	log.Debug("Heartbeat:", heartbeat)
 	for {
-		if conf, err = requestClientConf(manager, clientID, conf == nil); err != nil {
+		if newConf, err = requestClientConf(manager, clientID, conf == nil); err != nil {
 			log.Error(err.Error())
 		}
-		if conf != nil {
+		if newConf != nil {
+			conf = newConf
 			ch <- conf
 		}
 		time.Sleep(heartbeat)
