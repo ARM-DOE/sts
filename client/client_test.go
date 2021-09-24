@@ -12,7 +12,7 @@ func TestScan(t *testing.T) {
 	n := 10000
 	broker := &Broker{
 		Conf: &Conf{
-			Store:   mock.NewStore(n, 1024),
+			Store:   mock.NewStore(n, n*2),
 			Cache:   mock.NewCache(),
 			Threads: 10,
 		},
