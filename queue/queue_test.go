@@ -247,4 +247,24 @@ func TestGeneral(t *testing.T) {
 	if len(queue.byFile) > 0 {
 		t.Fatal("List of files should be empty")
 	}
+	group := "g2"
+	nextName := fmt.Sprintf("%s.f%02d", group, n)
+	prevOne := queue.headFile[group]
+	lastOne := &mock.File{
+		Path: nextName,
+		Name: nextName,
+		Size: int64(100),
+		Time: time.Now(),
+	}
+	queue.Push([]sts.Hashed{lastOne})
+	headFile := queue.headFile[group]
+	if headFile.orig != lastOne {
+		t.Fatal("List reset failed")
+	}
+	if headFile.prev != prevOne {
+		t.Fatal("Invalid order following reset")
+	}
+	if headFile.next != nil {
+		t.Fatal("Expected reset to have only one file")
+	}
 }

@@ -500,12 +500,18 @@ func (q *Tagged) addFile(file *sortedFile) {
 		q.list[file.group.name] = list
 	}
 	list = q.list[file.group.name]
-	q.headFile[file.group.name] = list[0]
 	if i == 0 {
-		file.insertBefore(list[1])
+		// The list can be just this file in which case the "head file" was kept
+		// around only so the "prev" can be properly maintained
+		if len(list) == 1 {
+			file.insertAfter(q.headFile[file.group.name])
+		} else {
+			file.insertBefore(list[1])
+		}
 	} else {
 		file.insertAfter(list[i-1])
 	}
+	q.headFile[file.group.name] = list[0]
 }
 
 func (q *Tagged) removeFile(file *sortedFile) {
