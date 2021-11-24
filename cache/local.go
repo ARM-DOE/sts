@@ -9,16 +9,17 @@ import (
 
 	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/fileutil"
+	"code.arm.gov/dataflow/sts/marshal"
 )
 
 type cacheFile struct {
 	path string
 	name string
-	Size int64  `json:"size"`
-	Time int64  `json:"mtime"`
-	Meta []byte `json:"meta"`
-	Hash string `json:"hash"`
-	Done bool   `json:"done"`
+	Size int64            `json:"size"`
+	Time marshal.NanoTime `json:"mtime"`
+	Meta []byte           `json:"meta"`
+	Hash string           `json:"hash"`
+	Done bool             `json:"done"`
 }
 
 func (f *cacheFile) GetPath() string {
@@ -33,8 +34,8 @@ func (f *cacheFile) GetSize() int64 {
 	return f.Size
 }
 
-func (f *cacheFile) GetTime() int64 {
-	return f.Time
+func (f *cacheFile) GetTime() time.Time {
+	return f.Time.Time
 }
 
 func (f *cacheFile) GetMeta() []byte {
@@ -193,7 +194,7 @@ func (j *JSON) add(file sts.Hashed) {
 	j.dirty = true
 	if existing, ok := j.Files[file.GetName()]; ok {
 		existing.Size = file.GetSize()
-		existing.Time = file.GetTime()
+		existing.Time = marshal.NanoTime{Time: file.GetTime()}
 		existing.Meta = file.GetMeta()
 		existing.Hash = file.GetHash()
 		return
@@ -202,7 +203,7 @@ func (j *JSON) add(file sts.Hashed) {
 		path: file.GetPath(),
 		name: file.GetName(),
 		Size: file.GetSize(),
-		Time: file.GetTime(),
+		Time: marshal.NanoTime{Time: file.GetTime()},
 		Meta: file.GetMeta(),
 		Hash: file.GetHash(),
 	}

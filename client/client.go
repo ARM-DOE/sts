@@ -193,7 +193,7 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 				Cached: &placeholderFile{
 					name: p.Name,
 					size: p.Size,
-					time: p.Time,
+					time: p.Time.Time,
 					hash: p.Hash,
 				},
 			})
@@ -267,8 +267,8 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 		// Either fully sent or not at all; need to poll to find out which
 		poll = append(poll, &progressFile{
 			name:      f.GetName(),
-			started:   time.Unix(f.GetTime(), 0),
-			completed: time.Unix(f.GetTime(), 0),
+			started:   f.GetTime(),
+			completed: f.GetTime(),
 			size:      f.GetSize(),
 			hash:      f.GetHash(),
 		})
@@ -319,11 +319,11 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 				}
 			case f.Waiting() || f.Received():
 				if !broker.Conf.Logger.WasSent(
-					f.GetName(), time.Unix(cached.GetTime(), 0), time.Now()) {
+					f.GetName(), cached.GetTime(), time.Now()) {
 					broker.Conf.Logger.Sent(&progressFile{
 						name:      cached.GetName(),
-						started:   time.Unix(cached.GetTime(), 0),
-						completed: time.Unix(cached.GetTime(), 0),
+						started:   cached.GetTime(),
+						completed: cached.GetTime(),
 						size:      cached.GetSize(),
 						hash:      cached.GetHash(),
 					})
@@ -400,7 +400,7 @@ func (broker *Broker) canDelete(file sts.File) bool {
 			if tag.DeleteDelay == 0 {
 				return true
 			}
-			return time.Since(time.Unix(file.GetTime(), 0)) > tag.DeleteDelay
+			return time.Since(file.GetTime()) > tag.DeleteDelay
 		}
 	}
 	return false
@@ -426,7 +426,7 @@ func (broker *Broker) scan() []sts.Hashed {
 		// the case where files are NOT cleaned up by STS but are cleaned up
 		// outside of STS.
 		cache.Iterate(func(cached sts.Cached) bool {
-			if time.Unix(cached.GetTime(), 0).Before(broker.stuckSince) {
+			if cached.GetTime().Before(broker.stuckSince) {
 				if _, err := store.Sync(cached); store.IsNotExist(err) {
 					log.Info("Not found--removing from cache:", cached.GetName())
 					cache.Remove(cached.GetName())
@@ -463,7 +463,7 @@ func (broker *Broker) scan() []sts.Hashed {
 		case cached.GetHash() == "":
 			// Add any that might have failed the hash calculation last time
 			wrapped = append(wrapped, &hashFile{File: cached})
-		case cached.IsDone() && cached.GetTime() < age.Unix() && broker.canDelete(cached):
+		case cached.IsDone() && cached.GetTime().Before(age) && broker.canDelete(cached):
 			if err = broker.Conf.Store.Remove(cached); err == nil {
 				log.Debug("Deleted aged file:", cached.GetName())
 			}
@@ -694,7 +694,7 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 		for _, p := range payload.GetParts() {
 			beg, len := p.GetSlice()
 			log.Debug("Sending:", p.GetName(), beg, beg+len,
-				"T:", time.Unix(p.GetFileTime(), 0))
+				"T:", p.GetFileTime())
 		}
 		nErr = 0
 		for {
@@ -1050,7 +1050,7 @@ func (broker *Broker) startRetry(wg *sync.WaitGroup) {
 type placeholderFile struct {
 	name string
 	size int64
-	time int64
+	time time.Time
 	hash string
 }
 
@@ -1066,7 +1066,7 @@ func (f *placeholderFile) GetSize() int64 {
 	return f.size
 }
 
-func (f *placeholderFile) GetTime() int64 {
+func (f *placeholderFile) GetTime() time.Time {
 	return f.time
 }
 

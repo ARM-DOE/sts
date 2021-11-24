@@ -2,7 +2,6 @@ package sts
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"code.arm.gov/dataflow/sts/marshal"
 	"code.arm.gov/dataflow/sts/reflectutil"
 
 	"github.com/alecthomas/units"
@@ -32,44 +32,6 @@ const (
 	// OrderAlpha indicates alphabetic ordering
 	OrderAlpha = ""
 )
-
-// Duration wraps time.Duration for JSON marshaling
-type Duration struct {
-	time.Duration
-}
-
-// MarshalJSON implements Marshaler interface
-func (d Duration) MarshalJSON() ([]byte, error) {
-	return json.Marshal(d.String())
-}
-
-// UnmarshalJSON implements Unmarshaler interface
-func (d *Duration) UnmarshalJSON(b []byte) error {
-	var v interface{}
-	if err := json.Unmarshal(b, &v); err != nil {
-		return err
-	}
-	switch value := v.(type) {
-	case float64:
-		d.Duration = time.Duration(value)
-		return nil
-	case string:
-		var err error
-		d.Duration, err = time.ParseDuration(value)
-		if err != nil {
-			return err
-		}
-		return nil
-	default:
-		return errors.New("invalid duration")
-	}
-}
-
-// UnmarshalYAML implements Unmarshaler interface
-func (d *Duration) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
-	err = unmarshal(&d.Duration)
-	return
-}
 
 // Conf is the outer struct for decoding a YAML config file
 type Conf struct {
@@ -189,29 +151,29 @@ type SourceConf struct {
 }
 
 type auxSourceConf struct {
-	Name          string         `yaml:"name" json:"name"`
-	OutDir        string         `yaml:"out-dir" json:"out-dir"`
-	LogDir        string         `yaml:"log-dir" json:"log-dir"`
-	Threads       int            `yaml:"threads" json:"threads"`
-	CacheAge      Duration       `yaml:"cache-age" json:"cache-age"`
-	MinAge        Duration       `yaml:"min-age" json:"min-age"`
-	MaxAge        Duration       `yaml:"max-age" json:"max-age"`
-	ScanDelay     Duration       `yaml:"scan-delay" json:"scan-delay"`
-	Timeout       Duration       `yaml:"timeout" json:"timeout"`
-	Compression   int            `yaml:"compress" json:"compress"`
-	StatInterval  Duration       `yaml:"interval" json:"stat-interval"`
-	PollDelay     Duration       `yaml:"poll-delay" json:"poll-delay"`
-	PollInterval  Duration       `yaml:"poll-interval" json:"poll-interval"`
-	PollAttempts  int            `yaml:"poll-attempts" json:"poll-attempts"`
-	Target        *TargetConf    `yaml:"target" json:"target"`
-	Rename        []*MappingConf `yaml:"rename" json:"rename"`
-	Tags          []*TagConf     `yaml:"tags" json:"tags"`
-	BinSize       string         `yaml:"bin-size" json:"bin-size"`
-	StatPayload   string         `yaml:"stat-payload" json:"stat-payload"`
-	GroupBy       string         `yaml:"group-by" json:"group-by"`
-	IncludeHidden string         `yaml:"include-hidden" json:"include-hidden"`
-	Include       []string       `yaml:"include" json:"include"`
-	Ignore        []string       `yaml:"ignore" json:"ignore"`
+	Name          string           `yaml:"name" json:"name"`
+	OutDir        string           `yaml:"out-dir" json:"out-dir"`
+	LogDir        string           `yaml:"log-dir" json:"log-dir"`
+	Threads       int              `yaml:"threads" json:"threads"`
+	CacheAge      marshal.Duration `yaml:"cache-age" json:"cache-age"`
+	MinAge        marshal.Duration `yaml:"min-age" json:"min-age"`
+	MaxAge        marshal.Duration `yaml:"max-age" json:"max-age"`
+	ScanDelay     marshal.Duration `yaml:"scan-delay" json:"scan-delay"`
+	Timeout       marshal.Duration `yaml:"timeout" json:"timeout"`
+	Compression   int              `yaml:"compress" json:"compress"`
+	StatInterval  marshal.Duration `yaml:"interval" json:"stat-interval"`
+	PollDelay     marshal.Duration `yaml:"poll-delay" json:"poll-delay"`
+	PollInterval  marshal.Duration `yaml:"poll-interval" json:"poll-interval"`
+	PollAttempts  int              `yaml:"poll-attempts" json:"poll-attempts"`
+	Target        *TargetConf      `yaml:"target" json:"target"`
+	Rename        []*MappingConf   `yaml:"rename" json:"rename"`
+	Tags          []*TagConf       `yaml:"tags" json:"tags"`
+	BinSize       string           `yaml:"bin-size" json:"bin-size"`
+	StatPayload   string           `yaml:"stat-payload" json:"stat-payload"`
+	GroupBy       string           `yaml:"group-by" json:"group-by"`
+	IncludeHidden string           `yaml:"include-hidden" json:"include-hidden"`
+	Include       []string         `yaml:"include" json:"include"`
+	Ignore        []string         `yaml:"ignore" json:"ignore"`
 }
 
 func (ss *SourceConf) applyAux(aux *auxSourceConf) (err error) {
@@ -406,13 +368,13 @@ type TagConf struct {
 }
 
 type auxTagConf struct {
-	Priority    int      `yaml:"priority" json:"priority"`
-	Method      string   `yaml:"method" json:"method"`
-	Order       string   `yaml:"order" json:"order"`
-	Pattern     string   `yaml:"pattern" json:"pattern"`
-	Delete      string   `yaml:"delete" json:"delete"`
-	LastDelay   Duration `yaml:"last-delay" json:"last-delay"`
-	DeleteDelay Duration `yaml:"delete-delay" json:"delete-delay"`
+	Priority    int              `yaml:"priority" json:"priority"`
+	Method      string           `yaml:"method" json:"method"`
+	Order       string           `yaml:"order" json:"order"`
+	Pattern     string           `yaml:"pattern" json:"pattern"`
+	Delete      string           `yaml:"delete" json:"delete"`
+	LastDelay   marshal.Duration `yaml:"last-delay" json:"last-delay"`
+	DeleteDelay marshal.Duration `yaml:"delete-delay" json:"delete-delay"`
 }
 
 func (t *TagConf) applyAux(aux *auxTagConf) (err error) {

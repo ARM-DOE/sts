@@ -16,6 +16,7 @@ import (
 	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/fileutil"
 	"code.arm.gov/dataflow/sts/log"
+	"code.arm.gov/dataflow/sts/marshal"
 )
 
 // Server responds to client HTTP requests
@@ -290,7 +291,7 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 			Renamed: parts[index].GetRenamed(),
 			Prev:    parts[index].GetPrev(),
 			Size:    parts[index].GetFileSize(),
-			Time:    parts[index].GetFileTime(),
+			Time:    marshal.NanoTime{Time: parts[index].GetFileTime()},
 			Hash:    parts[index].GetFileHash(),
 			Source:  source,
 		}

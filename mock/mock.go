@@ -46,8 +46,8 @@ func (f *File) GetSize() int64 {
 }
 
 // GetTime gets the file mod time
-func (f *File) GetTime() int64 {
-	return f.Time.Unix()
+func (f *File) GetTime() time.Time {
+	return f.Time
 }
 
 // GetMeta gets any additional metadata needed by the store implementation
@@ -296,7 +296,7 @@ func (c *Cache) add(file sts.Hashed) {
 	c.dirty = true
 	if existing, ok := c.files[file.GetName()]; ok {
 		existing.Size = file.GetSize()
-		existing.Time = time.Unix(file.GetTime(), 0)
+		existing.Time = file.GetTime()
 		existing.Hash = file.GetHash()
 		return
 	}
@@ -304,7 +304,7 @@ func (c *Cache) add(file sts.Hashed) {
 		Path: file.GetPath(),
 		Name: file.GetName(),
 		Size: file.GetSize(),
-		Time: time.Unix(file.GetTime(), 0),
+		Time: file.GetTime(),
 		Meta: file.GetMeta(),
 		Hash: file.GetHash(),
 	}

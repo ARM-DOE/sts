@@ -65,8 +65,8 @@ func (f *localFile) GetSize() int64 {
 	return f.info.Size()
 }
 
-func (f *localFile) GetTime() int64 {
-	return f.info.ModTime().Unix()
+func (f *localFile) GetTime() time.Time {
+	return f.info.ModTime()
 }
 
 func (f *localFile) GetMeta() []byte {

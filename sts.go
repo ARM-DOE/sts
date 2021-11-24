@@ -4,6 +4,8 @@ import (
 	"io"
 	"sync"
 	"time"
+
+	"code.arm.gov/dataflow/sts/marshal"
 )
 
 const (
@@ -193,7 +195,7 @@ type File interface {
 	GetPath() string
 	GetName() string
 	GetSize() int64
-	GetTime() int64
+	GetTime() time.Time
 	GetMeta() []byte
 }
 
@@ -249,7 +251,7 @@ type Binned interface {
 	GetName() string
 	GetRenamed() string
 	GetPrev() string
-	GetFileTime() int64
+	GetFileTime() time.Time
 	GetFileHash() string
 	GetFileSize() int64
 	// GetSendSize will almost always be the same as GetFileSize.  The one
@@ -283,14 +285,14 @@ type PayloadDecoder interface {
 // Partial is the JSON-encodable struct containing metadata for a single file
 // on the receiving end
 type Partial struct {
-	Name    string       `json:"path"`
-	Renamed string       `json:"renamed"`
-	Prev    string       `json:"prev"`
-	Time    int64        `json:"time"`
-	Size    int64        `json:"size"`
-	Hash    string       `json:"hash"`
-	Source  string       `json:"src"`
-	Parts   []*ByteRange `json:"parts"`
+	Name    string           `json:"path"`
+	Renamed string           `json:"renamed"`
+	Prev    string           `json:"prev"`
+	Time    marshal.NanoTime `json:"time"`
+	Size    int64            `json:"size"`
+	Hash    string           `json:"hash"`
+	Source  string           `json:"src"`
+	Parts   []*ByteRange     `json:"parts"`
 }
 
 // ByteRange is the JSON-encodable struct used by the Partial for tracking a

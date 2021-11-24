@@ -330,7 +330,7 @@ func (s *Stage) Received(parts []sts.Binned) (n int) {
 
 func (s *Stage) partReceived(part sts.Binned) bool {
 	log.Debug("Checking for received part:", s.name, part.GetName())
-	when := time.Unix(part.GetFileTime(), 0)
+	when := part.GetFileTime()
 	monthAgo := time.Now().Add(-1 * time.Hour * 24 * 30)
 	if when.Before(monthAgo) {
 		// Let's put a sensible cap in place

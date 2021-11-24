@@ -11,6 +11,7 @@ import (
 
 	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/log"
+	"code.arm.gov/dataflow/sts/marshal"
 )
 
 // BinFluff is the percentage of the bin size that can fluctuate based on
@@ -18,14 +19,14 @@ import (
 const binFluff = 0.1
 
 type fileMeta struct {
-	Name    string `json:"n"`
-	Renamed string `json:"r"`
-	Prev    string `json:"p"`
-	Hash    string `json:"f"`
-	Time    int64  `json:"t"`
-	Size    int64  `json:"s"`
-	Beg     int64  `json:"b"`
-	End     int64  `json:"e"`
+	Name    string           `json:"n"`
+	Renamed string           `json:"r"`
+	Prev    string           `json:"p"`
+	Hash    string           `json:"f"`
+	Time    marshal.NanoTime `json:"t"`
+	Size    int64            `json:"s"`
+	Beg     int64            `json:"b"`
+	End     int64            `json:"e"`
 	send    int64
 }
 
@@ -49,8 +50,8 @@ func (f *fileMeta) GetFileSize() int64 {
 	return f.Size
 }
 
-func (f *fileMeta) GetFileTime() int64 {
-	return f.Time
+func (f *fileMeta) GetFileTime() time.Time {
+	return f.Time.Time
 }
 
 func (f *fileMeta) GetSlice() (int64, int64) {
@@ -76,7 +77,7 @@ func (p *part) GetFileSize() int64 {
 	return p.Binnable.GetSize()
 }
 
-func (p *part) GetFileTime() int64 {
+func (p *part) GetFileTime() time.Time {
 	return p.Binnable.GetTime()
 }
 
@@ -242,7 +243,7 @@ func (bin *Bin) EncodeHeader() (byteMeta []byte, err error) {
 			Renamed: part.GetRenamed(),
 			Prev:    part.GetPrev(),
 			Hash:    part.GetFileHash(),
-			Time:    part.GetFileTime(),
+			Time:    marshal.NanoTime{Time: part.GetFileTime()},
 			Size:    part.GetFileSize(),
 			send:    part.GetSendSize(),
 			Beg:     part.beg,

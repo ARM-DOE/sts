@@ -138,7 +138,7 @@ func TestGeneral(t *testing.T) {
 			Priority: -1,
 		},
 	}
-	n := 1000
+	n := 10000
 	queue := q(tags)
 	var files []sts.Hashed
 	for i := n; i > 0; i-- {
@@ -155,7 +155,7 @@ func TestGeneral(t *testing.T) {
 		} else {
 			mt = mt.Add(time.Minute * time.Duration(-i))
 		}
-		name := fmt.Sprintf("g%d.f%02d", g, i)
+		name := fmt.Sprintf("g%d.f%05d", g, i)
 		files = append(files, &mock.File{
 			Path: name,
 			Name: name,
@@ -187,7 +187,7 @@ func TestGeneral(t *testing.T) {
 				if f.GetPrev() == "" {
 					t.Error(f.GetName(), "does not have a predessor")
 				}
-				if f.GetTime() < gFiles[i].GetTime() {
+				if f.GetTime().Before(gFiles[i].GetTime()) {
 					t.Error(f.GetName(), "should not follow", gFiles[i].GetName())
 				}
 			case "g2":
@@ -198,7 +198,7 @@ func TestGeneral(t *testing.T) {
 				// the array
 				fallthrough
 			case "g3":
-				if f.GetTime() > gFiles[i].GetTime() {
+				if f.GetTime().After(gFiles[i].GetTime()) {
 					t.Error(f.GetName(), "should not follow", gFiles[i].GetName())
 				}
 			case "g4":

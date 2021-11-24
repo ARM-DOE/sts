@@ -337,7 +337,7 @@ func (q *Tagged) Pop() sts.Sendable {
 			continue
 		}
 		if g.conf.LastDelay > 0 && next.next == nil {
-			if time.Since(time.Unix(next.orig.GetTime(), 0)) < g.conf.LastDelay {
+			if time.Since(next.orig.GetTime()) < g.conf.LastDelay {
 				// This is the last file in the group and it's not old enough
 				// to send yet.
 				next = nil
@@ -479,13 +479,13 @@ func (q *Tagged) addFile(file *sortedFile) {
 			f1 := file.orig
 			t0 := f0.GetTime()
 			t1 := f1.GetTime()
-			if t0 == t1 {
+			if t0.Equal(t1) {
 				return f0.GetName() > f1.GetName()
 			}
 			if order == sts.OrderFIFO {
-				return t0 > t1
+				return t0.After(t1)
 			}
-			return t0 < t1
+			return t0.Before(t1)
 		}
 	}
 	i := len(list)
