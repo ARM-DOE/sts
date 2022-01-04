@@ -24,7 +24,6 @@ func TestSQL(t *testing.T) {
 	p.destroy()
 	p.create()
 	p.connect()
-	defer p.disconnect()
 	if err = p.initClient("somerandomstring", "anotherrandomstring", "somerandomname", "darwin"); err != nil {
 		t.Fatal(err)
 	}

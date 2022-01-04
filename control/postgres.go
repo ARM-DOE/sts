@@ -224,7 +224,6 @@ func (p *Postgres) create() {
 	if err := p.connect(); err != nil {
 		panic(err)
 	}
-	defer p.disconnect()
 	p.db.MustExec(
 		strings.Replace(
 			strings.Replace(
@@ -238,7 +237,6 @@ func (p *Postgres) destroy() {
 	if err := p.connect(); err != nil {
 		panic(err)
 	}
-	defer p.disconnect()
 	p.db.MustExec(fmt.Sprintf(`
 		DROP TABLE %s;
 		DROP TABLE %s;
@@ -265,15 +263,6 @@ func (p *Postgres) connect() (err error) {
 		}
 	}
 	return
-}
-
-func (p *Postgres) disconnect() error {
-	if p.db == nil {
-		return nil
-	}
-	err := p.db.Close()
-	p.db = nil
-	return err
 }
 
 func (p *Postgres) initClient(id, key, name, os string) (err error) {
@@ -379,7 +368,6 @@ func (p *Postgres) GetClientStatus(
 	if err = p.connect(); err != nil {
 		return
 	}
-	defer p.disconnect()
 	key, uid := p.idDecoder(clientID)
 	status |= sts.ClientIsDisabled
 	var client *Client
@@ -413,7 +401,6 @@ func (p *Postgres) GetClientConf(clientID string) (conf *sts.ClientConf, err err
 	if err = p.connect(); err != nil {
 		return
 	}
-	defer p.disconnect()
 	_, uid := p.idDecoder(clientID)
 	client, err := p.getClientByID(uid)
 	if client == nil || err != nil {
@@ -444,7 +431,6 @@ func (p *Postgres) SetClientConfReceived(clientID string, when time.Time) error 
 	if err := p.connect(); err != nil {
 		return err
 	}
-	defer p.disconnect()
 	_, uid := p.idDecoder(clientID)
 	return p.setLoadedTime(uid, when)
 }
@@ -455,7 +441,6 @@ func (p *Postgres) IsValid(source, clientID string) bool {
 	if p.cache == nil {
 		// A connection will build the cache
 		p.connect()
-		p.disconnect()
 	}
 	key, cid := p.idDecoder(clientID)
 	if k, ok := p.cache.getClientKey(cid); !ok || k != key {
