@@ -96,13 +96,14 @@ func Close() error {
 // GetClient returns a secure http.Client instance pointer based on cert paths.
 func GetClient(tlsConf *tls.Config) (client *http.Client, err error) {
 	// Create new client using tls config
-	trans := http.Transport{}
+	// NOTE: cloning the default transport means we get things like honoring
+	// proxy env vars (e.g. HTTP_PROXY, HTTPS_PROXY, etc)...
+	tr := http.DefaultTransport.(*http.Transport).Clone()
 	if tlsConf != nil {
-		trans.TLSClientConfig = tlsConf
+		tr.TLSClientConfig = tlsConf
 	}
-	trans.DisableKeepAlives = true
-	client = &http.Client{}
-	client.Transport = &trans
+	tr.DisableKeepAlives = true
+	client = &http.Client{Transport: tr}
 	return
 }
 
