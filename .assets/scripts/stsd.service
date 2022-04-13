@@ -1,15 +1,16 @@
 [Unit]
 Description=Site Transfer Software Daemon
 After=syslog.target network.target
- 
+RequiresMountsFor=/data/logs
+
 [Service]
 Type=simple
 User=dsmgr
 Group=data
 RestartSec=5
 ExecStart=/apps/transfer/bin/sts -loop -conf /apps/transfer/conf/sts.yaml
-WatchdogSec=30s
+WatchdogSec=600s
 Restart=on-failure
- 
+
 [Install]
 WantedBy=multi-user.target
