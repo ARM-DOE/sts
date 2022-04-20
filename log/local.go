@@ -64,9 +64,17 @@ func (f *FileIO) Sent(file sts.Sent) {
 	<-f.loggedCh
 }
 
+func (f *FileIO) wasWritten(relPath, hash string, after time.Time, before time.Time) bool {
+	strings := []string{relPath}
+	if hash != "" {
+		strings = append(strings, fmt.Sprintf(":%s:", hash))
+	}
+	return f.logger.search(strings, after, before)
+}
+
 // WasSent tries to find the path specified between the times specified
-func (f *FileIO) WasSent(relPath string, after time.Time, before time.Time) bool {
-	return f.logger.search(relPath+":", after, before)
+func (f *FileIO) WasSent(relPath, hash string, after time.Time, before time.Time) bool {
+	return f.wasWritten(relPath, hash, after, before)
 }
 
 // Received logs a file after it's been received
@@ -82,8 +90,8 @@ func (f *FileIO) Received(file sts.Received) {
 }
 
 // WasReceived tries to find the path specified between the times specified
-func (f *FileIO) WasReceived(relPath string, after time.Time, before time.Time) bool {
-	return f.logger.search(relPath+":", after, before)
+func (f *FileIO) WasReceived(relPath, hash string, after time.Time, before time.Time) bool {
+	return f.wasWritten(relPath, hash, after, before)
 }
 
 // Parse reads the log files in the provided time range and calls the handler
@@ -330,13 +338,24 @@ func (rf *rollingFile) eachLine(handler func(string) bool,
 	return broke
 }
 
-// search will look for a given text pattern in the log history
-func (rf *rollingFile) search(text string,
-	start time.Time, stop time.Time) bool {
-
-	b := []byte(text)
-	broke := rf.each(func(path string) bool {
-		return fileutil.FindLine(path, b) != ""
+// search will look for a given text patterns to match a single line in the log
+// history
+func (rf *rollingFile) search(text []string, start time.Time, stop time.Time) bool {
+	if len(text) == 0 {
+		return false
+	}
+	b := []byte(text[0])
+	var line string
+	return rf.each(func(path string) bool {
+		line = fileutil.FindLine(path, b)
+		if line == "" {
+			return false
+		}
+		for _, t := range text[1:] {
+			if !strings.Contains(line, t) {
+				return false
+			}
+		}
+		return true
 	}, start, stop)
-	return broke
 }

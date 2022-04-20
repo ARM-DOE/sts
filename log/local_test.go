@@ -49,7 +49,7 @@ func TestSend(t *testing.T) {
 	}
 	wg.Wait()
 	for _, name := range names {
-		if !logger.WasSent(name, start, time.Now()) {
+		if !logger.WasSent(name, "", start, time.Now()) {
 			t.Error("Failed to find:", name)
 		}
 	}
@@ -75,12 +75,13 @@ func TestReceive(t *testing.T) {
 		names = append(names, name)
 		go func(logger *FileIO, i int) {
 			defer wg.Done()
+			hash := fileutil.StringMD5(name)
 			logger.Received(&mock.File{
 				Name: name,
 				Size: 1024 * 1024 * int64(i+1),
-				Hash: fileutil.StringMD5(name),
+				Hash: hash,
 			})
-			if !logger.WasReceived(name, start, time.Now()) {
+			if !logger.WasReceived(name, hash, start, time.Now()) {
 				t.Error("Failed to find:", name)
 			}
 		}(logger, i)

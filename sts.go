@@ -53,7 +53,7 @@ type Logger interface {
 // SendLogger is the interface for logging on the sending side
 type SendLogger interface {
 	Sent(Sent)
-	WasSent(name string, after time.Time, before time.Time) bool
+	WasSent(name, hash string, after time.Time, before time.Time) bool
 }
 
 // ReceiveLogger is the interface for logging on the incoming side
@@ -64,7 +64,7 @@ type ReceiveLogger interface {
 		before time.Time) bool
 	Received(file Received)
 	WasReceived(
-		name string,
+		name, hash string,
 		after time.Time,
 		before time.Time) bool
 }

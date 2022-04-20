@@ -184,7 +184,7 @@ func (s *Stage) Scan(version string) (jsonBytes []byte, err error) {
 				lock = s.getWriteLock(strings.TrimSuffix(path, compExt))
 				lock.RLock()
 				// Make sure it still exists.
-				if _, err := os.Stat(path); !os.IsNotExist(err) {
+				if _, err := os.Stat(path); err == nil {
 					cmp, err := readLocalCompanion(path, name)
 					if err == nil {
 						partials = append(partials, cmp)
@@ -588,38 +588,43 @@ func (s *Stage) cleanStrays(minAge time.Duration) {
 			}
 			relPath := strings.TrimSuffix(path[len(s.rootDir)+1:], ext)
 			cmpPath := filepath.Join(s.rootDir, relPath+compExt)
-			switch ext {
-			case partExt:
-				log.Debug("Checking for stray partial:", relPath)
-				delete := false
-				deleteCmp := false
-				file := s.fromCache(strings.TrimSuffix(path, partExt))
-				if file != nil && file.state > stateReceived {
-					delete = true
-					deleteCmp = file.state > stateLogged
-				} else {
-					end := time.Now()
-					beg := info.ModTime().Add(time.Duration(age.Minutes()) * time.Hour * -1)
-					log.Info("Checking log for stray partial:", relPath, "--", beg.Format("20060102"))
-					if s.logger.WasReceived(relPath, beg, end) {
-						delete = true
-						deleteCmp = true
-					}
+			var cmp *sts.Partial
+			if _, err := os.Stat(cmpPath); err == nil {
+				if cmp, err = readLocalCompanion(path, relPath); err != nil {
+					log.Error(err.Error())
 				}
-				if delete {
-					if err = os.Remove(path); err != nil {
-						log.Error("Failed to remove stray partial:", path, err.Error())
-						return nil
+			}
+			log.Debug("Checking for stray partial:", relPath)
+			delete := false
+			deleteCmp := false
+			file := s.fromCache(strings.TrimSuffix(path, partExt))
+			if file != nil && file.state > stateReceived {
+				delete = cmp == nil || cmp.Hash == file.hash
+				deleteCmp = file.state > stateLogged && cmp != nil
+			} else {
+				end := time.Now()
+				beg := info.ModTime().Add(time.Duration(age.Minutes()) * time.Hour * -1)
+				log.Info("Checking log for stray partial:", relPath, "--", beg.Format("20060102"))
+				hash := ""
+				if cmp != nil {
+					hash = cmp.Hash
+				}
+				if s.logger.WasReceived(relPath, hash, beg, end) {
+					delete = true
+					deleteCmp = cmp != nil
+				}
+			}
+			if delete {
+				if err = os.Remove(path); err != nil {
+					log.Error("Failed to remove stray partial:", path, err.Error())
+					return nil
+				}
+				log.Info("Deleted stray partial", relPath)
+				if deleteCmp {
+					if err = os.Remove(cmpPath); err != nil {
+						log.Error("Failed to remove stray partial companion:", cmpPath, err.Error())
 					}
-					log.Info("Deleted stray partial", relPath)
-					if deleteCmp {
-						if _, err := os.Stat(cmpPath); !os.IsNotExist(err) {
-							if err = os.Remove(cmpPath); err != nil {
-								log.Error("Failed to remove stray partial companion:", cmpPath, err.Error())
-							}
-							log.Info("Deleted stray partial companion:", cmpPath)
-						}
-					}
+					log.Info("Deleted stray partial companion:", cmpPath)
 				}
 			}
 			return nil
@@ -811,7 +816,7 @@ func (s *Stage) isFileReady(file *finalFile) bool {
 		// get here to try to find this file's predecessor
 		file.prevScanBeg = beg
 		t := time.Now()
-		found := s.logger.WasReceived(file.prev, beg, end)
+		found := s.logger.WasReceived(file.prev, "", beg, end)
 		took := fmt.Sprintf("(took %s)", time.Since(t))
 		tfmt := "20060102"
 		if found {

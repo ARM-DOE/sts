@@ -317,7 +317,8 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 				}
 			case f.Waiting() || f.Received():
 				if !broker.Conf.Logger.WasSent(
-					f.GetName(), cached.GetTime(), time.Now()) {
+					f.GetName(), f.GetHash(), cached.GetTime(), time.Now(),
+				) {
 					broker.Conf.Logger.Sent(&progressFile{
 						name:      cached.GetName(),
 						started:   cached.GetTime(),
