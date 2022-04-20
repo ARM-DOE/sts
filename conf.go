@@ -477,6 +477,7 @@ type ServerConf struct {
 	Dirs          *ServerDirs `yaml:"dirs" json:"dirs"`
 	Server        *HTTPServer `yaml:"server" json:"server"`
 	Queue         *Queue      `yaml:"queue" json:"queue"`
+	PermitLogBuf  bool        `yaml:"log-buffering" json:"log-buffering"`
 }
 
 // DBConf is the struct for defining a database connection

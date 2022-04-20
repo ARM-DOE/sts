@@ -105,7 +105,9 @@ type Dispatcher interface {
 // GateKeeper is the interface for managing the "putting away" of files
 // received on the server
 type GateKeeper interface {
-	Recover() error
+	Recover()
+	CleanNow(time.Duration)
+	Ready() bool
 	Scan(version string) ([]byte, error)
 	Prepare(request []Binned)
 	Receive(*Partial, io.Reader) error

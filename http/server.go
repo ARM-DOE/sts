@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/fileutil"
@@ -38,7 +39,11 @@ type Server struct {
 	lock sync.RWMutex
 }
 
-func (s *Server) getGateKeeper(source string) sts.GateKeeper {
+func (s *Server) getGateKeeper(r *http.Request) sts.GateKeeper {
+	source := getSourceName(r)
+	if source == "" {
+		return nil
+	}
 	s.lock.RLock()
 	if gk, ok := s.GateKeepers[source]; ok {
 		s.lock.RUnlock()
@@ -71,6 +76,7 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 	http.Handle(s.PathPrefix+"/validate", s.handleValidate(http.HandlerFunc(s.routeValidate)))
 	http.Handle(s.PathPrefix+"/partials", s.handleValidate(http.HandlerFunc(s.routePartials)))
 	http.Handle(s.PathPrefix+"/static/", s.handleValidate(http.HandlerFunc(s.routeFile)))
+	http.Handle(s.PathPrefix+"/clean", http.HandlerFunc(s.routeClean))
 
 	go func(done chan<- bool, host string, port int, tlsConf *tls.Config) {
 		addr := fmt.Sprintf("%s:%d", host, port)
@@ -87,7 +93,16 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 
 func (s *Server) handleValidate(next http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
-		source := r.Header.Get(HeaderSourceName)
+		gateKeeper := s.getGateKeeper(r)
+		if gateKeeper == nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if !gateKeeper.Ready() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		source := getSourceName(r)
 		key := r.Header.Get(HeaderKey)
 		if !s.IsValid(source, key) {
 			log.Error(fmt.Errorf("unknown source:key => %s:%s", source, key))
@@ -105,11 +120,7 @@ func (s *Server) handleError(w http.ResponseWriter, err error) {
 }
 
 func (s *Server) routeFile(w http.ResponseWriter, r *http.Request) {
-	source := r.Header.Get(HeaderSourceName)
-	if source == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
+	source := getSourceName(r)
 	file := r.URL.Path[len("/static/"):]
 	root := filepath.Join(s.ServeDir, source)
 	path := filepath.Join(root, file)
@@ -180,12 +191,7 @@ func (s *Server) routeFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) routePartials(w http.ResponseWriter, r *http.Request) {
-	source := r.Header.Get(HeaderSourceName)
-	if source == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	gateKeeper := s.getGateKeeper(source)
+	gateKeeper := s.getGateKeeper(r)
 	// Starting with v1, this API is versioned in order to allow for changes to
 	// the underlying structure of the partials.
 	version := ""
@@ -206,7 +212,7 @@ func (s *Server) routePartials(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) routeValidate(w http.ResponseWriter, r *http.Request) {
-	source := r.Header.Get(HeaderSourceName)
+	source := getSourceName(r)
 	if source == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -229,7 +235,7 @@ func (s *Server) routeValidate(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	gateKeeper := s.getGateKeeper(source)
+	gateKeeper := s.getGateKeeper(r)
 	respMap := make(map[string]int, len(files))
 	for _, f := range files {
 		if sep != "" {
@@ -248,11 +254,7 @@ func (s *Server) routeValidate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 	var err error
 	defer r.Body.Close()
-	source := r.Header.Get(HeaderSourceName)
-	if source == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
+	source := getSourceName(r)
 	compressed := r.Header.Get(HeaderContentEncoding) == HeaderGzip
 	sep := r.Header.Get(HeaderSep)
 	var metaLen int
@@ -273,7 +275,7 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := decoder.GetParts()
-	gateKeeper := s.getGateKeeper(source)
+	gateKeeper := s.getGateKeeper(r)
 	gateKeeper.Prepare(parts)
 	index := 0
 	for {
@@ -313,11 +315,6 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 func (s *Server) routeDataRecovery(w http.ResponseWriter, r *http.Request) {
 	var err error
 	defer r.Body.Close()
-	source := r.Header.Get(HeaderSourceName)
-	if source == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
 	compressed := r.Header.Get(HeaderContentEncoding) == HeaderGzip
 	sep := r.Header.Get(HeaderSep)
 	reader := r.Body
@@ -332,9 +329,25 @@ func (s *Server) routeDataRecovery(w http.ResponseWriter, r *http.Request) {
 		s.handleError(w, err)
 		return
 	}
-	gateKeeper := s.getGateKeeper(source)
+	gateKeeper := s.getGateKeeper(r)
 	n := gateKeeper.Received(decoder.GetParts())
 	w.Header().Add(HeaderPartCount, strconv.Itoa(n))
+}
+
+func (s *Server) routeClean(w http.ResponseWriter, r *http.Request) {
+	wait := r.URL.Query().Has("block")
+	minAge, err := strconv.Atoi(r.URL.Query().Get("minage"))
+	if err != nil {
+		minAge = 0
+	}
+	for _, gateKeeper := range s.GateKeepers {
+		if wait {
+			gateKeeper.CleanNow(time.Duration(minAge) * time.Second)
+		} else {
+			go gateKeeper.CleanNow(time.Duration(minAge) * time.Second)
+		}
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) respond(w http.ResponseWriter, status int, data []byte) error {
@@ -352,4 +365,8 @@ func (s *Server) respond(w http.ResponseWriter, status int, data []byte) error {
 	}
 	w.Write(data)
 	return nil
+}
+
+func getSourceName(r *http.Request) string {
+	return r.Header.Get(HeaderSourceName)
 }

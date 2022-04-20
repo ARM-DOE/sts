@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -81,13 +82,16 @@ func (f *finalFile) GetBody() string {
 
 // Stage is the manager for all things file reception
 type Stage struct {
-	name       string
-	rootDir    string
-	targetDir  string
-	logger     sts.ReceiveLogger
-	dispatcher sts.Dispatcher
-	nPipe      int
-	lastIn     time.Time
+	name          string
+	rootDir       string
+	targetDir     string
+	logger        sts.ReceiveLogger
+	dispatcher    sts.Dispatcher
+	nPipe         int
+	lastIn        time.Time
+	cleanInterval time.Duration
+	cleanTimeout  *time.Timer
+	canReceive    bool
 
 	validateCh chan *finalFile
 	finalizeCh chan *finalFile
@@ -99,6 +103,8 @@ type Stage struct {
 	cacheTimes []time.Time
 	writeLock  sync.RWMutex
 	writeLocks map[string]*sync.RWMutex
+	readyLock  sync.RWMutex
+	cleanLock  sync.RWMutex
 }
 
 // New creates a new instance of Stage where the rootDir is the directory
@@ -117,6 +123,8 @@ func New(name, rootDir, targetDir string, logger sts.ReceiveLogger, dispatcher s
 	s.cache = make(map[string]*finalFile)
 	s.writeLocks = make(map[string]*sync.RWMutex)
 	s.lastIn = time.Now()
+	s.cleanInterval = time.Hour * 12
+	s.canReceive = true
 	return s
 }
 
@@ -410,16 +418,32 @@ func (s *Stage) GetFileStatus(relPath string, sent time.Time) int {
 	return sts.ConfirmNone
 }
 
+// Ready returns whether or not this gate keeper is ready to receive data
+func (s *Stage) Ready() bool {
+	s.readyLock.RLock()
+	defer s.readyLock.RUnlock()
+	return s.canReceive
+}
+
+func (s *Stage) setCanReceive(value bool) {
+	s.readyLock.Lock()
+	defer s.readyLock.Unlock()
+	s.canReceive = value
+}
+
 // Recover is meant to be run while the server is not so it can cleanly address
 // files in the stage area that should be completed from the previous server
 // run
-func (s *Stage) Recover() (err error) {
+func (s *Stage) Recover() {
+	s.setCanReceive(false)
+	defer s.setCanReceive(true)
 	log.Info("Beginning stage recovery:", s.name)
 	defer log.Info("Stage recovery complete:", s.name)
+	defer s.scheduleClean(time.Hour)
 	var validate []*sts.Partial
 	var finalize []*sts.Partial
 	oldest := time.Now()
-	err = filepath.Walk(s.rootDir,
+	err := filepath.Walk(s.rootDir,
 		func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return nil
@@ -475,6 +499,9 @@ func (s *Stage) Recover() (err error) {
 			}
 			return nil
 		})
+	if err != nil {
+		log.Error(err.Error())
+	}
 	// Build the cache from the incoming log starting at the time of the oldest
 	// companion file found (or "now" if none exists) minus the cache age. Even
 	// if no files are found on the stage, we still want to build the cache.
@@ -509,7 +536,133 @@ func (s *Stage) Recover() (err error) {
 		close(ch)
 		wg.Wait()
 	}
-	return
+}
+
+func (s *Stage) CleanNow(minAge time.Duration) {
+	if minAge == 0 {
+		minAge = s.cleanInterval
+	}
+	s.clean(minAge)
+}
+
+func (s *Stage) clean(minAge time.Duration) {
+	// We only want one cleanup at a time to run
+	s.cleanLock.Lock()
+
+	if s.cleanTimeout != nil {
+		s.cleanTimeout.Stop()
+		s.cleanTimeout = nil
+	}
+
+	s.cleanStrays(minAge)
+	s.cleanWaiting(minAge)
+
+	s.cleanLock.Unlock()
+
+	s.scheduleClean(minAge)
+}
+
+func (s *Stage) scheduleClean(minAge time.Duration) {
+	s.cleanLock.Lock()
+	defer s.cleanLock.Unlock()
+	s.cleanTimeout = time.AfterFunc(s.cleanInterval, func() {
+		s.clean(minAge)
+	})
+}
+
+func (s *Stage) cleanStrays(minAge time.Duration) {
+	log.Debug("Looking for strays ...")
+	err := filepath.Walk(s.rootDir,
+		func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			ext := filepath.Ext(path)
+			if ext != partExt {
+				return nil
+			}
+			age := time.Since(info.ModTime())
+			if age < minAge {
+				// Wait a bit before looking for problems
+				return nil
+			}
+			relPath := strings.TrimSuffix(path[len(s.rootDir)+1:], ext)
+			cmpPath := filepath.Join(s.rootDir, relPath+compExt)
+			switch ext {
+			case partExt:
+				log.Debug("Checking for stray partial:", relPath)
+				delete := false
+				deleteCmp := false
+				file := s.fromCache(strings.TrimSuffix(path, partExt))
+				if file != nil && file.state > stateReceived {
+					delete = true
+					deleteCmp = file.state > stateLogged
+				} else {
+					end := time.Now()
+					beg := info.ModTime().Add(time.Duration(age.Minutes()) * time.Hour * -1)
+					log.Info("Checking log for stray partial:", relPath, "--", beg.Format("20060102"))
+					if s.logger.WasReceived(relPath, beg, end) {
+						delete = true
+						deleteCmp = true
+					}
+				}
+				if delete {
+					if err = os.Remove(path); err != nil {
+						log.Error("Failed to remove stray partial:", path, err.Error())
+						return nil
+					}
+					log.Info("Deleted stray partial", relPath)
+					if deleteCmp {
+						if _, err := os.Stat(cmpPath); !os.IsNotExist(err) {
+							if err = os.Remove(cmpPath); err != nil {
+								log.Error("Failed to remove stray partial companion:", cmpPath, err.Error())
+							}
+							log.Info("Deleted stray partial companion:", cmpPath)
+						}
+					}
+				}
+			}
+			return nil
+		})
+	if err != nil {
+		log.Error(err.Error())
+	}
+}
+
+func (s *Stage) cleanWaiting(minAge time.Duration) {
+	log.Debug("Looking for wait loops ...")
+	var waiting []*finalFile
+	s.cacheLock.RLock()
+	for _, cacheFile := range s.cache {
+		if cacheFile.state != stateValidated || time.Since(cacheFile.time) < minAge {
+			continue
+		}
+		if cacheFile.prev != "" && cacheFile.wait == nil {
+			waiting = append(waiting, cacheFile)
+		}
+	}
+	s.cacheLock.RUnlock()
+	sort.Slice(waiting, func(i, j int) bool {
+		return waiting[i].time.Before(waiting[j].time)
+	})
+	for _, cacheFile := range waiting {
+		prevPath := filepath.Join(s.rootDir, cacheFile.prev)
+		log.Debug("Checking for wait loop:", cacheFile.prev, "<-", cacheFile.name)
+		if s.isWaiting(prevPath) && s.isWaitLoop(prevPath) {
+			s.cacheLock.Lock()
+			if f, ok := s.cache[cacheFile.path]; ok && f.state == cacheFile.state {
+				f.prev = ""
+				s.cache[f.path] = f
+				cacheFile = f
+			} else {
+				cacheFile = nil
+			}
+			s.cacheLock.Unlock()
+			if cacheFile != nil {
+				s.finalizeQueue(cacheFile)
+			}
+		}
+	}
 }
 
 // Stop waits for the number of files in the pipe to be zero and then signals
@@ -616,23 +769,22 @@ func (s *Stage) finalizeHandler() {
 	defer log.Debug("Finalize channel done:", s.name)
 	for f := range s.finalizeCh {
 		log.Debug("Finalize chain:", s.name, f.name)
-		if cached := s.fromCache(f.path); cached != nil &&
-			cached.state != stateValidated {
+		if cached := s.fromCache(f.path); cached == nil || cached.state != stateValidated {
 			// Skip redundancies or mistakes in the pipe
-			log.Debug("Already finalized or not ready:",
-				s.name, f.name, cached.state)
+			log.Debug("Already finalized or not ready:", s.name, f.name)
 			continue
 		}
-		if s.isReady(f) {
+		if s.isFileReady(f) {
 			s.finalize(f)
 		}
 	}
 }
 
-func (s *Stage) isReady(file *finalFile) bool {
+func (s *Stage) isFileReady(file *finalFile) bool {
 	if file.prev == "" {
 		return true
 	}
+	var waitTime time.Duration
 	prevPath := filepath.Join(s.rootDir, file.prev)
 	prev := s.fromCache(prevPath)
 	switch {
@@ -642,7 +794,8 @@ func (s *Stage) isReady(file *finalFile) bool {
 			break
 		}
 		file.prevScan = time.Now()
-		len := time.Duration(time.Since(file.time).Minutes()) * time.Hour * 24
+		age := time.Since(file.time)
+		len := time.Duration(age.Minutes()) * time.Hour * 24
 		if len == 0 {
 			len = time.Hour * 24
 		}
@@ -668,8 +821,7 @@ func (s *Stage) isReady(file *finalFile) bool {
 		}
 		log.Info("Previous file not found in log:",
 			file.name, "<-", file.prev, "--", beg.Format(tfmt), "-", end.Format(tfmt), took)
-		s.toWait(prevPath, file, time.Second*10)
-		return false
+		waitTime = time.Second * 10
 
 	case prev.state == stateReceived:
 		log.Debug("Waiting for previous file:",
@@ -681,21 +833,16 @@ func (s *Stage) isReady(file *finalFile) bool {
 
 	case prev.state == stateValidated:
 		if s.isWaiting(prevPath) {
-			log.Debug("Previous file waiting:",
-				file.name, "<-", file.prev)
-			if s.isWaitLoop(prevPath) {
-				return true
-			}
+			log.Debug("Previous file waiting:", file.name, "<-", file.prev)
 		} else {
-			log.Debug("Previous file validated:",
-				file.name, "<-", file.prev)
+			log.Debug("Previous file validated:", file.name, "<-", file.prev)
 		}
 
 	default:
 		return true
 	}
 
-	s.toWait(prevPath, file, time.Minute*5)
+	s.toWait(prevPath, file, waitTime)
 	return false
 }
 
@@ -754,9 +901,6 @@ func (s *Stage) putFileAway(file *finalFile) (targetPath string, err error) {
 	targetPath = filepath.Join(s.targetDir, targetName)
 	os.MkdirAll(filepath.Dir(targetPath), 0775)
 	if err = fileutil.Move(file.path+waitExt, targetPath); err != nil {
-		err = fmt.Errorf(
-			"failed to move %s to %s: %s",
-			file.path+waitExt, targetPath, err.Error())
 		// If the file doesn't exist then something is really wrong.
 		// Either we somehow have two instances running that are stepping
 		// on each other or we have an illusive and critical bug.  Regardless,
@@ -770,6 +914,9 @@ func (s *Stage) putFileAway(file *finalFile) (targetPath string, err error) {
 				go s.finalizeQueue(file)
 			})
 		}
+		err = fmt.Errorf(
+			"failed to move %s to %s: %s",
+			file.path+waitExt, targetPath, err.Error())
 		return
 	}
 
@@ -848,16 +995,19 @@ func (s *Stage) toWait(prevPath string, next *finalFile, howLong time.Duration) 
 	defer s.waitLock.Unlock()
 	if next.wait != nil {
 		next.wait.Stop()
+		next.wait = nil
 	}
-	// Set a timer to check this file again in case there is a wait loop or in
-	// case the predecessor was received so long ago we have to dig through the
-	// logs to find it
-	next.wait = time.AfterFunc(howLong, func(handle func(*finalFile), f *finalFile) func() {
-		return func() {
-			log.Debug("Attempting finalize again:", f.name)
-			handle(f)
-		}
-	}(s.finalizeQueue, next))
+	if howLong > 0 {
+		// Set a timer to check this file again in case there is a wait loop or in
+		// case the predecessor was received so long ago we have to dig through the
+		// logs to find it
+		next.wait = time.AfterFunc(howLong, func(handle func(*finalFile), f *finalFile) func() {
+			return func() {
+				log.Debug("Attempting finalize again:", f.name)
+				handle(f)
+			}
+		}(s.finalizeQueue, next))
+	}
 	files, ok := s.wait[prevPath]
 	if ok {
 		for _, waiting := range files {

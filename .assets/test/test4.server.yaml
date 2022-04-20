@@ -1,4 +1,5 @@
 IN: # Incoming configuration.
+    log-buffering: true  # Set to true only when potentially redundant transfers it not critical
     sources:
       - stsout-1
       - stsout-2

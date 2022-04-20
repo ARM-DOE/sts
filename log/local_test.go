@@ -28,7 +28,7 @@ func TestDefault(t *testing.T) {
 
 func TestSend(t *testing.T) {
 	tearDown()
-	logger := NewSend(root, nil, nil)
+	logger := NewFileIO(root, nil, nil, false)
 	n := 1000
 	start := time.Now()
 	var names []string
@@ -59,36 +59,33 @@ func TestReceive(t *testing.T) {
 	tearDown()
 	n := 1000
 	start := time.Now()
-	byHost := make(map[string]*Receive)
+	byHost := make(map[string]*FileIO)
 	var names []string
 	var wg sync.WaitGroup
-	var logger *Receive
+	var logger *FileIO
 	var host string
 	wg.Add(n)
 	for i := 0; i < n; i++ {
 		host = fmt.Sprintf("host%d", i%2)
 		if logger = byHost[host]; logger == nil {
-			logger = NewReceive(filepath.Join(root, host), nil, nil)
+			logger = NewFileIO(filepath.Join(root, host), nil, nil, false)
 			byHost[host] = logger
 		}
 		name := fmt.Sprintf("file/name-%d.ext", i)
 		names = append(names, name)
-		go func(lh *Receive, i int) {
+		go func(logger *FileIO, i int) {
 			defer wg.Done()
-			lh.Received(&mock.File{
+			logger.Received(&mock.File{
 				Name: name,
 				Size: 1024 * 1024 * int64(i+1),
 				Hash: fileutil.StringMD5(name),
 			})
+			if !logger.WasReceived(name, start, time.Now()) {
+				t.Error("Failed to find:", name)
+			}
 		}(logger, i)
 	}
 	wg.Wait()
-	for i, name := range names {
-		host = fmt.Sprintf("host%d", i%2)
-		if !byHost[host].WasReceived(name, start, time.Now()) {
-			t.Error("Failed to find:", name)
-		}
-	}
 	parsed := 0
 	for host, logger = range byHost {
 		logger.Parse(func(name, renamed, hash string, size int64, r time.Time) bool {

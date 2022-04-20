@@ -69,7 +69,9 @@ func (a *serverApp) init() (err error) {
 			source,
 			filepath.Join(dirs.Stage, source),
 			filepath.Join(dirs.Final, source),
-			log.NewReceive(filepath.Join(dirs.LogIn, source), nil, nil),
+			log.NewFileIO(
+				filepath.Join(dirs.LogIn, source),
+				nil, nil, !a.conf.PermitLogBuf),
 			dispatcher,
 		)
 	}
@@ -77,15 +79,14 @@ func (a *serverApp) init() (err error) {
 	if err != nil {
 		return
 	}
+
 	var stager sts.GateKeeper
 	stagers := make(map[string]sts.GateKeeper)
 	for _, node := range nodes {
 		if node.IsDir() {
 			stager = newStage(node.Name())
-			if err = stager.Recover(); err != nil {
-				return
-			}
 			stagers[node.Name()] = stager
+			go stager.Recover()
 		}
 	}
 	a.server = &http.Server{

@@ -6,7 +6,7 @@ OUT: # Outgoing configuration
     out-follow : true
   sources: # Supports multiple sources where omitted entries will inherit from previous sources hierarchically
     - name          : stsout-1 # Name of the source
-      threads       : 4        # Maximum number of concurrent connections
+      threads       : 8        # Maximum number of concurrent connections
       scan-delay    : 10s
       cache-age     : 5m
       min-age       : 5s       # How old a file must be before being added to the "outgoing" queue

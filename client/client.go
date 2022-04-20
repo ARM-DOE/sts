@@ -231,9 +231,7 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 			log.Debug("Found partial:", f.GetName())
 			// Partially sent; need to gracefully recover
 			parts := make(chunks, len(partial.Parts))
-			for i, part := range partial.Parts {
-				parts[i] = part
-			}
+			copy(parts, partial.Parts)
 			sort.Sort(parts)
 			var beg int64
 			var missing chunks
@@ -923,6 +921,7 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 			continue
 		}
 		// Build the list of pollable files
+
 		ready = nil
 		for _, f := range poll {
 			if time.Since(f.completed) >= broker.Conf.PollDelay {
@@ -934,6 +933,7 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 				}
 			}
 		}
+		log.Debug("Polling Status:", len(ready), "<-", len(poll), "(Backlog)")
 		if len(ready) == 0 {
 			// No files ready yet
 			continue

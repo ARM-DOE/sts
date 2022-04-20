@@ -4,24 +4,38 @@ pid_main=$$
 
 basedir=$(dirname $0)
 if [ -z ${STS_TEST+x} ]; then
-    export STS_HOME=/var/tmp/sts-glut
+    export STS_HOME=/var/tmp/sts
 fi
-
-bin="$GOPATH/bin/sts"
-# Debug mode slows things waaaay down.  Only use when there is a known issue and
-# consider reducing the number of files dramatically.
-# debug="--debug "
-cmd_server1="$bin$VSERVER1 $debug--mode=in"
-cmd_client1="$bin$VCLIENT1 $debug--mode=out --loop"
-
-cmd_server2="$bin$VSERVER2 $debug--mode=in"
-cmd_client2="$bin$VCLIENT2 $debug--mode=out --loop"
 
 echo "Cleaning last run..."
 rm -rf $STS_HOME
 mkdir -p $STS_HOME/conf
 cp $basedir/test4.server.yaml $STS_HOME/conf/sts.in.yaml
 cp $basedir/test4.client.yaml $STS_HOME/conf/sts.out.yaml
+
+bin="$GOPATH/bin/sts"
+
+clientdebug="--debug "
+serverdebug="--debug "
+
+clientoutput="/dev/null"
+serveroutput="/dev/null"
+
+sleepfactor=1
+if [ ! -z "$clientdebug" ]; then
+    clientoutput="$STS_HOME/data/log/debug.client"
+    mkdir -p $(dirname $clientoutput)
+fi
+if [ ! -z "$serverdebug" ]; then
+    serveroutput="$STS_HOME/data/log/debug.server"
+    mkdir -p $(dirname $serveroutput)
+fi
+
+cmd_client1="$bin$VCLIENT1 $clientdebug--mode=out --loop"
+cmd_client2="$bin$VCLIENT2 $clientdebug--mode=out --loop"
+
+cmd_server1="$bin$VSERVER1 $serverdebug--mode=in"
+cmd_server2="$bin$VSERVER2 $serverdebug--mode=in"
 
 sim=(
     "stsin-1 xs       100   5000 0"
@@ -35,10 +49,12 @@ for args in "${sim[@]}"; do
     $PWD/$basedir/makedata.py $args
 done
 
-echo "Running ..."
-$cmd_server1 > /dev/null &
+echo "Running server ..."
+$cmd_server1 > $serveroutput &
 pid_server=$!
-$cmd_client1 > /dev/null &
+
+echo "Running client ..."
+$cmd_client1 > $clientoutput &
 pid_client=$!
 pids=( "$pid_client" "$pid_server" )
 
@@ -46,7 +62,7 @@ function monkey() {
     count_stg=0
     count_out=0
     while (( count_stg < 3 || count_out < 3 )); do
-        sleep 5
+        sleep $(( 5 * $sleepfactor ))
         if (( count_stg < 3 )); then
             for f in `find $STS_HOME/data/stage -type f -name lg.\*.part`; do
                 echo "Monkeying with $f ..."
@@ -72,7 +88,7 @@ function ctrl_c() {
     echo "Caught signal ..."
     for pid in "${pids[@]}"; do
         echo "Stopping $pid ..."
-        kill $pid > /dev/null 2>&1
+        kill -9 $pid > /dev/null 2>&1
     done
     kill $pid_main
     exit 0
@@ -82,13 +98,13 @@ function ctrl_c() {
 trap ctrl_c INT
 
 # Sleep for a bit to send some of the data
-sleep 10
+sleep $(( 20 * $sleepfactor ))
 
 echo "Stopping ..."
 
 # Kill and restart so we can test a glut on start-up
-kill $pid_client
-kill $pid_server
+kill -9 $pid_client
+kill -9 $pid_server
 kill $monkey_pid > /dev/null 2>&1
 
 # Make more data
@@ -98,13 +114,13 @@ for args in "${sim[@]}"; do
 done
 
 echo "Restarting server ..."
-$cmd_server2 > /dev/null &
+$cmd_server2 >> $serveroutput &
 pid_server=$!
 # Give the server some time to clean up the stage area
-sleep 10
+sleep $(( 10 * $sleepfactor ))
 
 echo "Restarting client ..."
-$cmd_client2 > /dev/null &
+$cmd_client2 >> $clientoutput &
 pid_client=$!
 
 echo "Restarting monkey ..."
@@ -117,20 +133,23 @@ echo "Waiting ..."
 
 # Wait for the client to be done
 while true; do
-    sleep 5
+    sleep $(( 5 * $sleepfactor ))
     out=`find $STS_HOME/data/out -type f 2>/dev/null | sort`
     if [ "$out" ]; then
         lines=($out)
         echo "${#lines[@]} outgoing files left ..."
         continue
     fi
-    kill $pid_client
+    kill -9 $pid_client
     kill $monkey_pid > /dev/null 2>&1
     break
 done
 
+# Trigger a stage cleanup manually
+curl 'localhost:1992/clean?block&minage=1'
+
 while true; do
-    sleep 1
+    sleep $(( 1 * $sleepfactor ))
     out=`find $STS_HOME/data/stage -type f 2>/dev/null | sort | egrep -v '.part$'`
     if [ "$out" ]; then
         lines=($out)
@@ -142,7 +161,7 @@ while true; do
     break
 done
 
-echo "Checking for in-order delivery ..."
+echo "Checking results ..."
 
 hosts=( "stsout-1" "stsout-2" )
 types=( "xs" "sm" "md" "lg" "xl" )
@@ -161,20 +180,28 @@ for host in "${hosts[@]}"; do
     done
 done
 
+left=`find $STS_HOME/data/out -type f | sort`
+if [ "$left" ]; then
+    echo "Files Left Behind:"
+    cat <(echo "$left")
+    echo "FAILED!"
+    exit 0
+fi
+
+stale=`find $STS_HOME/data/stage -type f | sort`
+if [ "$stale" ]; then
+    echo "Stray Files Found:"
+    cat <(echo "$stale")
+    echo "FAILED!"
+    exit 0
+fi
+
 sortd=`cut -d ":" -f 1 $STS_HOME/data/log/incoming_from/*/*/* | sort`
 uniqd=`uniq -c <(cat <(echo "$sortd")) | grep -v " 1"`
 if [ "$uniqd" ]; then
     echo "Incoming Duplicates (probably OK):"
     cat <(echo "$uniqd")
     echo "SUCCESS?"
-    exit 0
-fi
-
-left=`find $STS_HOME/data/out -type f | sort`
-if [ "$left" ]; then
-    echo "Files Left Behind:"
-    cat <(echo "$left")
-    echo "FAILED!"
     exit 0
 fi
 

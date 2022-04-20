@@ -16,91 +16,83 @@ import (
 	"code.arm.gov/dataflow/sts/fileutil"
 )
 
+type logMsg struct {
+	output []interface{}
+	stdout bool
+	stderr bool
+	toFile bool
+}
+
 // MakeDir creates the full path to a directory
 type MakeDir func(path string, perm os.FileMode) (err error)
 
 // OpenFile opens a file
 type OpenFile func(path string, flag int, perm os.FileMode) (f *os.File, err error)
 
-// Send implements sts.SendLogger
-type Send struct {
-	logger *rollingFile
-	lock   sync.RWMutex
+// FileIO implements sts.SendLogger and sts.ReceiveLogger
+type FileIO struct {
+	logger   *rollingFile
+	logCh    chan string
+	loggedCh chan bool
 }
 
-// NewSend creates a new Send logging instance
-func NewSend(rootDir string, mkdir MakeDir, open OpenFile) *Send {
-	return &Send{
-		logger: newRollingFile(rootDir, "", 0, mkdir, open),
-		lock:   sync.RWMutex{},
+// NewFileIO creates a new FileIO logging instance
+func NewFileIO(rootDir string, mkdir MakeDir, open OpenFile, keepInSync bool) *FileIO {
+	f := &FileIO{
+		logger:   newRollingFile(rootDir, "", 0, mkdir, open, keepInSync),
+		logCh:    make(chan string),
+		loggedCh: make(chan bool),
 	}
+	go func(f *FileIO) {
+		for msg := range f.logCh {
+			f.logger.log(msg)
+			f.loggedCh <- true
+		}
+	}(f)
+	return f
 }
 
 // Sent logs a file after it's been sent
-func (s *Send) Sent(file sts.Sent) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	s.logger.log(
-		fmt.Sprintf(
-			"%s:%s:%d:%d: %d ms",
-			file.GetName(),
-			file.GetHash(),
-			file.GetSize(),
-			time.Now().Unix(),
-			file.TimeMs()))
+func (f *FileIO) Sent(file sts.Sent) {
+	f.logCh <- fmt.Sprintf(
+		"%s:%s:%d:%d: %d ms",
+		file.GetName(),
+		file.GetHash(),
+		file.GetSize(),
+		time.Now().Unix(),
+		file.TimeMs())
+	<-f.loggedCh
 }
 
 // WasSent tries to find the path specified between the times specified
-func (s *Send) WasSent(relPath string, after time.Time, before time.Time) bool {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-	return s.logger.search(relPath+":", after, before)
-}
-
-// Receive implements sts.ReceiveLogger
-type Receive struct {
-	logger *rollingFile
-	lock   sync.RWMutex
-}
-
-// NewReceive creates a new Receive logging instance
-func NewReceive(rootDir string, mkdir MakeDir, open OpenFile) *Receive {
-	return &Receive{
-		logger: newRollingFile(rootDir, "", 0, mkdir, open),
-		lock:   sync.RWMutex{},
-	}
+func (f *FileIO) WasSent(relPath string, after time.Time, before time.Time) bool {
+	return f.logger.search(relPath+":", after, before)
 }
 
 // Received logs a file after it's been received
-func (r *Receive) Received(file sts.Received) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	r.logger.log(
-		fmt.Sprintf(
-			"%s:%s:%s:%d:%d:",
-			file.GetName(),
-			file.GetRenamed(),
-			file.GetHash(),
-			file.GetSize(),
-			time.Now().Unix()))
+func (f *FileIO) Received(file sts.Received) {
+	f.logCh <- fmt.Sprintf(
+		"%s:%s:%s:%d:%d:",
+		file.GetName(),
+		file.GetRenamed(),
+		file.GetHash(),
+		file.GetSize(),
+		time.Now().Unix())
+	<-f.loggedCh
 }
 
 // WasReceived tries to find the path specified between the times specified
-func (r *Receive) WasReceived(relPath string, after time.Time, before time.Time) bool {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-	return r.logger.search(relPath+":", after, before)
+func (f *FileIO) WasReceived(relPath string, after time.Time, before time.Time) bool {
+	return f.logger.search(relPath+":", after, before)
 }
 
 // Parse reads the log files in the provided time range and calls the handler
 // on each record
-func (r *Receive) Parse(
+func (f *FileIO) Parse(
 	handler func(name, renamed, hash string, size int64, t time.Time) bool,
 	after time.Time, before time.Time) bool {
 
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-	r.logger.eachLine(func(line string) bool {
+	f.logger.eachLine(func(line string) bool {
 		parts := strings.Split(line, ":")
 		if len(parts) < 4 {
 			return false
@@ -123,21 +115,35 @@ func (r *Receive) Parse(
 // General is a rolling-file logger that implements sts.Logger
 type General struct {
 	logger    *rollingFile
-	lock      sync.Mutex
 	calldepth int
 	debug     bool
 	debugMux  sync.RWMutex
+	logCh     chan logMsg
 }
 
 // NewGeneral creates a new General logging instance
 func NewGeneral(rootDir string, debug bool, mkdir MakeDir, open OpenFile) *General {
-	return &General{
-		logger:    newRollingFile(rootDir, "", log.Ldate|log.Ltime, mkdir, open),
-		lock:      sync.Mutex{},
+	g := &General{
+		logger:    newRollingFile(rootDir, "", log.Ldate|log.Ltime, mkdir, open, false),
 		debug:     debug,
 		debugMux:  sync.RWMutex{},
 		calldepth: 1,
+		logCh:     make(chan logMsg, 1000),
 	}
+	go func() {
+		for msg := range g.logCh {
+			if msg.toFile {
+				g.logger.log(msg.output...)
+			}
+			if msg.stderr {
+				fmt.Fprintln(os.Stderr, msg.output...)
+			}
+			if msg.stdout {
+				fmt.Println(msg.output...)
+			}
+		}
+	}()
+	return g
 }
 
 func (g *General) setDebug(on bool) {
@@ -164,22 +170,19 @@ func (g *General) Debug(params ...interface{}) {
 	}
 	params = append(
 		[]interface{}{
-			fmt.Sprintf("DEBUG %s:%d", filepath.Base(file), line),
+			fmt.Sprintf("%s DEBUG %s:%d",
+				time.Now().Format("2006-01-02 15:04:05"),
+				filepath.Base(file),
+				line),
 		},
 		params...)
-	g.lock.Lock()
-	defer g.lock.Unlock()
-	fmt.Println(params...)
-	g.logger.log(params...)
+	g.logCh <- logMsg{output: params, stdout: true}
 }
 
 // Info logs general information
 func (g *General) Info(params ...interface{}) {
 	params = append([]interface{}{"INFO"}, params...)
-	g.lock.Lock()
-	defer g.lock.Unlock()
-	fmt.Println(params...)
-	g.logger.log(params...)
+	g.logCh <- logMsg{output: params, stdout: true, toFile: true}
 }
 
 // Error logs errors
@@ -194,23 +197,23 @@ func (g *General) Error(params ...interface{}) {
 			fmt.Sprintf("ERROR %s:%d", filepath.Base(file), line),
 		},
 		params...)
-	g.lock.Lock()
-	defer g.lock.Unlock()
-	fmt.Fprintln(os.Stderr, params...)
-	g.logger.log(params...)
+	g.logCh <- logMsg{output: params, stderr: true, toFile: true}
 }
 
 // RollingFile is the main struct for managing a rolling log file.
 type rollingFile struct {
-	logger *log.Logger
-	root   string
-	path   string
-	mkdir  MakeDir
-	open   OpenFile
-	fh     *os.File
+	keepInSync bool
+	logger     *log.Logger
+	root       string
+	path       string
+	mkdir      MakeDir
+	open       OpenFile
+	fh         *os.File
 }
 
-func newRollingFile(root, prefix string, flags int, mkdir MakeDir, open OpenFile) *rollingFile {
+func newRollingFile(
+	root, prefix string, flags int, mkdir MakeDir, open OpenFile, keepInSync bool,
+) *rollingFile {
 	if mkdir == nil {
 		mkdir = os.MkdirAll
 	}
@@ -218,10 +221,11 @@ func newRollingFile(root, prefix string, flags int, mkdir MakeDir, open OpenFile
 		open = os.OpenFile
 	}
 	rf := &rollingFile{
-		logger: log.New(nil, prefix, flags),
-		root:   root,
-		mkdir:  mkdir,
-		open:   open,
+		keepInSync: keepInSync,
+		logger:     log.New(nil, prefix, flags),
+		root:       root,
+		mkdir:      mkdir,
+		open:       open,
 	}
 	return rf
 }
@@ -255,7 +259,11 @@ func (rf *rollingFile) rotate() {
 func (rf *rollingFile) log(t ...interface{}) {
 	rf.rotate()
 	rf.logger.Println(t...)
-	rf.fh.Sync()
+	if rf.keepInSync {
+		// This can add significant overhead but is important when integrity of
+		// the written file is necessary
+		rf.fh.Sync()
+	}
 }
 
 func (rf *rollingFile) close() {
