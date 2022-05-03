@@ -726,6 +726,11 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 					payload.Remove(binned)
 				}
 			}
+			if len(payload.GetParts()) == 0 {
+				log.Debug("Skipping now empty payload")
+				payload = nil
+				break
+			}
 			// Wait longer the more it fails
 			time.Sleep(time.Duration(nErr) * time.Second)
 		}
