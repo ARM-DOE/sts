@@ -75,13 +75,19 @@ func (a *serverApp) init() (err error) {
 			dispatcher,
 		)
 	}
+
+	var stager sts.GateKeeper
+	stagers := make(map[string]sts.GateKeeper)
+
+	// It is possible for a source to include a "/" in its name. In that case,
+	// on restart, the wrong "stager" will be started and recovered. Any files
+	// recovered will be logged in a different place. It means the stager that
+	// gets properly started later when data comes in will not know about these
+	// logs and duplicates could be received.
 	nodes, err := ioutil.ReadDir(dirs.Stage)
 	if err != nil {
 		return
 	}
-
-	var stager sts.GateKeeper
-	stagers := make(map[string]sts.GateKeeper)
 	for _, node := range nodes {
 		if node.IsDir() {
 			stager = newStage(node.Name())

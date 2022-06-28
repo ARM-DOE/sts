@@ -63,9 +63,7 @@ type Broker struct {
 	cleanAll   bool
 	cleanSome  bool
 	stuckSince time.Time
-	statSince  time.Time
-	sendTimes  [][2]int64
-	bytesOut   int64
+	throughput *throughputMonitor
 	stopFull   bool
 
 	// Channels
@@ -82,6 +80,9 @@ type Broker struct {
 // Start runs the client
 func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 	defer log.Debug("Client done")
+	broker.throughput = &throughputMonitor{
+		logInterval: broker.Conf.StatInterval,
+	}
 	broker.tagMap = make(map[string]*FileTag)
 	broker.cleanAll = true
 	for _, tag := range broker.Conf.Tags {
@@ -160,6 +161,75 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 
 	wgFailed.Wait()
 	done <- true
+}
+
+// GetState returns the standard state struct providing a snapshot of the client
+func (broker *Broker) GetState() sts.SourceState {
+	state := sts.SourceState{}
+	var oldestFound sts.Cached
+	var newestFound sts.Cached
+	var oldestQueued sts.Cached
+	var newestQueued sts.Cached
+	var oldestComplete sts.Cached
+	var newestComplete sts.Cached
+	broker.Conf.Cache.Iterate(func(f sts.Cached) bool {
+		switch {
+		case f.GetHash() == "":
+			state.FoundCount++
+			state.FoundSize += f.GetSize()
+			if oldestFound == nil || f.GetTime().Before(oldestFound.GetTime()) {
+				oldestFound = f
+			}
+			if newestFound == nil || f.GetTime().After(newestFound.GetTime()) {
+				newestFound = f
+			}
+		case !f.IsDone():
+			state.QueueCount++
+			state.QueueSize += f.GetSize()
+			if oldestQueued == nil || f.GetTime().Before(oldestQueued.GetTime()) {
+				oldestQueued = f
+			}
+			if newestQueued == nil || f.GetTime().After(newestQueued.GetTime()) {
+				newestQueued = f
+			}
+		default:
+			state.SentCount++
+			state.SentSize += f.GetSize()
+			if oldestComplete == nil || f.GetTime().Before(oldestComplete.GetTime()) {
+				oldestComplete = f
+			}
+			if newestComplete == nil || f.GetTime().After(newestComplete.GetTime()) {
+				newestComplete = f
+			}
+		}
+		return false
+	})
+	bytes, seconds, pctIdle := broker.throughput.compute()
+	state.Throughput = sts.Throughput{
+		Bytes: bytes, Seconds: seconds, PctIdle: pctIdle,
+	}
+	cacheFiles := []sts.Cached{
+		oldestFound, newestFound,
+		oldestQueued, newestQueued,
+		oldestComplete, newestComplete,
+	}
+	state.RecentFiles = make([]*sts.RecentFile, len(cacheFiles))
+	for i, cacheFile := range cacheFiles {
+		if cacheFile == nil {
+			state.RecentFiles[i] = nil
+			continue
+		}
+		state.RecentFiles[i] = &sts.RecentFile{
+			Name:   cacheFile.GetName(),
+			Rename: broker.Conf.Renamer(cacheFile),
+			Path:   cacheFile.GetPath(),
+			Size:   cacheFile.GetSize(),
+			Hash:   cacheFile.GetHash(),
+			Time:   cacheFile.GetTime(),
+			Sent:   cacheFile.IsDone(),
+		}
+	}
+	return state
 }
 
 func (broker *Broker) recover() (send []sts.Hashed, err error) {
@@ -534,8 +604,9 @@ func (broker *Broker) hashFiles(opener sts.Open, in <-chan []sts.Hashed, wg *syn
 
 func (broker *Broker) hash(
 	scanned []sts.Hashed,
-	nWorkers int, batchSize int64) (int, error) {
-
+	nWorkers int,
+	batchSize int64,
+) (int, error) {
 	wg := sync.WaitGroup{}
 	wg.Add(nWorkers)
 	ch := make(chan []sts.Hashed, nWorkers*2)
@@ -777,9 +848,6 @@ func (broker *Broker) stat(payload sts.Payload) {
 			"Throughput: %3d part(s), %10.2f MB, %6.2f sec, %6.2f MB/sec",
 			len(payload.GetParts()), mb, s, mb/s))
 	}
-	if broker.Conf.StatInterval == time.Duration(0) {
-		return
-	}
 	broker.chStats <- payload
 }
 
@@ -787,39 +855,9 @@ func (broker *Broker) startStats(wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer log.Debug("Stats done")
 	for payload := range broker.chStats {
-		if broker.statSince.IsZero() {
-			broker.statSince = payload.GetStarted()
-		}
-		broker.sendTimes = append(broker.sendTimes, [2]int64{
-			payload.GetStarted().UnixNano(),
-			payload.GetCompleted().UnixNano(),
-		})
-		broker.bytesOut += payload.GetSize()
-		d := payload.GetCompleted().Sub(broker.statSince)
-		if d > broker.Conf.StatInterval {
-			// Attempt to remove times where nothing was being sent
-			var t int64
-			active := d
-			ranges := append([][2]int64{{
-				int64(0),
-				broker.statSince.UnixNano(),
-			}}, broker.sendTimes...)
-			for i, r := range ranges[1:] {
-				// i is actually the real index minus 1 since we are slicing at 1
-				t = ranges[i][1]
-				if r[0] > t {
-					active -= time.Nanosecond * time.Duration(r[0]-t)
-				}
-			}
-			mb := float64(broker.bytesOut) / float64(1024) / float64(1024)
-			s := active.Seconds()
-			log.Info(fmt.Sprintf(
-				"TOTAL Throughput: %.2fMB, %.2fs, %.2f MB/s (%d%% idle)",
-				mb, s, mb/s, int(100*(d-active)/d)))
-			broker.bytesOut = 0
-			broker.statSince = time.Now()
-			broker.sendTimes = nil
-		}
+		broker.throughput.add(
+			payload.GetSize(), payload.GetStarted(), payload.GetCompleted(),
+		)
 	}
 }
 

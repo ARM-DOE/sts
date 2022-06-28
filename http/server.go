@@ -70,6 +70,7 @@ func (s *Server) stopGateKeepers() {
 
 // Serve starts HTTP server.
 func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
+	http.Handle(s.PathPrefix+"/", http.HandlerFunc(s.routeHealthCheck))
 	http.Handle(s.PathPrefix+"/client/", http.HandlerFunc(s.routeClientManagement))
 	http.Handle(s.PathPrefix+"/data", s.handleValidate(http.HandlerFunc(s.routeData)))
 	http.Handle(s.PathPrefix+"/data-recovery", s.handleValidate(http.HandlerFunc(s.routeDataRecovery)))
@@ -117,6 +118,10 @@ func (s *Server) handleValidate(next http.Handler) http.Handler {
 func (s *Server) handleError(w http.ResponseWriter, err error) {
 	log.Error(err.Error())
 	w.WriteHeader(http.StatusInternalServerError)
+}
+
+func (s *Server) routeHealthCheck(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) routeFile(w http.ResponseWriter, r *http.Request) {

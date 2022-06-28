@@ -41,6 +41,10 @@ var (
 	ConfigServer = ""
 )
 
+func getVersionString() string {
+	return fmt.Sprintf("%s (%s) @ %s", Version, runtime.Version(), BuildTime)
+}
+
 func main() {
 	if ConfigServer != "" {
 		runFromServer(ConfigServer)
@@ -57,6 +61,7 @@ type app struct {
 	confPath    string
 	conf        *sts.Conf
 	clients     []*clientApp
+	clientsMux  sync.RWMutex
 	serverStop  chan<- bool
 	serverDone  <-chan bool
 	clientStop  map[chan<- bool]<-chan bool
@@ -119,7 +124,7 @@ func appFromCLI() *app {
 	}
 
 	if *vers {
-		fmt.Printf("%s (%s) @ %s\n", Version, runtime.Version(), BuildTime)
+		fmt.Println(getVersionString())
 		os.Exit(0)
 	}
 
@@ -347,7 +352,7 @@ func (a *app) stopClients(stopFull bool) {
 		return
 	}
 	var wg sync.WaitGroup
-	wg.Add(len(a.clients))
+	wg.Add(len(a.clientStop))
 	for stop, done := range a.clientStop {
 		go func(stop chan<- bool, full bool, done <-chan bool, wg *sync.WaitGroup) {
 			defer wg.Done()

@@ -48,6 +48,7 @@ type Logger interface {
 	Debug(...interface{})
 	Info(...interface{})
 	Error(...interface{})
+	Recent() []string
 }
 
 // SendLogger is the interface for logging on the sending side
@@ -134,12 +135,58 @@ const (
 	ClientHasUpdatedConfiguration
 )
 
+// ClientState is the outer structure for a runner to communicate to the server
+// its current state
+type ClientState struct {
+	When      string                 `json:"when"`
+	Version   string                 `json:"vers"`
+	GoVersion string                 `json:"go"`
+	BuildTime string                 `json:"built"`
+	IsActive  bool                   `json:"active"`
+	IPAddrs   []string               `json:"ip"`
+	Messages  []string               `json:"msg"`
+	Sources   map[string]SourceState `json:"sources"`
+}
+
+// SourceState is the structure used to communicate to the server the current
+// state of a single running source (an outgoing "client")
+type SourceState struct {
+	FoundCount  int64         `json:"foundCnt"`
+	FoundSize   int64         `json:"foundSize"`
+	QueueCount  int64         `json:"qCnt"`
+	QueueSize   int64         `json:"qSize"`
+	SentCount   int64         `json:"sentCnt"`
+	SentSize    int64         `json:"sentSize"`
+	Throughput  Throughput    `json:"throughput"`
+	RecentFiles []*RecentFile `json:"files"`
+}
+
+// Throughput is the structure used to keep track of bandwidth usage
+type Throughput struct {
+	Bytes   int64   `json:"bytes"`
+	Seconds float64 `json:"secs"`
+	PctIdle float64 `json:"idle"`
+}
+
+// RecentFile is the data structure that encapsulates the state of a file used
+// to communicate client state to the server
+type RecentFile struct {
+	Name   string    `json:"name"`
+	Rename string    `json:"rename"`
+	Path   string    `json:"path"`
+	Hash   string    `json:"hash"`
+	Size   int64     `json:"size"`
+	Time   time.Time `json:"time"`
+	Sent   bool      `json:"sent"`
+}
+
 // ClientManager is responsible for disseminating and collecting information
 // about a client (sender)
 type ClientManager interface {
 	GetClientStatus(clientID, clientName, clientOS string) (ClientStatus, error)
 	GetClientConf(clientID string) (*ClientConf, error)
 	SetClientConfReceived(clientID string, when time.Time) error
+	SetClientState(clientID string, state ClientState) error
 }
 
 // EncodeClientID creates a decodable composite ID from a key and unique ID

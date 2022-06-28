@@ -43,17 +43,18 @@ CREATE TABLE __ (
 
 // Client represents a client record
 type Client struct {
-	ID         string      `db:"id"`
-	Key        string      `db:"upload_key"`
-	Name       string      `db:"name"`
-	Alias      string      `db:"alias"`
-	OS         string      `db:"os"`
-	DirsConf   *DirsConf   `db:"dirs_conf"`
-	CreatedAt  time.Time   `db:"created_at"`
-	UpdatedAt  time.Time   `db:"updated_at"`
-	VerifiedAt pq.NullTime `db:"verified_at"`
-	PingedAt   pq.NullTime `db:"pinged_at"`
-	LoadedAt   pq.NullTime `db:"loaded_at"`
+	ID         string           `db:"id"`
+	Key        string           `db:"upload_key"`
+	Name       string           `db:"name"`
+	Alias      string           `db:"alias"`
+	OS         string           `db:"os"`
+	DirsConf   *DirsConf        `db:"dirs_conf"`
+	State      *sts.ClientState `db:"state"`
+	CreatedAt  time.Time        `db:"created_at"`
+	UpdatedAt  time.Time        `db:"updated_at"`
+	VerifiedAt pq.NullTime      `db:"verified_at"`
+	PingedAt   pq.NullTime      `db:"pinged_at"`
+	LoadedAt   pq.NullTime      `db:"loaded_at"`
 }
 
 // Dataset represents a dataset record
@@ -359,6 +360,20 @@ func (p *Postgres) setLoadedTime(uid string, when time.Time) (err error) {
 	return
 }
 
+func (p *Postgres) setState(uid string, state sts.ClientState) (err error) {
+	var encoded []byte
+	if encoded, err = json.Marshal(state); err != nil {
+		return
+	}
+	_, err = p.db.NamedExec(fmt.Sprintf(`
+		UPDATE %s SET state=:state WHERE id=:id
+	`, p.clientsTable), map[string]interface{}{
+		"id":    uid,
+		"state": string(encoded),
+	})
+	return
+}
+
 // GetClientStatus helps fulfill the sts.ClientManager interface
 func (p *Postgres) GetClientStatus(
 	clientID,
@@ -433,6 +448,15 @@ func (p *Postgres) SetClientConfReceived(clientID string, when time.Time) error 
 	}
 	_, uid := p.idDecoder(clientID)
 	return p.setLoadedTime(uid, when)
+}
+
+// SetClientState helps fulfill the sts.ClientManager interface
+func (p *Postgres) SetClientState(clientID string, state sts.ClientState) error {
+	if err := p.connect(); err != nil {
+		return err
+	}
+	_, uid := p.idDecoder(clientID)
+	return p.setState(uid, state)
 }
 
 // IsValid fulfills sts.IsKeyValid and determines whether or not the input key

@@ -1,0 +1,10 @@
+# Config file for [Air](https://github.com/cosmtrek/air) in TOML format
+# e.g. https://github.com/cosmtrek/air/blob/master/air_example.toml
+
+root = "."
+tmp_dir = ".tmp"
+
+[build]
+cmd = ".assets/scripts/build.sh --outdir=.assets/bin"
+bin = ".assets/bin/sts"
+full_bin = ".assets/bin/sts $STS_ARGS"

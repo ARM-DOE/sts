@@ -59,3 +59,9 @@ func Error(params ...interface{}) {
 	check()
 	std.Error(params...)
 }
+
+// Recent gets recent messages (info and error)
+func Recent() []string {
+	check()
+	return std.Recent()
+}

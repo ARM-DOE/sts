@@ -122,11 +122,14 @@ func (f *FileIO) Parse(
 
 // General is a rolling-file logger that implements sts.Logger
 type General struct {
-	logger    *rollingFile
-	calldepth int
-	debug     bool
-	debugMux  sync.RWMutex
-	logCh     chan logMsg
+	logger     *rollingFile
+	calldepth  int
+	debug      bool
+	debugMux   sync.RWMutex
+	logCh      chan logMsg
+	logMux     sync.RWMutex
+	recentMsgs []string
+	recentLen  int
 }
 
 // NewGeneral creates a new General logging instance
@@ -137,10 +140,21 @@ func NewGeneral(rootDir string, debug bool, mkdir MakeDir, open OpenFile) *Gener
 		debugMux:  sync.RWMutex{},
 		calldepth: 1,
 		logCh:     make(chan logMsg, 1000),
+		recentLen: 10,
 	}
+	g.recentMsgs = make([]string, g.recentLen)
+	g.logger.eachLine(func(line string) bool {
+		g.recentMsgs = append(g.recentMsgs, line)
+		return false
+	}, time.Now().Add(-24*time.Hour), time.Now())
+	i := len(g.recentMsgs) - g.recentLen
+	g.recentMsgs = g.recentMsgs[i : i+g.recentLen]
 	go func() {
 		for msg := range g.logCh {
 			if msg.toFile {
+				g.logMux.Lock()
+				g.recentMsgs = append(g.recentMsgs, fmt.Sprint(msg.output...))[1:]
+				g.logMux.Unlock()
 				g.logger.log(msg.output...)
 			}
 			if msg.stderr {
@@ -206,6 +220,14 @@ func (g *General) Error(params ...interface{}) {
 		},
 		params...)
 	g.logCh <- logMsg{output: params, stderr: true, toFile: true}
+}
+
+// Recent gets the last N lines logged
+func (g *General) Recent() (msgs []string) {
+	g.logMux.RLock()
+	defer g.logMux.RUnlock()
+	msgs = append(msgs, g.recentMsgs...)
+	return
 }
 
 // RollingFile is the main struct for managing a rolling log file.

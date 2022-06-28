@@ -50,7 +50,7 @@ mkdir -p $outdir
 echo "-- Building Dependencies"
 go mod download
 
-date=`date -u '+%Y-%m-%d %H:%M:%S'`
+date=`date -u '+%Y-%m-%dT%H:%M:%SZ'`
 vers=$APR_VERSION
 if [ -z "$vers" ]; then
     vers=`git describe --tags 2>/dev/null`

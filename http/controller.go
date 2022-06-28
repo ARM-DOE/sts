@@ -81,10 +81,41 @@ func (c *Client) GetClientConf(clientID string) (conf *sts.ClientConf, err error
 	return
 }
 
-// SetClientConfReceived to fulfil sts.ClientManager interface
+// SetClientConfReceived to fulfill sts.ClientManager interface
 func (c *Client) SetClientConfReceived(clientID string, when time.Time) error {
 	// N/A currently
 	return nil
+}
+
+// SetClientState to fulfill sts.ClientManager interface
+func (c *Client) SetClientState(clientID string, state sts.ClientState) (err error) {
+	if err = c.init(); err != nil {
+		return
+	}
+	jsonBytes, err := json.Marshal(state)
+	if err != nil {
+		return
+	}
+	var req *http.Request
+	var resp *http.Response
+	url := fmt.Sprintf("%s/client/%s/state", c.rootURL(), clientID)
+	log.Debug("PUT", url, "...")
+	if req, err = http.NewRequest("PUT", url, bytes.NewReader(jsonBytes)); err != nil {
+		return
+	}
+	if resp, err = c.client.Do(req); err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return
+	default:
+		err = fmt.Errorf(
+			"set state request failed with response code: %d",
+			resp.StatusCode)
+	}
+	return
 }
 
 // routeClientManagement handles the HTTP routes for getting a client's status
@@ -140,6 +171,30 @@ func (s *Server) routeClientManagement(w http.ResponseWriter, r *http.Request) {
 				log.Error(err.Error())
 			}
 			s.ClientManager.SetClientConfReceived(clientID, time.Now())
+			return
+		}
+	case http.MethodPut:
+		switch action {
+		case "state":
+			state := sts.ClientState{}
+			var br io.Reader
+			var err error
+			if br, err = GetReqReader(r); err != nil {
+				log.Error(err.Error())
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			decoder := json.NewDecoder(br)
+			if err = decoder.Decode(&state); err != nil {
+				log.Error(err.Error())
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if err = s.ClientManager.SetClientState(clientID, state); err != nil {
+				log.Error(err.Error())
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 	}

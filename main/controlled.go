@@ -9,8 +9,10 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 	"code.arm.gov/dataflow/sts/fileutil"
 	"code.arm.gov/dataflow/sts/http"
 	"code.arm.gov/dataflow/sts/log"
+	"github.com/denisbrodbeck/machineid"
 )
 
 // StatusInterval is for configuring how many seconds to wait between checking
@@ -26,24 +29,61 @@ import (
 var StatusInterval = ""
 
 type logger struct {
-	debugMode bool
+	debugMode  bool
+	mux        sync.RWMutex
+	recentMsgs []string
+	recentLen  int
+}
+
+func newLogger(debug bool) (lg *logger) {
+	lg = &logger{
+		debugMode: debug,
+		recentLen: 10,
+	}
+	lg.recentMsgs = make([]string, lg.recentLen)
+	return
+}
+
+func prependTimestamp(params ...interface{}) []interface{} {
+	return append(
+		[]interface{}{time.Now().UTC().Format(time.RFC3339)},
+		params...,
+	)
 }
 
 // Debug logs debug messages
 func (log *logger) Debug(params ...interface{}) {
 	if log.debugMode {
-		fmt.Fprintln(os.Stdout, params...)
+		fmt.Fprintln(os.Stdout, prependTimestamp(params)...)
 	}
 }
 
 // Info logs general information
 func (log *logger) Info(params ...interface{}) {
+	params = prependTimestamp(params)
+	log.remember(params...)
 	fmt.Fprintln(os.Stdout, params...)
 }
 
 // Error logs ...errors
 func (log *logger) Error(params ...interface{}) {
+	params = prependTimestamp(params)
+	log.remember(params...)
 	fmt.Fprintln(os.Stderr, params...)
+}
+
+func (log *logger) remember(params ...interface{}) {
+	log.mux.Lock()
+	defer log.mux.Unlock()
+	log.recentMsgs = append(log.recentMsgs, fmt.Sprint(params...))[1:]
+}
+
+// Recent implements sts.Logger
+func (log *logger) Recent() (msgs []string) {
+	log.mux.RLock()
+	defer log.mux.RUnlock()
+	msgs = append(msgs, log.recentMsgs...)
+	return
 }
 
 // Sent fulfills the sts.SendLogger interface
@@ -83,13 +123,11 @@ func runFromServer(jsonEncodedServerConfig string) {
 	}
 
 	if *vers {
-		fmt.Printf("%s (%s) @ %s\n", Version, runtime.Version(), BuildTime)
+		fmt.Println(getVersionString())
 		os.Exit(0)
 	}
 
-	log.InitExternal(&logger{
-		debugMode: *verbose,
-	})
+	log.InitExternal(newLogger(*verbose))
 
 	bytes := []byte(jsonEncodedServerConfig)
 	serverConf := sts.TargetConf{}
@@ -112,14 +150,11 @@ func runFromServer(jsonEncodedServerConfig string) {
 		TLS:          tls,
 	}
 
-	addr, err := getMacAddr()
+	machineID, err := getMachineID()
 	if err != nil {
 		panic(err)
 	}
-	clientID := encodeClientID(
-		serverConf.Key,
-		fileutil.StringMD5(strings.Join(addr, "")),
-	)
+	clientID := encodeClientID(serverConf.Key, machineID)
 
 	log.Debug("Server:", fmt.Sprintf("%s:%d", host, port))
 	log.Debug("Server Prefix:", serverConf.PathPrefix)
@@ -134,6 +169,8 @@ func runFromServer(jsonEncodedServerConfig string) {
 		rootDir = filepath.Join(rootDir, "sts")
 	}
 
+	log.Debug("Cache Directory:", rootDir)
+
 	a := &app{
 		loop: true,
 		mode: modeSend,
@@ -141,21 +178,25 @@ func runFromServer(jsonEncodedServerConfig string) {
 		conf: &sts.Conf{},
 	}
 
+	isRunningCh := make(chan bool, 2)
+
 	if *once {
 		if a.conf.Client, err = requestClientConf(httpClient, clientID, true); err != nil {
 			log.Error(err.Error())
 			return
 		}
 		if a.conf.Client != nil {
-			a.runControlledClients(nil)
+			a.runControlledClients(nil, isRunningCh)
 		}
 	} else {
-		ch := make(chan *sts.ClientConf)
-		go runConfLoader(httpClient, clientID, ch)
-		a.conf.Client = <-ch
-		a.runControlledClients(ch)
+		confCh := make(chan *sts.ClientConf)
+		go runConfLoader(httpClient, clientID, confCh)
+		go a.runStateUpdater(httpClient, clientID, time.Minute*1, isRunningCh)
+		a.conf.Client = <-confCh
+		a.runControlledClients(confCh, isRunningCh)
 	}
 
+	close(isRunningCh)
 	log.Debug("Done.")
 }
 
@@ -165,7 +206,10 @@ func runFromServer(jsonEncodedServerConfig string) {
 // stopped (gracefully) and then restarted using the new configuration.  If the
 // input channel is nil, the client(s) will be immediately stopped once they
 // have performed a single send iteration.
-func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
+func (a *app) runControlledClients(
+	confCh <-chan *sts.ClientConf,
+	isRunningCh chan<- bool,
+) {
 	var err error
 	signalCh := make(chan os.Signal, 2)
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
@@ -190,7 +234,10 @@ func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 
 		if len(a.conf.Client.Sources) > 0 {
 			log.Debug("Starting Client(s)...")
+			a.clientsMux.Lock()
 			a.startClients()
+			a.clientsMux.Unlock()
+			isRunningCh <- true
 		}
 
 	wait:
@@ -206,22 +253,76 @@ func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 		case a.conf.Client = <-confCh:
 			log.Debug("Stopping Client(s)...")
 			a.stopClients(false)
+			isRunningCh <- false
 			continue
 		}
 	}
 }
 
-// getMacAddr returns the list of MAC addresses for all available interfaces
-func getMacAddr() ([]string, error) {
+func getMachineID() (id string, err error) {
+	id, err = machineid.ProtectedID("sts")
+	if err != nil || id == "" {
+		var addr []string
+		if addr, err = getMacAddr(); err != nil {
+			return
+		}
+		sort.Strings(addr)
+		id = fileutil.StringMD5(strings.Join(addr, ""))
+		return
+	}
+	return
+}
+
+func getMacAddr() (addr []string, err error) {
+	addr, err = getAddr(true)
+	return
+}
+
+func getIpAddr() (addr []string, err error) {
+	addr, err = getAddr(false)
+	return
+}
+
+// getAddr returns the list of MAC or IP addresses for all available interfaces
+func getAddr(mac bool) (addr []string, err error) {
 	ifas, err := net.Interfaces()
 	if err != nil {
-		return nil, err
+		return
 	}
-	var addr []string
+	var addrs []net.Addr
+	lookup := make(map[string]bool)
 	for _, ifa := range ifas {
-		a := ifa.HardwareAddr.String()
-		if a != "" {
-			addr = append(addr, a)
+		if mac {
+			a := ifa.HardwareAddr
+			// If the second least significant bit of the first octet of the MAC
+			// address is 1, then it's a locally administered address.
+			// https://en.wikipedia.org/wiki/MAC_address#:~:text=Locally%20administered%20addresses%20are%20distinguished,how%20the%20address%20is%20administered.
+			if len(a) > 0 && a[0]&2 != 2 {
+				addr = append(addr, a.String())
+			}
+			continue
+		}
+		if addrs, err = ifa.Addrs(); err != nil {
+			return
+		}
+		for _, a := range addrs {
+			var ip net.IP
+			switch v := a.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if !ip.IsLoopback() {
+				if v4 := ip.To4(); v4 != nil {
+					ipv4 := v4.String()
+					if _, ok := lookup[ipv4]; ok {
+						continue
+					}
+					addr = append(addr, ipv4)
+					lookup[ipv4] = true
+				}
+			}
 		}
 	}
 	return addr, nil
@@ -289,4 +390,54 @@ func requestClientConf(
 		}
 	}
 	return
+}
+
+// runStatusUpdater runs in a loop sending status updates to the server
+func (a *app) runStateUpdater(
+	manager sts.ClientManager,
+	clientID string,
+	interval time.Duration,
+	runningCh <-chan bool,
+) {
+	var isRunning bool
+	for {
+		// Wait to do anything until we're running
+		isRunning = <-runningCh
+		if isRunning {
+			break
+		}
+	}
+	timer := time.NewTimer(interval)
+	var ok bool
+	for {
+		select {
+		case isRunning, ok = <-runningCh:
+			if !ok {
+				return
+			}
+			continue
+		case <-timer.C:
+			ipAddr, err := getIpAddr()
+			if err != nil {
+				log.Error(err.Error())
+			}
+			state := sts.ClientState{
+				When:      time.Now().UTC().Format(time.RFC3339),
+				Version:   Version,
+				GoVersion: runtime.Version(),
+				BuildTime: BuildTime,
+				IsActive:  isRunning,
+				IPAddrs:   ipAddr,
+				Messages:  log.Recent(),
+				Sources:   make(map[string]sts.SourceState),
+			}
+			for _, c := range a.clients {
+				state.Sources[c.conf.Name] = c.broker.GetState()
+			}
+			if err := manager.SetClientState(clientID, state); err != nil {
+				log.Error(err.Error())
+			}
+			timer.Reset(interval)
+		}
+	}
 }

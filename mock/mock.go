@@ -318,6 +318,7 @@ func (c *Cache) write() error {
 // Logger mocks logging by just printing to stdout/stderr
 type Logger struct {
 	DebugMode bool
+	recent    []string
 }
 
 // Debug logs debug messages
@@ -329,10 +330,18 @@ func (log *Logger) Debug(params ...interface{}) {
 
 // Info logs general information
 func (log *Logger) Info(params ...interface{}) {
+	log.recent = append(log.recent, fmt.Sprint(params...))
 	fmt.Fprintln(os.Stdout, params...)
 }
 
 // Error logs ...errors
 func (log *Logger) Error(params ...interface{}) {
+	log.recent = append(log.recent, fmt.Sprint(params...))
 	fmt.Fprintln(os.Stderr, params...)
+}
+
+// Recent returns recent messages (at least, it's supposed to)
+func (log *Logger) Recent() (msgs []string) {
+	msgs = append(msgs, log.recent...)
+	return
 }

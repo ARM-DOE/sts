@@ -7,6 +7,7 @@ require (
 	github.com/aws/aws-sdk-go v1.37.26
 	github.com/coreos/go-systemd/v22 v22.2.0
 	github.com/davecgh/go-spew v1.1.1
+	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/jmoiron/sqlx v1.3.1
 	github.com/lib/pq v1.10.0
 	github.com/stackimpact/stackimpact-go v2.3.10+incompatible
