@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -117,7 +118,7 @@ func (c *clientApp) init() (err error) {
 
 	// Configure the file store to be scanned
 	store := &store.Local{
-		Root:           c.conf.OutDir,
+		Root:           filepath.Clean(c.conf.OutDir),
 		MinAge:         c.conf.MinAge,
 		IncludeHidden:  c.conf.IncludeHidden,
 		Include:        c.conf.Include,
