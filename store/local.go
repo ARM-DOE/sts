@@ -142,7 +142,10 @@ func (dir *Local) Scan(shouldAllow func(sts.File) bool) ([]sts.File, time.Time, 
 }
 
 func (dir *Local) getRelPath(path string) string {
-	return strings.Replace(path, dir.Root+string(os.PathSeparator), "", 1)
+	// Make sure to handle a root directory with a trailing path separator
+	sep := string(os.PathSeparator)
+	root := strings.TrimRight(dir.Root, sep)
+	return strings.Replace(path, root+sep, "", 1)
 }
 
 func (dir *Local) shouldIgnore(relPath string, isDir bool) bool {
