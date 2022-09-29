@@ -71,6 +71,7 @@ func compute(output []throughput) (bytes int64, seconds, pct float64) {
 	var t int64
 	duration := output[len(output)-1].nanoStop - output[0].nanoStart
 	active := duration
+	bytes = output[0].bytes
 	// Attempt to remove times where nothing was being sent
 	for i, r := range output[1:] {
 		// i is actually the real index minus 1 since we are slicing at 1
