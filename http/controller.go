@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
@@ -43,7 +42,7 @@ func (c *Client) GetClientStatus(
 		return
 	}
 	defer reader.Close()
-	statusBytes, err := ioutil.ReadAll(reader)
+	statusBytes, err := io.ReadAll(reader)
 	if err != nil {
 		return
 	}
@@ -72,7 +71,7 @@ func (c *Client) GetClientConf(clientID string) (conf *sts.ClientConf, err error
 		return
 	}
 	defer reader.Close()
-	confBytes, err := ioutil.ReadAll(reader)
+	confBytes, err := io.ReadAll(reader)
 	if err != nil {
 		return
 	}

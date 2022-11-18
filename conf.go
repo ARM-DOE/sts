@@ -3,7 +3,7 @@ package sts
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -528,7 +528,7 @@ func NewConf(path string) (*Conf, error) {
 			return conf, err
 		}
 	}
-	fh, err := ioutil.ReadFile(path)
+	fh, err := os.ReadFile(path)
 	if err != nil {
 		panic("Configuration file not found: " + path)
 	}

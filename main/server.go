@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"regexp"
 
@@ -84,7 +84,7 @@ func (a *serverApp) init() (err error) {
 	// recovered will be logged in a different place. It means the stager that
 	// gets properly started later when data comes in will not know about these
 	// logs and duplicates could be received.
-	nodes, err := ioutil.ReadDir(dirs.Stage)
+	nodes, err := os.ReadDir(dirs.Stage)
 	if err != nil {
 		return
 	}

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -29,7 +28,7 @@ func stageFiles(count int, bytes units.Base2Bytes) {
 	os.MkdirAll(rootStatic, os.ModePerm)
 	b := make([]byte, bytes)
 	for i := 0; i < count; i++ {
-		f, err := ioutil.TempFile(rootStatic, "example."+strconv.Itoa(i)+".")
+		f, err := os.CreateTemp(rootStatic, "example."+strconv.Itoa(i)+".")
 		if err != nil {
 			panic(err)
 		}

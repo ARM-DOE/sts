@@ -7,9 +7,9 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -345,7 +345,7 @@ func loadCert(certPath, keyPath, caPath string) (pem *tls.Certificate, pool *x50
 	if caPath != "" {
 		if pool, ok = gCertPools[key]; !ok {
 			var ca []byte
-			ca, err = ioutil.ReadFile(caPath)
+			ca, err = os.ReadFile(caPath)
 			if err != nil {
 				return
 			}

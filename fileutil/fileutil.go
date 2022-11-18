@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -80,7 +79,7 @@ func writeJSON(path string, data interface{}, humanFriendly bool) (err error) {
 	if err != nil {
 		return
 	}
-	if err = ioutil.WriteFile(path+LockExt, jsonBytes, 0644); err != nil {
+	if err = os.WriteFile(path+LockExt, jsonBytes, 0644); err != nil {
 		return
 	}
 	err = os.Rename(path+LockExt, path)

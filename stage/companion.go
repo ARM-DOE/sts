@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -51,7 +50,7 @@ func readLocalCompanion(path, name string) (cmp *sts.Partial, err error) {
 	}
 	defer r.Close()
 	var b []byte
-	if b, err = ioutil.ReadAll(r); err != nil {
+	if b, err = io.ReadAll(r); err != nil {
 		return
 	}
 	cmp = &sts.Partial{}
@@ -80,7 +79,7 @@ func readLocalCompanion(path, name string) (cmp *sts.Partial, err error) {
 // ReadCompanions implements sts.DecodePartials
 func ReadCompanions(r io.Reader) (cmps []*sts.Partial, err error) {
 	var b []byte
-	if b, err = ioutil.ReadAll(r); err != nil {
+	if b, err = io.ReadAll(r); err != nil {
 		return
 	}
 	cmps = []*sts.Partial{}
