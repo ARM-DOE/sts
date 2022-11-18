@@ -600,7 +600,7 @@ func (s *Stage) cleanStrays(minAge time.Duration) {
 			file := s.fromCache(strings.TrimSuffix(path, partExt))
 			if file != nil && file.state > stateReceived {
 				delete = cmp == nil || cmp.Hash == file.hash
-				deleteCmp = file.state > stateLogged && cmp != nil
+				deleteCmp = file.state == stateLogged && cmp != nil
 			} else {
 				end := time.Now()
 				beg := info.ModTime().Add(time.Duration(age.Minutes()) * time.Hour * -1)
@@ -619,7 +619,7 @@ func (s *Stage) cleanStrays(minAge time.Duration) {
 					log.Error("Failed to remove stray partial:", path, err.Error())
 					return nil
 				}
-				log.Info("Deleted stray partial", relPath)
+				log.Info("Deleted stray partial:", relPath)
 				if deleteCmp {
 					if err = os.Remove(cmpPath); err != nil {
 						log.Error("Failed to remove stray partial companion:", cmpPath, err.Error())
