@@ -140,7 +140,7 @@ func NewGeneral(rootDir string, debug bool, mkdir MakeDir, open OpenFile) *Gener
 		debugMux:  sync.RWMutex{},
 		calldepth: 1,
 		logCh:     make(chan logMsg, 1000),
-		recentLen: 10,
+		recentLen: 100,
 	}
 	g.recentMsgs = make([]string, g.recentLen)
 	g.logger.eachLine(func(line string) bool {
@@ -223,10 +223,14 @@ func (g *General) Error(params ...interface{}) {
 }
 
 // Recent gets the last N lines logged
-func (g *General) Recent() (msgs []string) {
+func (g *General) Recent(n int) (msgs []string) {
 	g.logMux.RLock()
 	defer g.logMux.RUnlock()
-	msgs = append(msgs, g.recentMsgs...)
+	offset := g.recentLen - n
+	if offset < 0 || n <= 0 {
+		offset = 0
+	}
+	msgs = append(msgs, g.recentMsgs[offset:]...)
 	return
 }
 

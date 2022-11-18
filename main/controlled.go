@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,13 +19,20 @@ import (
 	"code.arm.gov/dataflow/sts/fileutil"
 	"code.arm.gov/dataflow/sts/http"
 	"code.arm.gov/dataflow/sts/log"
-	"github.com/denisbrodbeck/machineid"
+	"github.com/google/uuid"
 )
 
-// StatusInterval is for configuring how many seconds to wait between checking
-// the client's status from the server.  The value is a string in order to be
-// configured at compile-time.
-var StatusInterval = ""
+var (
+	// StatusInterval is for configuring how many seconds to wait between checking
+	// the client's status from the server. The value is a string in order to be
+	// configured at compile-time.
+	StatusInterval = ""
+
+	// StateInterval is for configuring how many seconds to wait between sending
+	// the client's state to the server. The value is a string in order to be
+	// configured at compile-time.
+	StateInterval = ""
+)
 
 type logger struct {
 	debugMode  bool
@@ -79,10 +85,15 @@ func (log *logger) remember(params ...interface{}) {
 }
 
 // Recent implements sts.Logger
-func (log *logger) Recent() (msgs []string) {
+func (log *logger) Recent(n int) (msgs []string) {
 	log.mux.RLock()
 	defer log.mux.RUnlock()
-	msgs = append(msgs, log.recentMsgs...)
+	total := len(log.recentMsgs)
+	offset := total - n
+	if offset < 0 || n <= 0 {
+		offset = 0
+	}
+	msgs = append(msgs, log.recentMsgs...)[offset:]
 	return
 }
 
@@ -150,15 +161,15 @@ func runFromServer(jsonEncodedServerConfig string) {
 		TLS:          tls,
 	}
 
-	machineID, err := getMachineID()
+	machineID, err := getMachineID(false)
 	if err != nil {
 		panic(err)
 	}
 	clientID := encodeClientID(serverConf.Key, machineID)
 
-	log.Debug("Server:", fmt.Sprintf("%s:%d", host, port))
-	log.Debug("Server Prefix:", serverConf.PathPrefix)
-	log.Debug("Client ID:", clientID)
+	log.Info("Server:", fmt.Sprintf("%s:%d", host, port))
+	log.Info("Server Prefix:", serverConf.PathPrefix)
+	log.Info("Client ID:", clientID)
 
 	rootDir := os.Getenv("STS_HOME")
 	if rootDir == "" {
@@ -169,7 +180,7 @@ func runFromServer(jsonEncodedServerConfig string) {
 		rootDir = filepath.Join(rootDir, "sts")
 	}
 
-	log.Debug("Cache Directory:", rootDir)
+	log.Info("Cache Directory:", rootDir)
 
 	a := &app{
 		loop: true,
@@ -178,26 +189,25 @@ func runFromServer(jsonEncodedServerConfig string) {
 		conf: &sts.Conf{},
 	}
 
-	isRunningCh := make(chan bool, 2)
-
 	if *once {
 		if a.conf.Client, err = requestClientConf(httpClient, clientID, true); err != nil {
 			log.Error(err.Error())
 			return
 		}
 		if a.conf.Client != nil {
-			a.runControlledClients(nil, isRunningCh)
+			a.runControlledClients(nil)
 		}
 	} else {
+		stopCh := make(chan bool, 2)
 		confCh := make(chan *sts.ClientConf)
 		go runConfLoader(httpClient, clientID, confCh)
-		go a.runStateUpdater(httpClient, clientID, time.Minute*1, isRunningCh)
+		go a.runStateUpdater(httpClient, clientID, stopCh)
 		a.conf.Client = <-confCh
-		a.runControlledClients(confCh, isRunningCh)
+		a.runControlledClients(confCh)
+		close(stopCh)
 	}
 
-	close(isRunningCh)
-	log.Debug("Done.")
+	log.Info("Done")
 }
 
 // runControlledClients starts the configured client(s) and, if the input
@@ -206,10 +216,7 @@ func runFromServer(jsonEncodedServerConfig string) {
 // stopped (gracefully) and then restarted using the new configuration.  If the
 // input channel is nil, the client(s) will be immediately stopped once they
 // have performed a single send iteration.
-func (a *app) runControlledClients(
-	confCh <-chan *sts.ClientConf,
-	isRunningCh chan<- bool,
-) {
+func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 	var err error
 	signalCh := make(chan os.Signal, 2)
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
@@ -233,11 +240,8 @@ func (a *app) runControlledClients(
 		}
 
 		if len(a.conf.Client.Sources) > 0 {
-			log.Debug("Starting Client(s)...")
-			a.clientsMux.Lock()
+			log.Info("Starting", len(a.conf.Client.Sources), "client(s) ...")
 			a.startClients()
-			a.clientsMux.Unlock()
-			isRunningCh <- true
 		}
 
 	wait:
@@ -247,34 +251,40 @@ func (a *app) runControlledClients(
 		}
 		select {
 		case <-signalCh:
-			log.Debug("Shutting Down Client(s)...")
+			log.Info("Shutting down", len(a.conf.Client.Sources), "client(s) ...")
 			a.stopClients(false)
 			return
 		case a.conf.Client = <-confCh:
-			log.Debug("Stopping Client(s)...")
+			log.Info("Stopping", len(a.conf.Client.Sources), "client(s) ...")
 			a.stopClients(false)
-			isRunningCh <- false
 			continue
 		}
 	}
 }
 
-func getMachineID() (id string, err error) {
-	id, err = machineid.ProtectedID("sts")
-	if err != nil || id == "" {
-		var addr []string
-		if addr, err = getMacAddr(); err != nil {
-			return
-		}
-		sort.Strings(addr)
-		id = fileutil.StringMD5(strings.Join(addr, ""))
+func getMachineID(forceCompute bool) (id string, err error) {
+	var cacheDir string
+	if cacheDir, err = os.UserCacheDir(); err != nil {
 		return
 	}
-	return
-}
-
-func getMacAddr() (addr []string, err error) {
-	addr, err = getAddr(true)
+	cachePath := filepath.Join(cacheDir, "sts-client-id.txt")
+	compute := forceCompute
+	if !compute {
+		_, err = os.Stat(cachePath)
+		compute = os.IsNotExist(err)
+		err = nil
+	}
+	if compute {
+		id = uuid.New().String()
+		if err = os.WriteFile(cachePath, []byte(id), 0644); err != nil {
+			return
+		}
+	}
+	var data []byte
+	if data, err = os.ReadFile(cachePath); err != nil {
+		return
+	}
+	id = strings.TrimSpace(string(data))
 	return
 }
 
@@ -362,7 +372,7 @@ func requestClientConf(
 ) (conf *sts.ClientConf, err error) {
 	var name string
 	var status sts.ClientStatus
-	log.Debug("Getting Client Status:", clientID)
+	log.Debug("Getting client status:", clientID)
 	if name, err = os.Hostname(); err != nil {
 		log.Error(err.Error())
 	}
@@ -372,11 +382,11 @@ func requestClientConf(
 	}
 	switch {
 	case status&sts.ClientIsDisabled != 0:
-		log.Info("Client Disabled:", clientID)
+		log.Info("Client disabled:", clientID)
 		return
 	case status&sts.ClientIsApproved != 0:
 		if force || status&sts.ClientHasUpdatedConfiguration != 0 {
-			log.Info("Client Has [Updated] Configuration:", clientID)
+			log.Info("Client has [updated] configuration:", clientID)
 			if conf, err = manager.GetClientConf(clientID); err != nil {
 				return
 			}
@@ -385,34 +395,32 @@ func requestClientConf(
 				return
 			}
 			if len(conf.Sources) == 0 {
-				log.Info("No Data Sources Configured")
+				log.Info("No data sources configured")
 			}
 		}
 	}
 	return
 }
 
-// runStatusUpdater runs in a loop sending status updates to the server
+// runStateUpdater runs in a loop sending state updates to the server
 func (a *app) runStateUpdater(
 	manager sts.ClientManager,
 	clientID string,
-	interval time.Duration,
-	runningCh <-chan bool,
+	stopCh <-chan bool,
 ) {
-	var isRunning bool
-	for {
-		// Wait to do anything until we're running
-		isRunning = <-runningCh
-		if isRunning {
-			break
+	interval := time.Second * 60
+	if StateInterval != "" {
+		if nSec, err := strconv.Atoi(StateInterval); err == nil {
+			interval = time.Second * time.Duration(nSec)
 		}
 	}
-	timer := time.NewTimer(interval)
+	timer := time.NewTimer(time.Second * 1)
 	var ok bool
+	var stop bool
 	for {
 		select {
-		case isRunning, ok = <-runningCh:
-			if !ok {
+		case stop, ok = <-stopCh:
+			if stop || !ok {
 				return
 			}
 			continue
@@ -421,19 +429,27 @@ func (a *app) runStateUpdater(
 			if err != nil {
 				log.Error(err.Error())
 			}
+			a.isRunningMux.RLock()
+			nLogMessages := 10
+			if a.isRunning {
+				nLogMessages = nLogMessages * len(a.clients)
+			}
 			state := sts.ClientState{
 				When:      time.Now().UTC().Format(time.RFC3339),
 				Version:   Version,
 				GoVersion: runtime.Version(),
 				BuildTime: BuildTime,
-				IsActive:  isRunning,
+				IsActive:  a.isRunning,
 				IPAddrs:   ipAddr,
-				Messages:  log.Recent(),
+				Messages:  log.Recent(nLogMessages),
 				Sources:   make(map[string]sts.SourceState),
 			}
-			for _, c := range a.clients {
-				state.Sources[c.conf.Name] = c.broker.GetState()
+			if a.isRunning {
+				for _, c := range a.clients {
+					state.Sources[c.conf.Name] = c.broker.GetState()
+				}
 			}
+			a.isRunningMux.RUnlock()
 			if err := manager.SetClientState(clientID, state); err != nil {
 				log.Error(err.Error())
 			}

@@ -126,24 +126,32 @@ func (c *clientApp) init() (err error) {
 		FollowSymlinks: c.dirOutFollow,
 	}
 	store.AddStandardIgnore()
-	pfx := "CONFIG: Store =>"
-	log.Debug(pfx, "Root Outgoing Directory:", c.conf.OutDir)
-	log.Debug(pfx, "File Minimum Age:", c.conf.MinAge.String())
+
+	configDump := []string{
+		fmt.Sprintf("CONFIG: %s", c.conf.Name),
+	}
+
+	dump := func(format string, a ...any) {
+		configDump = append(configDump, fmt.Sprintf(" - "+format, a...))
+	}
+
+	dump("Root Outgoing Directory: %s", c.conf.OutDir)
+	dump("File Minimum Age: %s", c.conf.MinAge.String())
 	if c.conf.IncludeHidden {
-		log.Debug(pfx, "Includes Hidden Files")
+		dump("Includes Hidden Files: Yes")
 	} else {
-		log.Debug(pfx, "Excludes Hidden Files")
+		dump("Includes Hidden Files: No")
 	}
 	if c.dirOutFollow {
-		log.Debug(pfx, "Follows Symbolic Links")
+		dump("Follows Symbolic Links: Yes")
 	} else {
-		log.Debug(pfx, "Does NOT Follow Symbolic Links")
+		dump("Follows Symbolic Links: No")
 	}
 	for _, p := range c.conf.Include {
-		log.Debug(pfx, "Has File Include Pattern:", p.String())
+		dump("File Include Pattern: %s", p.String())
 	}
 	for _, p := range c.conf.Ignore {
-		log.Debug(pfx, "Has File Exclude Pattern:", p.String())
+		dump("File Exclude Pattern: %s", p.String())
 	}
 
 	// Configure the file cache
@@ -151,19 +159,18 @@ func (c *clientApp) init() (err error) {
 	if err != nil {
 		return
 	}
-	pfx = "CONFIG: Cache =>"
-	log.Debug(pfx, "Directory:", c.dirCache)
+
+	dump("Cache Directory: %s", c.dirCache)
 
 	// Configure automated file renaming
 	var fileToNewName sts.Rename
 	if len(c.conf.Rename) > 0 {
-		pfx = "CONFIG: Renaming =>"
 		extraVars := map[string]string{
 			"__source": c.conf.Name,
 		}
 		maps := make([]*fileutil.PathMap, len(c.conf.Rename))
 		for i, r := range c.conf.Rename {
-			log.Debug(pfx, "Map From:", r.Pattern.String(), "To:", r.Template)
+			dump("Rename: %s => %s", r.Pattern.String(), r.Template)
 			maps[i] = &fileutil.PathMap{
 				Pattern:   r.Pattern,
 				Template:  r.Template,
@@ -180,8 +187,7 @@ func (c *clientApp) init() (err error) {
 	}
 
 	// Configure sorting queue
-	pfx = "CONFIG: Group =>"
-	log.Debug(pfx, "Pattern:", c.conf.GroupBy.String())
+	dump("File Grouping Pattern: %s", c.conf.GroupBy.String())
 	qtags := make([]*queue.Tag, len(c.conf.Tags))
 	for i, t := range c.conf.Tags {
 		name := ""
@@ -208,9 +214,19 @@ func (c *clientApp) init() (err error) {
 		if name == "" {
 			name = "DEFAULT"
 		}
-		log.Debug(pfx, name, "=>", "Priority:", t.Priority)
-		log.Debug(pfx, name, "=>", "Order:", strings.ToUpper(t.Order))
-		log.Debug(pfx, name, "=>", "Delay:", t.LastDelay)
+		if t.Method == sts.MethodHTTP {
+			dump("(%s) Priority: %d", name, t.Priority)
+			dump("(%s) Send Order: %s", name, strings.ToUpper(t.Order))
+			if t.Delete {
+				dump("(%s) Delete Local: Yes", name)
+				dump("(%s) Delete Delay: %s", name, t.DeleteDelay.String())
+			} else {
+				dump("(%s) Delete Local: No", name)
+			}
+			dump("(%s) Last File Delay: %s", name, t.LastDelay.String())
+		} else {
+			dump("(%s) Method: %s", name, t.Method)
+		}
 	}
 
 	grouper := func(name string) (group string) {
@@ -259,29 +275,32 @@ func (c *clientApp) init() (err error) {
 		TLS:             c.tls,
 		PartialsDecoder: stage.ReadCompanions,
 	}
-	pfx = "CONFIG: HTTP Client =>"
-	log.Debug(pfx, "Name:", c.conf.Name)
-	log.Debug(pfx, "Target Host:", c.host)
-	log.Debug(pfx, "Target Port:", c.port)
-	log.Debug(pfx, "Target Path:", c.conf.Target.PathPrefix)
-	log.Debug(pfx, "Compression:", c.conf.Compression)
+
+	dump("Server Host: %s", c.host)
+	dump("Server Port: %d", c.port)
+	dump("Server Path: %s", c.conf.Target.PathPrefix)
+	dump("Compression: %d", c.conf.Compression)
 	if c.tls == nil {
-		log.Debug(pfx, "TLS: Yes")
+		dump("Using Secure HTTP: Yes")
 	} else {
-		log.Debug(pfx, "TLS: No")
+		dump("Using Secure HTTP: No")
 	}
 
-	pfx = "CONFIG: Client =>"
-	log.Debug(pfx, "Max Concurrent Requests:", c.conf.Threads)
-	log.Debug(pfx, "Request Size:", c.conf.BinSize.String())
-	log.Debug(pfx, "Cache Age:", c.conf.CacheAge.String())
-	log.Debug(pfx, "Scan Delay:", c.conf.ScanDelay.String())
-	log.Debug(pfx, "Poll Delay:", c.conf.PollDelay.String())
-	log.Debug(pfx, "Poll Interval:", c.conf.PollInterval.String())
-	log.Debug(pfx, "Logging Directory:", c.conf.LogDir)
+	dump("Max Concurrent Requests: %d", c.conf.Threads)
+	dump("Request Size: %s", c.conf.BinSize.String())
+	dump("Cache Age: %s", c.conf.CacheAge.String())
+	dump("Scan Delay: %s", c.conf.ScanDelay.String())
+	dump("Poll Delay: %s", c.conf.PollDelay.String())
+	dump("Poll Interval: %s", c.conf.PollInterval.String())
+	dump("Log Directory: %s", c.conf.LogDir)
+
+	// Keeping the config dump as a single log entry means fetching recent
+	// "lines" from the log will make sure the entire config is captured
+	log.Info(strings.Join(configDump, "\n"))
 
 	c.broker = &client.Broker{
 		Conf: &client.Conf{
+			Name:         c.conf.Name,
 			Store:        store,
 			Cache:        cache,
 			Queue:        queue.NewTagged(qtags, tagger, grouper),

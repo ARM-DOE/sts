@@ -19,6 +19,8 @@ const (
 // Conf is the struct for storing all the settable components and options for
 // this client to manage the outgoing data flow
 type Conf struct {
+	Name string // The name assigned to this broker/client instance
+
 	// Components
 	Store        sts.FileSource          // The source of file objects from which to read (and delete)
 	Cache        sts.FileCache           // The persistent cache of file metadata from the store
@@ -58,13 +60,15 @@ type FileTag struct {
 
 // Broker is the client struct
 type Broker struct {
-	Conf       *Conf
-	tagMap     map[string]*FileTag
-	cleanAll   bool
-	cleanSome  bool
-	stuckSince time.Time
-	throughput *throughputMonitor
-	stopFull   bool
+	Conf         *Conf
+	tagMap       map[string]*FileTag
+	cleanAll     bool
+	cleanSome    bool
+	stuckSince   time.Time
+	throughput   *throughputMonitor
+	stop         bool
+	stopMux      sync.RWMutex
+	stopGraceful bool
 
 	// Channels
 	chStop        chan bool
@@ -100,16 +104,55 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 	broker.chStats = make(chan sts.Payload, broker.Conf.Threads*2)
 	broker.chValidate = make(chan sts.Pollable, broker.Conf.Threads*2)
 
+	stopNow := make(chan bool)
+
+	go func() {
+		// Wait for an internal or external stop signal
+		var stopGraceful bool
+		select {
+		case stopGraceful = <-stop:
+		case <-stopNow:
+		}
+		// Start stopping ...
+		broker.stopMux.Lock()
+		broker.stop = true
+		broker.stopGraceful = stopGraceful
+		broker.stopMux.Unlock()
+		broker.chStop <- stopGraceful
+		close(broker.chStop)
+	}()
+
+	// chRecovered := make(chan error)
+
+	// go func() {
+	// 	send, err := broker.recover()
+	// 	chRecovered <- err
+	// 	if broker.shouldStopNow() {
+	// 		return
+	// 	}
+	// 	if err == nil && len(send) > 0 {
+	// 		broker.chScanned <- send
+	// 	}
+	// }()
+
 	send, err := broker.recover()
-	if err != nil {
-		log.Error("Recovery failed:", err.Error())
+	if broker.shouldStopNow() {
 		return
 	}
-	if len(send) > 0 {
-		go func(ch chan<- []sts.Hashed, files []sts.Hashed) {
-			ch <- files
-		}(broker.chScanned, send)
+	if err != nil {
+		broker.error("Recovery failed:", err.Error())
+	} else if len(send) > 0 {
+		// This shouldn't block since we have a buffer of 1 in this channel
+		broker.chScanned <- send
 	}
+
+	// // Wait for recovery to complete
+	// err := <-chRecovered
+	// if err != nil {
+	// 	broker.error("Recovery failed:", err.Error())
+	// 	stopNow <- true
+	// 	return
+	// }
 
 	start := func(s func(wg *sync.WaitGroup), wg *sync.WaitGroup, n int) {
 		wg.Add(n)
@@ -136,8 +179,7 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 	start(broker.startTrack, &wgValidate, 1)
 	start(broker.startValidate, &wgValidated, 1)
 
-	broker.chStop <- <-stop
-	close(broker.chStop)
+	broker.info("STARTED")
 
 	wgScanned.Wait()
 	close(broker.chScanned)
@@ -161,6 +203,20 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 
 	wgFailed.Wait()
 	done <- true
+}
+
+func (broker *Broker) info(params ...interface{}) {
+	log.Info(append([]interface{}{"(" + broker.Conf.Name + ")"}, params...)...)
+}
+
+func (broker *Broker) error(params ...interface{}) {
+	log.Error(append([]interface{}{"(" + broker.Conf.Name + ")"}, params...)...)
+}
+
+func (broker *Broker) shouldStopNow() bool {
+	broker.stopMux.RLock()
+	defer broker.stopMux.RUnlock()
+	return broker.stop && !broker.stopGraceful
 }
 
 // GetState returns the standard state struct providing a snapshot of the client
@@ -219,9 +275,13 @@ func (broker *Broker) GetState() sts.SourceState {
 			state.RecentFiles[i] = nil
 			continue
 		}
+		renamed := ""
+		if broker.Conf.Renamer != nil {
+			renamed = broker.Conf.Renamer(cacheFile)
+		}
 		state.RecentFiles[i] = &sts.RecentFile{
 			Name:   cacheFile.GetName(),
-			Rename: broker.Conf.Renamer(cacheFile),
+			Rename: renamed,
 			Path:   cacheFile.GetPath(),
 			Size:   cacheFile.GetSize(),
 			Hash:   cacheFile.GetHash(),
@@ -237,10 +297,13 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 	var partials []*sts.Partial
 	nErr := 0
 	for {
-		log.Info("RECOVERY: Requesting information from target host ...")
+		if broker.shouldStopNow() {
+			return
+		}
+		broker.info("STARTUP: Requesting recovery information from server ...")
 		partials, err = broker.Conf.Recoverer()
 		if err != nil {
-			log.Error("Recovery request failed:", err.Error())
+			broker.error("Recovery request failed:", err.Error())
 			nErr++
 			// Wait longer the more it fails
 			time.Sleep(time.Duration(nErr) * time.Second)
@@ -248,14 +311,17 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 		}
 		break
 	}
-	log.Info(fmt.Sprintf(
-		"RECOVERY: Found %d at least partially sent files on target host",
+	broker.info(fmt.Sprintf(
+		"STARTUP: Found %d files to recover",
 		len(partials),
 	))
 	store := broker.Conf.Store
 	cache := broker.Conf.Cache
 	lookup := make(map[string]*sts.Partial)
 	for _, p := range partials {
+		if broker.shouldStopNow() {
+			return
+		}
 		cached := cache.Get(p.Name)
 		if cached == nil {
 			// We're putting it in the send Q only to get the right order
@@ -279,6 +345,9 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 		lookup[p.Name] = p
 	}
 	cache.Iterate(func(f sts.Cached) bool {
+		if broker.shouldStopNow() {
+			return true
+		}
 		if f.IsDone() {
 			return false
 		}
@@ -288,7 +357,7 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 			cache.Done(f.GetName(), nil)
 			return false
 		} else if err != nil {
-			log.Error("Failed to stat cached file:", f.GetPath(), err.Error())
+			broker.error("Failed to stat cached file:", f.GetPath(), err.Error())
 			return false
 		} else if file != nil {
 			log.Debug("Ignore changed file:", f.GetPath())
@@ -343,6 +412,9 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 		return false
 	})
 	for {
+		if broker.shouldStopNow() {
+			return
+		}
 		nPoll := len(poll)
 		if nPoll == 0 {
 			break
@@ -354,8 +426,8 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 		} else {
 			poll = nil
 		}
-		log.Info(fmt.Sprintf(
-			"RECOVERY: Asking target host if %d (of %d) files were fully sent ...",
+		broker.info(fmt.Sprintf(
+			"STARTUP: Asking server if %d (of %d) files were fully sent ...",
 			len(pollNow),
 			nPoll,
 		))
@@ -363,8 +435,11 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 		if polled, err = broker.Conf.Validator(pollNow); err != nil {
 			return
 		}
-		log.Info("RECOVERY: Processing response ...")
+		broker.info("STARTUP: Processing server response ...")
 		for _, f := range polled {
+			if broker.shouldStopNow() {
+				return
+			}
 			cached := cache.Get(f.GetName())
 			switch {
 			case f.NotFound():
@@ -406,10 +481,10 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 		}
 		// Make sure changes get persisted after the batch is processed
 		if err = broker.Conf.Cache.Persist(time.Time{}); err != nil {
-			log.Error(err.Error())
+			broker.error(err.Error())
 		}
 	}
-	log.Info(fmt.Sprintf("RECOVERY: Done (%d files to be queued)", len(send)))
+	broker.info(fmt.Sprintf("STARTUP: Recovery done (%d files to be recovered)", len(send)))
 	err = nil
 	return
 }
@@ -421,13 +496,16 @@ func (broker *Broker) startScan(wg *sync.WaitGroup) {
 	for {
 		log.Debug("Scanning ...")
 		found := broker.scan()
+		if broker.shouldStopNow() {
+			return
+		}
 		if len(found) > 0 {
 			broker.chScanned <- found
 		}
 		log.Debug("Scan complete. Found:", len(found))
 		wait = time.After(broker.Conf.ScanDelay)
 		select {
-		case broker.stopFull = <-broker.chStop:
+		case <-broker.chStop:
 			return
 		case <-wait:
 		}
@@ -495,27 +573,37 @@ func (broker *Broker) scan() []sts.Hashed {
 		// the case where files are NOT cleaned up by STS but are cleaned up
 		// outside of STS.
 		cache.Iterate(func(cached sts.Cached) bool {
+			if broker.shouldStopNow() {
+				return true
+			}
 			if cached.GetTime().Before(broker.stuckSince) {
 				if _, err := store.Sync(cached); store.IsNotExist(err) {
-					log.Info("Not found--removing from cache:", cached.GetName())
+					broker.info("Not found--removing from cache:", cached.GetName())
 					cache.Remove(cached.GetName())
 					return false
 				}
 				if !cached.IsDone() {
-					log.Info("Potentially stuck file:", cached.GetName())
+					broker.info("Potentially stuck file:", cached.GetName())
 				}
 			}
 			return false
 		})
+		if broker.shouldStopNow() {
+			return nil
+		}
 		broker.stuckSince = time.Now()
 	}
 
 	// Perform the scan
 	if files, scanTime, err = store.Scan(broker.includeScannedFile); err != nil {
-		log.Error(err)
+		broker.error(err)
 		return nil
 	}
 	age := cache.Boundary()
+
+	if broker.shouldStopNow() {
+		return nil
+	}
 
 	// Wrap the scanned file objects in type that can have hash added
 	wrapped := make([]sts.Hashed, len(files))
@@ -528,6 +616,9 @@ func (broker *Broker) scan() []sts.Hashed {
 
 	// Add any stragglers and clean the cache (and store, if applicable)
 	cache.Iterate(func(cached sts.Cached) bool {
+		if broker.shouldStopNow() {
+			return true
+		}
 		switch {
 		case cached.GetHash() == "":
 			// Add any that might have failed the hash calculation last time
@@ -542,25 +633,36 @@ func (broker *Broker) scan() []sts.Hashed {
 		return false
 	})
 
+	if broker.shouldStopNow() {
+		return nil
+	}
+
 	// Update the cache
 	var ready []sts.Hashed
 	if len(wrapped) > 0 {
 		var n int
-		if n, err = broker.hash(wrapped,
+		if n, err = broker.hash(
+			wrapped,
 			broker.Conf.Threads,
-			int64(broker.Conf.PayloadSize)); err != nil {
-
-			log.Error(err)
+			int64(broker.Conf.PayloadSize),
+		); err != nil {
+			broker.error(err)
+		}
+		if broker.shouldStopNow() {
+			return nil
 		}
 		if n == len(wrapped) {
 			ready = wrapped
 		}
 		for _, file := range wrapped {
+			if broker.shouldStopNow() {
+				return nil
+			}
 			// Update the cache with all files--even those without a hash (will
 			// try again next time)--unless the file is missing
 			if file.GetHash() == "" {
 				if _, err = store.Sync(file); store.IsNotExist(err) {
-					log.Info("Removed missing file from cache:", file.GetName())
+					broker.info("Removed missing file from cache:", file.GetName())
 					cache.Remove(file.GetName())
 					continue
 				}
@@ -573,7 +675,7 @@ func (broker *Broker) scan() []sts.Hashed {
 	}
 	if err = cache.Persist(
 		scanTime.Add(-1 * broker.Conf.CacheAge)); err != nil {
-		log.Error(err)
+		broker.error(err)
 		return nil
 	}
 	return ready
@@ -586,15 +688,18 @@ func (broker *Broker) hashFiles(opener sts.Open, in <-chan []sts.Hashed, wg *syn
 		var err error
 		var fh sts.Readable
 		for _, file := range files {
+			if broker.shouldStopNow() {
+				break
+			}
 			log.Debug(fmt.Sprintf("HASHing %s ...", file.GetName()))
 			fh, err = opener(file)
 			if err != nil {
-				log.Error("Failed to generate hash:", err)
+				broker.error("Failed to generate hash:", err)
 				continue
 			}
 			file.(*hashFile).hash, err = fileutil.ReadableMD5(fh)
 			if err != nil {
-				log.Error(err)
+				broker.error(err)
 			}
 			fh.Close()
 			log.Debug(fmt.Sprintf("HASHed %s : %s", file.GetName(), file.(*hashFile).hash))
@@ -618,6 +723,11 @@ func (broker *Broker) hash(
 	count := 1
 	var size int64
 	for i, file := range scanned {
+		if broker.shouldStopNow() {
+			// Closing the channel to stop the running go routines
+			close(ch)
+			return 0, nil
+		}
 		size += file.GetSize()
 		if size < batchSize {
 			count++
@@ -663,8 +773,8 @@ func (broker *Broker) startQueue(wg *sync.WaitGroup) {
 				broker.Conf.Queue.Push(batch)
 			}
 			if !ok {
-				// OK to stop before the Q is empty if not doing a "full stop"
-				if !broker.stopFull {
+				// OK to stop before the Q is empty if not doing it gracefully
+				if broker.shouldStopNow() {
 					return
 				}
 				in = nil
@@ -707,6 +817,9 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 			}
 			select {
 			case sendable, ok = <-in:
+				if broker.shouldStopNow() {
+					return
+				}
 				if sendable != nil {
 					tagName := broker.Conf.Tagger(sendable.GetName())
 					tag := broker.tagMap[tagName]
@@ -723,6 +836,9 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 					return
 				}
 			case <-wait:
+				if broker.shouldStopNow() {
+					return
+				}
 				log.Debug("Bin waited")
 				if payload != nil && payload.GetSize() > 0 {
 					out <- payload
@@ -758,7 +874,7 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 	for {
 		log.Debug("Send loop ...")
 		payload, ok := <-in
-		if !ok {
+		if !ok || broker.shouldStopNow() {
 			return
 		}
 		for _, p := range payload.GetParts() {
@@ -768,12 +884,15 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 		}
 		nErr = 0
 		for {
+			if broker.shouldStopNow() {
+				return
+			}
 			n, err := broker.Conf.Transmitter(payload)
 			if err == nil {
 				break
 			}
 			nErr++
-			log.Error("Payload send failed:", err.Error())
+			broker.error("Payload send failed:", err.Error())
 			payload = broker.handleSendError(payload, n)
 			if payload == nil || len(payload.GetParts()) == 0 {
 				// It's entirely possible that the problem occurred after all
@@ -793,7 +912,7 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 					file); f != nil || err != nil {
 					// If the file changed, it will get picked up again
 					// automatically, so we can just ignore it
-					log.Info("Ignoring changed file in payload:", binned.GetName())
+					broker.info("Ignoring changed file in payload:", binned.GetName())
 					payload.Remove(binned)
 				}
 			}
@@ -823,7 +942,7 @@ func (broker *Broker) handleSendError(payload sts.Payload, nPartsReceived int) s
 			n, err = broker.Conf.TxRecoverer(payload)
 		}
 		if err == nil {
-			log.Info("Transmission recovery:", n, "of", len(payload.GetParts()))
+			broker.info("Transmission recovery:", n, "of", len(payload.GetParts()))
 			if n > 0 {
 				next := payload.Split(n)
 				broker.stat(payload)
@@ -833,7 +952,7 @@ func (broker *Broker) handleSendError(payload sts.Payload, nPartsReceived int) s
 			break
 		}
 		nErr++
-		log.Error("Payload recovery request failed:", err.Error())
+		broker.error("Payload recovery request failed:", err.Error())
 		// Wait longer the more it fails
 		time.Sleep(time.Duration(nErr) * time.Second)
 	}
@@ -844,7 +963,7 @@ func (broker *Broker) stat(payload sts.Payload) {
 	if broker.Conf.StatPayload {
 		s := payload.GetCompleted().Sub(payload.GetStarted()).Seconds()
 		mb := float64(payload.GetSize()) / float64(1024) / float64(1024)
-		log.Info(fmt.Sprintf(
+		broker.info(fmt.Sprintf(
 			"Throughput: %3d part(s), %10.2f MB, %6.2f sec, %6.2f MB/sec",
 			len(payload.GetParts()), mb, s, mb/s))
 	}
@@ -867,13 +986,54 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 	in := broker.chTransmitted
 	out := broker.chValidate
 	progress := make(map[string]*progressFile)
-	var waiter sync.WaitGroup
+	var wait <-chan time.Time
+	var payload sts.Payload
+	var ok bool
 	for {
-		log.Debug("Track loop ...")
-		payload, ok := <-in
-		if !ok {
-			waiter.Wait()
+		if broker.shouldStopNow() {
 			return
+		}
+		log.Debug("Track loop ...")
+		// Block by default
+		wait = nil
+		if len(progress) == 0 {
+			if in == nil {
+				// We can safely return now that our Q is empty
+				return
+			}
+		} else {
+			// Send anything from the Q that's ready, but don't block if the
+			// outgoing channel is full
+			for key, pFile := range progress {
+				if pFile.sent < pFile.size {
+					continue
+				}
+				wait = time.After(time.Millisecond)
+				select {
+				case out <- pFile:
+					delete(progress, key)
+				case <-wait:
+				}
+			}
+			wait = nil
+			if len(progress) > 0 {
+				// If the Q is still not empty, don't block when looking for a
+				// new payload to receive
+				wait = time.After(time.Second)
+			}
+		}
+		select {
+		case payload, ok = <-in:
+			if !ok {
+				// Receiving on a nil channel will block, which is what we want
+				// since the timeout will keep from thrashing while we work on
+				// remaining files to be polled
+				in = nil
+			}
+		case <-wait:
+		}
+		if payload == nil {
+			continue
 		}
 		for _, binned := range payload.GetParts() {
 			key := binned.GetName()
@@ -910,12 +1070,6 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 					pFile.completed = payload.GetCompleted()
 				}
 				broker.Conf.Logger.Sent(pFile)
-				delete(progress, key)
-				waiter.Add(1)
-				go func() {
-					defer waiter.Done()
-					out <- pFile
-				}()
 			}
 		}
 	}
@@ -935,6 +1089,9 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 	var err error
 	var nErr int
 	for {
+		if broker.shouldStopNow() {
+			return
+		}
 		if len(poll) == 0 {
 			if in == nil {
 				// We can safely return once our Q is empty
@@ -984,9 +1141,12 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 		}
 		nErr = 0
 		for {
+			if broker.shouldStopNow() {
+				return
+			}
 			polled, err = broker.Conf.Validator(ready)
 			if err != nil {
-				log.Error("Poll request failed:", err.Error())
+				broker.error("Poll request failed:", err.Error())
 				nErr++
 				// Wait longer the more it fails
 				time.Sleep(time.Duration(nErr) * time.Second)
@@ -1002,12 +1162,12 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 			case f.NotFound():
 				poll[f.GetName()].polled++
 				if poll[f.GetName()].polled == broker.Conf.PollAttempts {
-					log.Error("Exceeded maximum polling attempts:", f.GetName())
+					broker.error("Exceeded maximum polling attempts:", f.GetName())
 					broker.finish(f)
 					delete(poll, f.GetName())
 				}
 			case f.Failed():
-				log.Error("Failed validation:", f.GetName())
+				broker.error("Failed validation:", f.GetName())
 				fallthrough
 			case f.Waiting():
 				// Files "waiting" have been validated and can be cleaned up
@@ -1019,7 +1179,7 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 		}
 		// Make sure changes get persisted after the batch is processed
 		if err = broker.Conf.Cache.Persist(time.Time{}); err != nil {
-			log.Error(err.Error())
+			broker.error(err.Error())
 		}
 	}
 }
@@ -1061,14 +1221,14 @@ func (broker *Broker) startRetry(wg *sync.WaitGroup) {
 		if f, err := broker.Conf.Store.Sync(cached); f != nil || err != nil {
 			// OK to ignore cases like this since changed files are picked up
 			// automatically and put in the send Q again
-			log.Info("Ignoring changed failed file:", file.GetName())
+			broker.info("Ignoring changed failed file:", file.GetName())
 			continue
 		}
 		hashed = &hashFile{File: cached}
 		log.Debug("Recomputing hash:", file.GetName())
 		fh, err = opener(hashed)
 		if err != nil {
-			log.Error(err)
+			broker.error(err)
 			if store.IsNotExist(err) {
 				cache.Done(file.GetName(), nil)
 			}
@@ -1076,7 +1236,7 @@ func (broker *Broker) startRetry(wg *sync.WaitGroup) {
 		}
 		hashed.hash, err = fileutil.ReadableMD5(fh)
 		if err != nil {
-			log.Error(err)
+			broker.error(err)
 		}
 		fh.Close()
 		cache.Add(hashed)

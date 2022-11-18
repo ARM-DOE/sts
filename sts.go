@@ -48,7 +48,7 @@ type Logger interface {
 	Debug(...interface{})
 	Info(...interface{})
 	Error(...interface{})
-	Recent() []string
+	Recent(int) []string
 }
 
 // SendLogger is the interface for logging on the sending side

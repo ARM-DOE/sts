@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"code.arm.gov/dataflow/sts/log"
+	"code.arm.gov/dataflow/sts/mock"
 )
 
 var hasDatabase = flag.Bool("db", false, strings.TrimSpace(`
@@ -19,6 +22,7 @@ func TestSQL(t *testing.T) {
 	if !*hasDatabase {
 		return
 	}
+	log.InitExternal(&mock.Logger{DebugMode: true})
 	var err error
 	p := NewPostgres(uint(0), "localhost", "sts", "sts_admin", "sts", "", "", decodeClientID)
 	p.destroy()

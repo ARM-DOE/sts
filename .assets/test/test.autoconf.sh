@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# NOTES:
+# With postgres running locally:
+# - psql postgres
+# - create database sts;
+# - create role sts_admin with password 'sts';
+# - alter role sts_admin with login;
+# - alter database sts owner to sts_admin;
+# cd control; go test -args -db
+
 basedir=$(dirname $0)
 
 exe=$GOPATH/bin/sts
@@ -21,9 +30,8 @@ key="12345"
 host="localhost"
 port="1992"
 prfx="/prefix"
-cert=$(base64 $basedir/../localhost.crt)
 
-serverconfig="{\"name\":\"$name\",\"key\":\"$key\",\"http-host\":\"$host\",\"http-path-prefix\":\"$prfx\",\"http-tls-cert-encoded\":\"$cert\"}"
+serverconfig="{\"name\":\"$name\",\"key\":\"$key\",\"http-host\":\"$host\",\"http-path-prefix\":\"$prfx\",\"http-tls-cert-encoded\":\"\"}"
 
 psql="psql -h $db_host -p $db_port -U $db_user -d $db_name -c"
 
@@ -34,7 +42,7 @@ rm -rf $STS_HOME
 echo "Building ..."
 
 $basedir/../scripts/build.sh \
-    --ldflags="-X main.ConfigServer=$serverconfig -X main.StatusInterval=3" \
+    --ldflags="-X main.ConfigServer=$serverconfig -X main.StatusInterval=3 -X main.StateInterval=3" \
     && mv $exe ${exe}client
 $basedir/../scripts/build.sh
 
@@ -68,9 +76,7 @@ server_conf=$(cat <<-END
         "server": {
             "http-host": "${host}",
             "http-port": ${port},
-            "http-path-prefix": "${prfx}",
-            "http-tls-cert": "${PWD}/${basedir}/../localhost.crt",
-            "http-tls-key": "${PWD}/${basedir}/../localhost.key"
+            "http-path-prefix": "${prfx}"
         }
     }
 }
@@ -81,7 +87,7 @@ mkdir -p $STS_HOME/conf
 echo $server_conf > $STS_HOME/conf/sts.in.yaml
 
 run_server="$exe --debug --mode=in"
-run_client="${exe}client"
+run_client="${exe}client --verbose"
 
 echo "Running server ..."
 
@@ -106,7 +112,7 @@ for args in "${sim[@]}"; do
     $PWD/$basedir/makedata.py $args
 done
 
-id=$($psql "SELECT id, key FROM $db_table_clients WHERE key='$key' LIMIT 1" | egrep "\|\s+$key")
+id=$($psql "SELECT id, upload_key FROM $db_table_clients WHERE upload_key='$key' LIMIT 1" | egrep "\|\s+$key")
 id=$(echo $id | cut -d "|" -f1)
 id=${id//$'\n'/}
 id=${id//$' '/}
@@ -132,7 +138,7 @@ source_conf=$(cat <<-END
         "key": "${key}:${id}",
         "http-host": "${host}:${port}",
         "http-path-prefix": "${prfx}",
-        "http-tls-cert-encoded": "${cert}"
+        "http-tls-cert-encoded": ""
     },
     "tags": [
         {

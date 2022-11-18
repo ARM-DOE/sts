@@ -60,8 +60,8 @@ func Error(params ...interface{}) {
 	std.Error(params...)
 }
 
-// Recent gets recent messages (info and error)
-func Recent() []string {
+// Recent gets N most recent messages (info and error) - max 1000
+func Recent(n int) []string {
 	check()
-	return std.Recent()
+	return std.Recent(n)
 }

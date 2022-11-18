@@ -341,7 +341,12 @@ func (log *Logger) Error(params ...interface{}) {
 }
 
 // Recent returns recent messages (at least, it's supposed to)
-func (log *Logger) Recent() (msgs []string) {
-	msgs = append(msgs, log.recent...)
+func (log *Logger) Recent(n int) (msgs []string) {
+	total := len(log.recent)
+	offset := total - n
+	if offset < 0 || n <= 0 {
+		offset = 0
+	}
+	msgs = append(msgs, log.recent...)[offset:]
 	return
 }

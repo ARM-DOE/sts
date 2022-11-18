@@ -54,20 +54,21 @@ func main() {
 }
 
 type app struct {
-	debug       bool
-	loop        bool
-	mode        string
-	root        string
-	confPath    string
-	conf        *sts.Conf
-	clients     []*clientApp
-	clientsMux  sync.RWMutex
-	serverStop  chan<- bool
-	serverDone  <-chan bool
-	clientStop  map[chan<- bool]<-chan bool
-	iServerStop chan<- bool
-	iServerDone <-chan bool
-	iPort       int
+	debug        bool
+	loop         bool
+	mode         string
+	root         string
+	confPath     string
+	conf         *sts.Conf
+	clients      []*clientApp
+	isRunning    bool
+	isRunningMux sync.RWMutex
+	serverStop   chan<- bool
+	serverDone   <-chan bool
+	clientStop   map[chan<- bool]<-chan bool
+	iServerStop  chan<- bool
+	iServerDone  <-chan bool
+	iPort        int
 }
 
 func newApp() *app {
@@ -316,6 +317,8 @@ func (a *app) startClients() bool {
 		}
 		panic("Missing required CLIENT (aka SENDER) configuration")
 	}
+	a.isRunningMux.Lock()
+	defer a.isRunningMux.Unlock()
 	var err error
 	dirs := a.conf.Client.Dirs
 	log.Init(dirs.LogMsg, a.debug, nil, nil)
@@ -344,23 +347,27 @@ func (a *app) startClients() bool {
 		a.clientStop[stop] = done
 		go c.broker.Start(stop, done)
 	}
+	a.isRunning = true
 	return true
 }
 
-func (a *app) stopClients(stopFull bool) {
+func (a *app) stopClients(stopGraceful bool) {
+	a.isRunningMux.Lock()
+	a.isRunning = false
+	defer a.isRunningMux.Unlock()
 	if len(a.clients) == 0 {
 		return
 	}
 	var wg sync.WaitGroup
 	wg.Add(len(a.clientStop))
 	for stop, done := range a.clientStop {
-		go func(stop chan<- bool, full bool, done <-chan bool, wg *sync.WaitGroup) {
+		go func(stop chan<- bool, graceful bool, done <-chan bool, wg *sync.WaitGroup) {
 			defer wg.Done()
 			log.Debug("Stopping client...")
-			stop <- full
+			stop <- graceful
 			log.Debug("Waiting for client...")
 			<-done
-		}(stop, stopFull, done, &wg)
+		}(stop, stopGraceful, done, &wg)
 	}
 	wg.Wait()
 	a.clients = nil
