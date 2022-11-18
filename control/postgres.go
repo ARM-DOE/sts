@@ -28,6 +28,7 @@ CREATE TABLE __ (
 	verified_at timestamp,
 	pinged_at timestamp,
 	loaded_at timestamp,
+    state json,
 	PRIMARY KEY (id)
 );
 CREATE TABLE __ (
@@ -395,6 +396,11 @@ func (p *Postgres) GetClientStatus(
 			return
 		}
 	} else if err != nil {
+		return
+	} else if client.Key != key {
+		err = fmt.Errorf(
+			"mismatched keys (expected '%s' but got '%s')", client.Key, key,
+		)
 		return
 	}
 	if err = p.setPingedTime(uid, time.Now()); err != nil {
