@@ -44,7 +44,8 @@ echo "Building ..."
 $basedir/../scripts/build.sh \
     --ldflags="-X main.ConfigServer=$serverconfig -X main.StatusInterval=3 -X main.StateInterval=3" \
     && mv $exe ${exe}client
-$basedir/../scripts/build.sh
+$basedir/../scripts/build.sh \
+    && mv $exe ${exe}server
 
 dirs_conf=$(cat <<-END
 {
@@ -86,7 +87,7 @@ END
 mkdir -p $STS_HOME/conf
 echo $server_conf > $STS_HOME/conf/sts.in.yaml
 
-run_server="$exe --debug --mode=in"
+run_server="${exe}server --debug --mode=in"
 run_client="${exe}client --verbose"
 
 echo "Running server ..."
@@ -173,12 +174,12 @@ $psql "$add_src" > /dev/null
 
 function ctrl_c() {
     echo "Caught signal ..."
-    pkill sts stsclient
+    pkill stsserver stsclient
     exit 0
 }
 trap ctrl_c INT
 
-sleep 10
+sleep 5
 
 updated_source_conf=${source_conf/^sm/$'^xs'}
 
@@ -202,6 +203,13 @@ echo "UPDATING CONF ..."
 echo "------------------------------------------------------------------------"
 
 $psql "$update_src" > /dev/null
+
+sleep 1
+
+echo "------------------------------------------------------------------------"
+echo "Killing server (to test that subsequenet Ctrl-C still stops cleanly) ..."
+echo "------------------------------------------------------------------------"
+pkill -9 stsserver
 
 while true; do
     sleep 1

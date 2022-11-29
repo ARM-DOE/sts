@@ -84,6 +84,9 @@ type Broker struct {
 // Start runs the client
 func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 	defer log.Debug("Client done")
+	defer func() {
+		done <- true
+	}()
 	broker.throughput = &throughputMonitor{
 		logInterval: broker.Conf.StatInterval,
 	}
@@ -122,19 +125,6 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 		close(broker.chStop)
 	}()
 
-	// chRecovered := make(chan error)
-
-	// go func() {
-	// 	send, err := broker.recover()
-	// 	chRecovered <- err
-	// 	if broker.shouldStopNow() {
-	// 		return
-	// 	}
-	// 	if err == nil && len(send) > 0 {
-	// 		broker.chScanned <- send
-	// 	}
-	// }()
-
 	send, err := broker.recover()
 	if broker.shouldStopNow() {
 		return
@@ -145,14 +135,6 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 		// This shouldn't block since we have a buffer of 1 in this channel
 		broker.chScanned <- send
 	}
-
-	// // Wait for recovery to complete
-	// err := <-chRecovered
-	// if err != nil {
-	// 	broker.error("Recovery failed:", err.Error())
-	// 	stopNow <- true
-	// 	return
-	// }
 
 	start := func(s func(wg *sync.WaitGroup), wg *sync.WaitGroup, n int) {
 		wg.Add(n)
@@ -182,6 +164,9 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 	broker.info("STARTED")
 
 	wgScanned.Wait()
+	// Need to wait until this is done also before closing a channel that
+	// the retrier may write to
+	wgFailed.Wait()
 	close(broker.chScanned)
 
 	wgQueued.Wait()
@@ -202,7 +187,6 @@ func (broker *Broker) Start(stop <-chan bool, done chan<- bool) {
 	close(broker.chRetry)
 
 	wgFailed.Wait()
-	done <- true
 }
 
 func (broker *Broker) info(params ...interface{}) {
@@ -496,11 +480,11 @@ func (broker *Broker) startScan(wg *sync.WaitGroup) {
 	for {
 		log.Debug("Scanning ...")
 		found := broker.scan()
-		if broker.shouldStopNow() {
-			return
-		}
 		if len(found) > 0 {
-			broker.chScanned <- found
+			// broker.chScanned <- found
+			if !sendCh(broker.shouldStopNow, broker.chScanned, found, 0) {
+				return
+			}
 		}
 		log.Debug("Scan complete. Found:", len(found))
 		wait = time.After(broker.Conf.ScanDelay)
@@ -791,7 +775,10 @@ func (broker *Broker) startQueue(wg *sync.WaitGroup) {
 				block = true
 				continue
 			}
-			out <- next
+			// out <- next
+			if !sendCh(broker.shouldStopNow, out, next, 0) {
+				return
+			}
 		}
 	}
 }
@@ -831,7 +818,10 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 				}
 				if !ok {
 					if payload != nil && payload.GetSize() > 0 {
-						out <- payload
+						// out <- payload
+						if !sendCh(broker.shouldStopNow, out, payload, 0) {
+							return
+						}
 					}
 					return
 				}
@@ -841,7 +831,10 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 				}
 				log.Debug("Bin waited")
 				if payload != nil && payload.GetSize() > 0 {
-					out <- payload
+					// out <- payload
+					if !sendCh(broker.shouldStopNow, out, payload, 0) {
+						return
+					}
 					payload = nil
 				}
 				continue
@@ -859,7 +852,10 @@ func (broker *Broker) startBin(wg *sync.WaitGroup) {
 			current = nil
 		}
 		if payload.IsFull() {
-			out <- payload
+			// out <- payload
+			if !sendCh(broker.shouldStopNow, out, payload, 0) {
+				return
+			}
 			payload = nil
 		}
 	}
@@ -926,7 +922,56 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 		}
 		if payload != nil {
 			broker.stat(payload)
-			out <- payload
+			// out <- payload
+			if !sendCh(broker.shouldStopNow, out, payload, 0) {
+				break
+			}
+		}
+	}
+}
+
+func sendCh[T any](
+	shouldStop func() bool, ch chan T, item T, grace time.Duration,
+) bool {
+	if grace == 0 {
+		grace = time.Second * 1
+	}
+	timer := time.NewTimer(grace)
+	for {
+		select {
+		case ch <- item:
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return true
+		case <-timer.C:
+			if shouldStop() {
+				return false
+			}
+			timer.Reset(grace)
+		}
+	}
+}
+
+func recvCh[T any](
+	shouldStop func() bool, ch chan T, grace time.Duration,
+) *T {
+	if grace == 0 {
+		grace = time.Second * 1
+	}
+	timer := time.NewTimer(grace)
+	for {
+		select {
+		case item := <-ch:
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return &item
+		case <-timer.C:
+			if shouldStop() {
+				return nil
+			}
+			timer.Reset(grace)
 		}
 	}
 }
@@ -936,6 +981,9 @@ func (broker *Broker) handleSendError(payload sts.Payload, nPartsReceived int) s
 	var n int
 	var err error
 	for {
+		if broker.shouldStopNow() {
+			break
+		}
 		if nPartsReceived == 0 {
 			// If the server didn't respond with a number of parts received, we
 			// need to make that request explicitly
@@ -946,7 +994,15 @@ func (broker *Broker) handleSendError(payload sts.Payload, nPartsReceived int) s
 			if n > 0 {
 				next := payload.Split(n)
 				broker.stat(payload)
-				broker.chTransmitted <- payload
+				// broker.chTransmitted <- payload
+				if !sendCh(
+					broker.shouldStopNow,
+					broker.chTransmitted,
+					payload,
+					0,
+				) {
+					break
+				}
 				payload = next
 			}
 			break
@@ -1202,7 +1258,8 @@ func (broker *Broker) finish(file sts.Polled) {
 		})
 	default:
 		log.Debug("Trying again:", file.GetName())
-		broker.chRetry <- file
+		// broker.chRetry <- file
+		sendCh(broker.shouldStopNow, broker.chRetry, file, 0)
 	}
 }
 
@@ -1216,7 +1273,15 @@ func (broker *Broker) startRetry(wg *sync.WaitGroup) {
 	var hashed *hashFile
 	var cached sts.Cached
 	var fh sts.Readable
-	for file := range broker.chRetry {
+	var recovered []sts.Hashed
+	var filePtr *sts.Polled
+	var file sts.Polled
+	for {
+		filePtr = recvCh(broker.shouldStopNow, broker.chRetry, 0)
+		if filePtr == nil {
+			return
+		}
+		file = *filePtr
 		cached = cache.Get(file.GetName())
 		if f, err := broker.Conf.Store.Sync(cached); f != nil || err != nil {
 			// OK to ignore cases like this since changed files are picked up
@@ -1243,11 +1308,14 @@ func (broker *Broker) startRetry(wg *sync.WaitGroup) {
 		log.Debug("Recomputed hash:", file.GetName(), hashed.hash)
 		cached = cache.Get(file.GetName())
 		// Use a "recovered" file in order to keep the "prev" intact
-		broker.chScanned <- []sts.Hashed{&recoverFile{
+		recovered = []sts.Hashed{&recoverFile{
 			Cached: cached,
 			prev:   file.GetPrev(),
 			left:   []*sts.ByteRange{{Beg: 0, End: cached.GetSize()}},
 		}}
+		if !sendCh(broker.shouldStopNow, broker.chScanned, recovered, 0) {
+			return
+		}
 	}
 }
 

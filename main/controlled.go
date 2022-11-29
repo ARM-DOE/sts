@@ -431,7 +431,7 @@ func (a *app) runStateUpdater(
 			}
 			a.isRunningMux.RLock()
 			nLogMessages := 10
-			if a.isRunning {
+			if len(a.clients) > 0 {
 				nLogMessages = nLogMessages * len(a.clients)
 			}
 			state := sts.ClientState{
