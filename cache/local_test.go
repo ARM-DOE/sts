@@ -40,16 +40,12 @@ func TestJSON(t *testing.T) {
 			Hash: fileutil.StringMD5(names[i]),
 		})
 	}
-	boundary := time.Now()
-	if err = cache.Persist(boundary); err != nil {
+	if err = cache.Persist(); err != nil {
 		t.Fatal(err)
 	}
 	cache, err = NewJSON(root, rootPath, "")
 	if err != nil {
 		t.Fatal(err)
-	}
-	if !cache.Boundary().Equal(boundary) {
-		t.Error("Boundary time not correct")
 	}
 	cache.Done("bogus", nil)
 	cache.Remove("bogus")

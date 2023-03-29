@@ -191,10 +191,9 @@ func (s *Store) opener(file sts.File) (sts.Readable, error) {
 
 // Cache implements sts.FileCache
 type Cache struct {
-	boundary time.Time
-	files    map[string]*File
-	mutex    sync.RWMutex
-	dirty    bool
+	files map[string]*File
+	mutex sync.RWMutex
+	dirty bool
 }
 
 // NewCache initializes the cache
@@ -219,12 +218,6 @@ func (c *Cache) Iterate(f func(sts.Cached) bool) {
 			break
 		}
 	}
-}
-
-// Boundary returns the stored boundary time used to determine what should be
-// in the cache
-func (c *Cache) Boundary() time.Time {
-	return c.boundary
 }
 
 // Get returns the stored file with the specified key
@@ -286,8 +279,7 @@ func (c *Cache) Reset(key string) {
 }
 
 // Persist writes the in-memory cache to disk
-func (c *Cache) Persist(t time.Time) (err error) {
-	c.boundary = t
+func (c *Cache) Persist() (err error) {
 	err = c.write()
 	return
 }
