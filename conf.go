@@ -380,15 +380,12 @@ type auxTagConf struct {
 func (t *TagConf) applyAux(aux *auxTagConf) (err error) {
 	t.Priority = aux.Priority
 	t.Method = aux.Method
+	t.Order = aux.Order
 	t.LastDelay = aux.LastDelay.Duration
 	t.DeleteDelay = aux.DeleteDelay.Duration
 	if aux.Pattern != defaultTag && aux.Pattern != "" {
 		if t.Pattern, err = regexp.Compile(aux.Pattern); err != nil {
 			return
-		}
-	} else {
-		if t.Order == "" {
-			t.Order = OrderFIFO
 		}
 	}
 	switch {

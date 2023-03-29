@@ -204,6 +204,9 @@ func (c *clientApp) init() (err error) {
 		if t.Pattern != nil {
 			name = t.Pattern.String()
 		}
+		if t.Order == "" {
+			t.Order = sts.OrderFIFO
+		}
 		qtags[i] = &queue.Tag{
 			Name:      name,
 			Priority:  t.Priority,
