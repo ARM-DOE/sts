@@ -183,7 +183,6 @@ func runFromServer(jsonEncodedServerConfig string) {
 	log.Info("Cache Directory:", rootDir)
 
 	a := &app{
-		loop: true,
 		mode: modeSend,
 		root: rootDir,
 		conf: &sts.Conf{},
