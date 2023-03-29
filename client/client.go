@@ -464,7 +464,7 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 			}
 		}
 		// Make sure changes get persisted after the batch is processed
-		if err = broker.Conf.Cache.Persist(time.Time{}); err != nil {
+		if err = broker.Conf.Cache.Persist(); err != nil {
 			broker.error(err.Error())
 		}
 	}
@@ -540,17 +540,17 @@ func (broker *Broker) canDelete(file sts.File) bool {
 func (broker *Broker) scan() []sts.Hashed {
 	var err error
 	var files []sts.File
-	var scanTime time.Time
 
 	store := broker.Conf.Store
 	cache := broker.Conf.Cache
 
 	if broker.stuckSince.IsZero() {
 		broker.stuckSince = time.Now()
-	} else if time.Since(broker.stuckSince) > 24*time.Hour {
-		// Every 24 hours, check the files that have been in the cache at least
-		// that long to see if they still exist.  Remove the ones that don't
-		// and simply log the ones that do and aren't "done" yet.
+	} else if time.Since(broker.stuckSince) > broker.Conf.CacheAge {
+		// Every cache age interval, check the files that have been in the
+		// cache at least that long to see if they still exist.  Remove the
+		// ones that don't and simply log the ones that do and aren't "done"
+		// yet.
 		//
 		// This helps with pesky files like .nfs000* that come and go from the
 		// file system and need to not linger in our cache.  It also helps in
@@ -579,11 +579,10 @@ func (broker *Broker) scan() []sts.Hashed {
 	}
 
 	// Perform the scan
-	if files, scanTime, err = store.Scan(broker.includeScannedFile); err != nil {
+	if files, _, err = store.Scan(broker.includeScannedFile); err != nil {
 		broker.error(err)
 		return nil
 	}
-	age := cache.Boundary()
 
 	if broker.shouldStopNow() {
 		return nil
@@ -607,7 +606,7 @@ func (broker *Broker) scan() []sts.Hashed {
 		case cached.GetHash() == "":
 			// Add any that might have failed the hash calculation last time
 			wrapped = append(wrapped, &hashFile{File: cached})
-		case cached.IsDone() && cached.GetTime().Before(age) && broker.canDelete(cached):
+		case cached.IsDone() && broker.canDelete(cached):
 			if err = broker.Conf.Store.Remove(cached); err == nil {
 				log.Debug("Deleted aged file:", cached.GetName())
 			}
@@ -657,8 +656,7 @@ func (broker *Broker) scan() []sts.Hashed {
 			}
 		}
 	}
-	if err = cache.Persist(
-		scanTime.Add(-1 * broker.Conf.CacheAge)); err != nil {
+	if err = cache.Persist(); err != nil {
 		broker.error(err)
 		return nil
 	}
@@ -1234,7 +1232,7 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 			}
 		}
 		// Make sure changes get persisted after the batch is processed
-		if err = broker.Conf.Cache.Persist(time.Time{}); err != nil {
+		if err = broker.Conf.Cache.Persist(); err != nil {
 			broker.error(err.Error())
 		}
 	}

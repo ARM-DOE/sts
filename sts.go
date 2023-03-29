@@ -82,14 +82,13 @@ type FileSource interface {
 
 // FileCache is the interface for caching a collection of files
 type FileCache interface {
-	Boundary() time.Time
 	Iterate(func(Cached) bool)
 	Get(string) Cached
 	Add(Hashed)
 	Done(name string, whileLocked func(Cached))
 	Reset(string)
 	Remove(string)
-	Persist(boundary time.Time) error
+	Persist() error
 }
 
 // FileQueue is the interface for getting files in the proper order

@@ -50,15 +50,8 @@ func (f *cacheFile) IsDone() bool {
 	return f.Done
 }
 
-type oldJSON struct {
-	Time  int64                 `json:"time"`
-	Dir   string                `json:"dir"`
-	Files map[string]*cacheFile `json:"files"`
-}
-
 // JSON implements sts.FileCache for making a local cache of file info
 type JSON struct {
-	Time  time.Time             `json:"time"`
 	Dir   string                `json:"dir"`
 	Files map[string]*cacheFile `json:"files"`
 	mutex sync.RWMutex
@@ -78,13 +71,7 @@ func NewJSON(cacheDir, fileRoot, key string) (j *JSON, err error) {
 		path:  filepath.Join(cacheDir, name),
 	}
 	if err = fileutil.LoadJSON(j.path, j); err != nil && !os.IsNotExist(err) {
-		jOld := &oldJSON{}
-		if oldErr := fileutil.LoadJSON(j.path, jOld); oldErr != nil {
-			err = fmt.Errorf("%s, %s", err.Error(), oldErr.Error())
-			return
-		}
-		j.Time = time.Unix(jOld.Time, 0)
-		j.Files = jOld.Files
+		return
 	}
 	err = nil
 	for k, f := range j.Files {
@@ -109,12 +96,6 @@ func (j *JSON) Iterate(f func(sts.Cached) bool) {
 			break
 		}
 	}
-}
-
-// Boundary returns the time reference used to determine what should be in the
-// cache
-func (j *JSON) Boundary() time.Time {
-	return j.Time
 }
 
 // Get returns the stored file with the specified key
@@ -177,15 +158,12 @@ func (j *JSON) Remove(key string) {
 }
 
 // Persist writes the in-memory cache to disk
-func (j *JSON) Persist(boundary time.Time) (err error) {
+func (j *JSON) Persist() (err error) {
 	if !j.dirty {
 		return
 	}
 	j.mutex.Lock()
 	defer j.mutex.Unlock()
-	if !boundary.IsZero() {
-		j.Time = boundary
-	}
 	err = j.write()
 	return
 }

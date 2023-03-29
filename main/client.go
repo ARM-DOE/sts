@@ -83,7 +83,7 @@ func (c *clientApp) setDefaults() (err error) {
 		c.conf.StatInterval = time.Minute * 5
 	}
 	if c.conf.CacheAge == 0 {
-		c.conf.CacheAge = c.conf.StatInterval
+		c.conf.CacheAge = time.Hour * 24
 	}
 	if c.conf.ScanDelay == 0 {
 		c.conf.ScanDelay = time.Second * 30
