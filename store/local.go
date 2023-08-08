@@ -222,7 +222,11 @@ func (dir *Local) handleNode(path string, info os.FileInfo, err error) error {
 
 // Remove deletes the local file from disk
 func (dir *Local) Remove(file sts.File) (err error) {
-	return os.Remove(file.GetPath())
+	err = os.Remove(file.GetPath())
+	if os.IsNotExist(err) {
+		err = nil
+	}
+	return
 }
 
 // Sync checks to see if a file on disk has changed

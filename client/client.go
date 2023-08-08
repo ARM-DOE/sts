@@ -607,9 +607,12 @@ func (broker *Broker) scan() []sts.Hashed {
 			// Add any that might have failed the hash calculation last time
 			wrapped = append(wrapped, &hashFile{File: cached})
 		case cached.IsDone() && broker.canDelete(cached):
-			if err = broker.Conf.Store.Remove(cached); err == nil {
-				log.Debug("Deleted aged file:", cached.GetName())
+			err = broker.Conf.Store.Remove(cached)
+			if err != nil {
+				broker.error("Failed to delete aged file:", cached.GetName())
+				break
 			}
+			broker.info("Deleted aged file:", cached.GetName())
 			cache.Remove(cached.GetName())
 			log.Debug("Removed from cache:", cached.GetName())
 		}
@@ -1281,6 +1284,13 @@ func (broker *Broker) startRetry(wg *sync.WaitGroup) {
 		}
 		file = *filePtr
 		cached = cache.Get(file.GetName())
+		if cached == nil {
+			// Maybe redundant attempts to send the same file occurred and one
+			// of them failed while the other since succeeded and was removed
+			// from the cache?
+			broker.info("Ignoring missing failed file:", file.GetName())
+			continue
+		}
 		if f, err := broker.Conf.Store.Sync(cached); f != nil || err != nil {
 			// OK to ignore cases like this since changed files are picked up
 			// automatically and put in the send Q again
