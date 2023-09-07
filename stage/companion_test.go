@@ -46,19 +46,26 @@ func TestPartSearch(t *testing.T) {
 func TestPartAdd(t *testing.T) {
 	log.InitExternal(&mock.Logger{DebugMode: true})
 	ranges := [][]int64{
-		{40, 50},
-		{40, 55},
-		{0, 10},
-		{25, 35},
-		{10, 25},
-		{30, 45},
+		{419, 524},
+		{524, 629},
+		{629, 679},
+		{0, 104},
+		{104, 209},
+		{103, 104},
+		{0, 103},
+		{0, 43},
+		{43, 104},
+		{104, 209},
+		{205, 209},
+		{104, 205},
+		{209, 314},
 	}
 	cmp := &sts.Partial{}
 	for _, r := range ranges {
 		addCompanionPart(cmp, r[0], r[1])
 	}
-	if len(cmp.Parts) != 3 {
-		t.Fatalf("Expected 3 ranges but got: %d", len(cmp.Parts))
+	if len(cmp.Parts) != 8 {
+		t.Fatalf("Expected 8 ranges but got: %d", len(cmp.Parts))
 	}
 	for i, r := range cmp.Parts[1:] {
 		prev := cmp.Parts[i]

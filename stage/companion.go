@@ -123,30 +123,26 @@ func writeCompanion(path string, cmp *sts.Partial) error {
 func addCompanionPart(cmp *sts.Partial, beg, end int64) {
 	j := len(cmp.Parts)
 	k := j
+	p := &sts.ByteRange{Beg: beg, End: end}
 	for i := 0; i < j; i++ {
 		part := cmp.Parts[i]
 		if beg >= part.End {
 			continue
 		}
 		if end <= part.Beg {
-			if k > i {
-				// Identify where to insert new part to maintain order
-				k = i
-			}
-			continue
+			k = i
+			break
 		}
 		log.Debug(fmt.Sprintf(
 			"Remove Companion Conflict: %s => %d:%d (new) %d:%d (old)",
 			cmp.Name, beg, end, part.Beg, part.End))
-		cmp.Parts[j-1], cmp.Parts[i] = cmp.Parts[i], cmp.Parts[j-1]
-		i--
-		j--
-		k--
+		cmp.Parts[i] = p
+		return
 	}
 	cmp.Parts = cmp.Parts[:j]
 	cmp.Parts = append(cmp.Parts, nil)
 	copy(cmp.Parts[k+1:], cmp.Parts[k:])
-	cmp.Parts[k] = &sts.ByteRange{Beg: beg, End: end}
+	cmp.Parts[k] = p
 }
 
 func minInt64(a, b int64) int64 {
