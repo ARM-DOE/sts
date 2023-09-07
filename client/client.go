@@ -1061,6 +1061,7 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 		} else {
 			// Send anything from the Q that's ready, but don't block if the
 			// outgoing channel is full
+		LOOP:
 			for key, pFile := range progress {
 				if pFile.sent < pFile.size {
 					continue
@@ -1070,6 +1071,7 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 				case out <- pFile:
 					delete(progress, key)
 				case <-wait:
+					break LOOP
 				}
 			}
 			wait = nil
