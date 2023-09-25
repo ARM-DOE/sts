@@ -1,0 +1,16 @@
+IN: # Incoming configuration.
+    sources:
+      - stsout-1
+      - stsout-2
+    # keys:
+    #   - uB7Te#H>"a%5^6p[
+    dirs: # Incoming directory configuration.
+        stage : data2/stage # Directory to stage data as it comes in; appends "source" name
+        final : data2/in    # Final location for incoming files; appends "source" name
+        logs  : data2/log
+    server: # Server configuration.
+        http-host     : localhost
+        http-port     : 1992 # What port to listen on
+        # http-tls-cert : ../../sts.server.crt # Server certificate
+        # http-tls-key  : ../../sts.server.key # Server key
+        compress      : 4 # Use GZIP compression level (0-9) on response data

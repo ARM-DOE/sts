@@ -1,0 +1,40 @@
+comp:           dataflow
+package-name:   sts
+default-prefix: /apps/transfer
+
+build-script:       .assets/scripts/build-local.sh
+package-script-dir: .assets/scripts
+
+include-items:
+   - (.assets/scripts/.godev)/bin
+   - (.assets/scripts/.godev)/conf
+
+author:
+  name: Sherman Beus
+  organization: PNNL
+  email: sherman.beus@pnnl.gov
+  phone: 509-375-2662
+
+special-instructions: >
+  For first-time install, run "systemctl daemon-reload"
+  To start the daemon, run "systemctl start stsd"
+  To restart the daemon, run "systemctl restart stsd"
+
+synopsis: >
+  A self-contained client/server application for reliable file movement
+
+notification-list:
+  - N/A
+
+obsoletes: sts-transfer, sts-delivery
+
+scriptlet-installer: root
+
+#------------------------------------------------------------------------------
+# Required fields that do not need to be set for this release
+
+build-target:   ''
+privileged:     ''
+exclude-items:  []
+package-dependency: []
+file-dependency: []
