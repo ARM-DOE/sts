@@ -275,6 +275,9 @@ func getMachineID(forceCompute bool) (id string, err error) {
 	}
 	if compute {
 		id = uuid.New().String()
+		if err = os.MkdirAll(cacheDir, 0700); err != nil {
+			return
+		}
 		if err = os.WriteFile(cachePath, []byte(id), 0644); err != nil {
 			return
 		}
