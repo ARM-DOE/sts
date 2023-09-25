@@ -33,6 +33,9 @@ OUT: # Outgoing configuration
           priority     : 2
         - pattern      : ^xl/
           priority     : 0
+      rename:
+        - from: '^(?P<pfx>[a-z]{2})/(?P<rest>.+)$'
+          to: '{{.pfx}}/{{.rest}}.ext'
     - name    : stsout-2
       out-dir : data/out/stsin-2 # Have to override when running on the same host since the target is the same
       target:
