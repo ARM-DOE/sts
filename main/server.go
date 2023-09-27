@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/control"
@@ -65,12 +66,13 @@ func (a *serverApp) init() (err error) {
 		}
 	}
 	newStage := func(source string) sts.GateKeeper {
+		sourcePathReady := strings.ReplaceAll(source, string(os.PathSeparator), "--")
 		return stage.New(
 			source,
-			filepath.Join(dirs.Stage, source),
-			filepath.Join(dirs.Final, source),
+			filepath.Join(dirs.Stage, sourcePathReady),
+			filepath.Join(dirs.Final, sourcePathReady),
 			log.NewFileIO(
-				filepath.Join(dirs.LogIn, source),
+				filepath.Join(dirs.LogIn, sourcePathReady),
 				nil, nil, !a.conf.PermitLogBuf),
 			dispatcher,
 		)
@@ -79,11 +81,6 @@ func (a *serverApp) init() (err error) {
 	var stager sts.GateKeeper
 	stagers := make(map[string]sts.GateKeeper)
 
-	// It is possible for a source to include a "/" in its name. In that case,
-	// on restart, the wrong "stager" will be started and recovered. Any files
-	// recovered will be logged in a different place. It means the stager that
-	// gets properly started later when data comes in will not know about these
-	// logs and duplicates could be received.
 	nodes, err := os.ReadDir(dirs.Stage)
 	if err != nil {
 		return
