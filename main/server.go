@@ -65,8 +65,12 @@ func (a *serverApp) init() (err error) {
 			return
 		}
 	}
+
+	pathSep := string(os.PathSeparator)
+	pathSepRepl := "--"
+
 	newStage := func(source string) sts.GateKeeper {
-		sourcePathReady := strings.ReplaceAll(source, string(os.PathSeparator), "--")
+		sourcePathReady := strings.ReplaceAll(source, pathSep, pathSepRepl)
 		return stage.New(
 			source,
 			filepath.Join(dirs.Stage, sourcePathReady),
@@ -87,8 +91,9 @@ func (a *serverApp) init() (err error) {
 	}
 	for _, node := range nodes {
 		if node.IsDir() {
-			stager = newStage(node.Name())
-			stagers[node.Name()] = stager
+			name := strings.ReplaceAll(node.Name(), pathSepRepl, pathSep)
+			stager = newStage(name)
+			stagers[name] = stager
 			go stager.Recover()
 		}
 	}
