@@ -161,7 +161,7 @@ type auxSourceConf struct {
 	ScanDelay     marshal.Duration `yaml:"scan-delay" json:"scan-delay"`
 	Timeout       marshal.Duration `yaml:"timeout" json:"timeout"`
 	Compression   int              `yaml:"compress" json:"compress"`
-	StatInterval  marshal.Duration `yaml:"interval" json:"stat-interval"`
+	StatInterval  marshal.Duration `yaml:"stat-interval" json:"stat-interval"`
 	PollDelay     marshal.Duration `yaml:"poll-delay" json:"poll-delay"`
 	PollInterval  marshal.Duration `yaml:"poll-interval" json:"poll-interval"`
 	PollAttempts  int              `yaml:"poll-attempts" json:"poll-attempts"`

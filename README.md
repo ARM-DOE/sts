@@ -41,14 +41,16 @@ OUT:
   sources: # Supports multiple sources where omitted entries will inherit from previous sources hierarchically
     - name          : ...   # Name of the source (used by receiver)
       out-dir       : /...  # Override the global output directory setting
+      log-dir       : /...  # Override the global log directory setting
       threads       : 8     # Maximum number of concurrent HTTP connections
       bin-size      : 10MB  # The generally-desired size for a given HTTP request (BEFORE any compression)
       compress      : 4     # Use GZIP compression of level 0-9 (0 = no compression, 9 = best but slowest)
       min-age       : 15s   # How old a file must be before being added to the "outgoing" queue
       max-age       : 12h   # How old a file can be before getting logged as "stale" (remains in the queue)
+      cache-age     : 24h   # Interval at which to check files in the cache
       scan-delay    : 30s   # How long to wait between scans of the outgoing directory
       timeout       : 30m   # The HTTP timeout for a single request
-      stat-payload  : true  # Whether or not to log each payload's throughput stats
+      stat-payload  : false # Whether or not to log each payload's throughput stats
       stat-interval : 5m    # How often to log throughput statistics
       poll-delay    : 5s    # How long to wait after file sent before final validation
       poll-interval : 1m    # How long to wait between polling requests
@@ -64,6 +66,13 @@ OUT:
           order     : fifo    # File order (fifo (first in, first out) or none)
           delete    : true    # Whether or not to delete files after reception confirmation
           method    : http    # Transfer method ("http", "disk", or "none")
+      include-hidden : false  # Whether or not to include "hidden" files
+      include: # Regular expression pattern(s) as white list for files to send
+        - ...
+      ignore: # Regular expression pattern(s) as black list for files NOT to send
+        - ...
+      group-by : ^([^\.]*)  # How to group files for bandwidth sharing
+
 
 # INCOMING CONFIGURATION
 IN:
