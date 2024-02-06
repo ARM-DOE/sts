@@ -47,6 +47,11 @@ func (c *Client) GetClientStatus(
 		return
 	}
 	status64, err := strconv.ParseUint(string(statusBytes), 10, 64)
+	if err != nil {
+		err = fmt.Errorf(
+			"failed to parse status: %s (server response: %s)", err, string(statusBytes),
+		)
+	}
 	status = sts.ClientStatus(status64)
 	return
 }
@@ -77,6 +82,11 @@ func (c *Client) GetClientConf(clientID string) (conf *sts.ClientConf, err error
 	}
 	conf = &sts.ClientConf{}
 	err = json.Unmarshal(confBytes, conf)
+	if err != nil {
+		err = fmt.Errorf(
+			"failed to parse client conf: %s (server response: %s)", err, string(confBytes),
+		)
+	}
 	return
 }
 
@@ -138,8 +148,7 @@ func (s *Server) routeClientManagement(w http.ResponseWriter, r *http.Request) {
 				clientID, clientName, clientOS,
 			)
 			if err != nil {
-				log.Error(err.Error())
-				w.WriteHeader(http.StatusInternalServerError)
+				handleError(w, http.StatusInternalServerError, err)
 				return
 			}
 			log.Debug("Client Status:", clientID, clientName, clientOS, ":", status)
@@ -154,14 +163,13 @@ func (s *Server) routeClientManagement(w http.ResponseWriter, r *http.Request) {
 		case "conf":
 			config, err := s.ClientManager.GetClientConf(clientID)
 			if err != nil {
-				log.Error(err.Error())
-				w.WriteHeader(http.StatusInternalServerError)
+				handleError(w, http.StatusInternalServerError, err)
 				return
 			}
 			var respJSON []byte
 			respJSON, err = json.Marshal(config)
 			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
+				handleError(w, http.StatusInternalServerError, err)
 				return
 			}
 			log.Debug("Client Conf:", string(respJSON))
@@ -190,8 +198,8 @@ func (s *Server) routeClientManagement(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if err = s.ClientManager.SetClientState(clientID, state); err != nil {
-				log.Error(err.Error())
-				w.WriteHeader(http.StatusInternalServerError)
+				handleError(w, http.StatusInternalServerError, err)
+				return
 			}
 			w.WriteHeader(http.StatusOK)
 			return

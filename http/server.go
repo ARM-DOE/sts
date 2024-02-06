@@ -63,7 +63,10 @@ func (s *Server) stopGateKeepers() {
 	wg := sync.WaitGroup{}
 	wg.Add(len(s.GateKeepers))
 	for _, gk := range s.GateKeepers {
-		gk.Stop(&wg)
+		go func(gk sts.GateKeeper) {
+			defer wg.Done()
+			gk.Stop()
+		}(gk)
 	}
 	wg.Wait()
 }
@@ -77,7 +80,8 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 	http.Handle(s.PathPrefix+"/validate", s.handleValidate(http.HandlerFunc(s.routeValidate)))
 	http.Handle(s.PathPrefix+"/partials", s.handleValidate(http.HandlerFunc(s.routePartials)))
 	http.Handle(s.PathPrefix+"/static/", s.handleValidate(http.HandlerFunc(s.routeFile)))
-	http.Handle(s.PathPrefix+"/clean", http.HandlerFunc(s.routeClean))
+	http.Handle(s.PathPrefix+"/clean", s.handleValidate(http.HandlerFunc(s.routeClean)))
+	http.Handle(s.PathPrefix+"/restart", s.handleValidate(http.HandlerFunc(s.routeRestart)))
 
 	go func(done chan<- bool, host string, port int, tlsConf *tls.Config) {
 		addr := fmt.Sprintf("%s:%d", host, port)
@@ -104,9 +108,9 @@ func (s *Server) handleValidate(next http.Handler) http.Handler {
 			return
 		}
 		source := getSourceName(r)
-		key := r.Header.Get(HeaderKey)
+		key := getKey(r)
 		if !s.IsValid(source, key) {
-			log.Error(fmt.Errorf("unknown source:key => %s:%s", source, key))
+			log.Error(fmt.Errorf("unknown source + key => %s + %s", source, key))
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
@@ -341,16 +345,54 @@ func (s *Server) routeDataRecovery(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) routeClean(w http.ResponseWriter, r *http.Request) {
 	wait := r.URL.Query().Has("block")
-	minAge, err := strconv.Atoi(r.URL.Query().Get("minage"))
+	minAgeSecs, err := strconv.Atoi(r.URL.Query().Get("minage"))
 	if err != nil {
-		minAge = 0
+		minAgeSecs = 0
 	}
-	for _, gateKeeper := range s.GateKeepers {
+	minAge := time.Duration(minAgeSecs) * time.Second
+	gateKeeper := s.getGateKeeper(r)
+	if gateKeeper == nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	wg := sync.WaitGroup{}
+	go func() {
 		if wait {
-			gateKeeper.CleanNow(time.Duration(minAge) * time.Second)
-		} else {
-			go gateKeeper.CleanNow(time.Duration(minAge) * time.Second)
+			wg.Add(1)
+			defer wg.Done()
 		}
+		name := getSourceName(r)
+		log.Info(name, " -> Cleaning ...")
+		defer log.Info(name, " -> Cleaned")
+		gateKeeper.CleanNow(minAge)
+	}()
+	if wait {
+		wg.Wait()
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) routeRestart(w http.ResponseWriter, r *http.Request) {
+	wait := r.URL.Query().Has("block")
+	gateKeeper := s.getGateKeeper(r)
+	if gateKeeper == nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	wg := sync.WaitGroup{}
+	go func() {
+		if wait {
+			wg.Add(1)
+			defer wg.Done()
+		}
+		name := getSourceName(r)
+		log.Info(name, " -> Restarting ...")
+		defer log.Info(name, " -> Restarted")
+		gateKeeper.Stop()
+		gateKeeper.Recover()
+	}()
+	if wait {
+		wg.Wait()
 	}
 	w.WriteHeader(http.StatusOK)
 }
@@ -373,5 +415,17 @@ func (s *Server) respond(w http.ResponseWriter, status int, data []byte) error {
 }
 
 func getSourceName(r *http.Request) string {
-	return r.Header.Get(HeaderSourceName)
+	sourceName := r.Header.Get(HeaderSourceName)
+	if sourceName == "" {
+		sourceName = r.URL.Query().Get("source")
+	}
+	return sourceName
+}
+
+func getKey(r *http.Request) string {
+	key := r.Header.Get(HeaderKey)
+	if key == "" {
+		key = r.URL.Query().Get("key")
+	}
+	return key
 }

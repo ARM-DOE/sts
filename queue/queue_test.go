@@ -19,8 +19,12 @@ var (
 	tagger  sts.Translate
 )
 
-func q(tags []*Tag) *Tagged {
-	groupBy = regexp.MustCompile(`^([^\.]*)`)
+func q(tags []*Tag, groupByOverride *regexp.Regexp) *Tagged {
+	if groupByOverride == nil {
+		groupBy = regexp.MustCompile(`^([^\.]*)`)
+	} else {
+		groupBy = groupByOverride
+	}
 	grouper = func(name string) (group string) {
 		m := groupBy.FindStringSubmatch(name)
 		if len(m) == 0 {
@@ -49,7 +53,7 @@ func TestRecover(t *testing.T) {
 			Order: sts.OrderFIFO,
 		},
 	}
-	q := q(tags)
+	q := q(tags, nil)
 	now := time.Now()
 	files := []sts.Hashed{
 		&mock.RecoveredFile{
@@ -114,6 +118,65 @@ func TestRecover(t *testing.T) {
 	}
 }
 
+func TestPrev(t *testing.T) {
+	log.InitExternal(&mock.Logger{DebugMode: true})
+	tags := []*Tag{
+		{
+			Name:     "",
+			Order:    sts.OrderFIFO,
+			Priority: 0,
+		},
+	}
+	n := 10000
+	g := "^/?([^./]*)"
+	queue := q(tags, regexp.MustCompile(g))
+	var files []sts.Hashed
+	for i := n; i > 0; i-- {
+		mt := time.Now().Add(time.Hour * time.Duration(-i))
+		yyyy := mt.Format("2006")
+		mm := mt.Format("01")
+		dd := mt.Format("02")
+		hh := mt.Format("15")
+		name := fmt.Sprintf(
+			"%s/%s%s/%s%s%s/Stare_235_%s%s%s_%s_%d.hpl",
+			yyyy,
+			yyyy, mm,
+			yyyy, mm, dd,
+			yyyy, mm, dd, hh, i,
+		)
+		files = append(files, &mock.File{
+			Path: name,
+			Name: name,
+			Size: int64(i * 100),
+			Time: mt,
+		})
+	}
+	queue.Push(files)
+	var done []*sendable
+	for {
+		f := queue.Pop()
+		if f == nil {
+			t.Fatal("Popped file should not be nil", len(done))
+		}
+		if f.GetPrev() == f.GetName() {
+			t.Fatal("A file should not depend on itself")
+		}
+		done = append(done, f.(*sendable))
+		if len(done) == len(files) {
+			break
+		}
+	}
+	done = nil
+	queue.Push([]sts.Hashed{files[len(files)-1]})
+	f := queue.Pop()
+	if f == nil {
+		t.Fatal("Popped file should not be nil", len(done))
+	}
+	if f.GetPrev() == f.GetName() {
+		t.Fatal("A file should not depend on itself")
+	}
+}
+
 func TestGeneral(t *testing.T) {
 	log.InitExternal(&mock.Logger{DebugMode: true})
 	tags := []*Tag{
@@ -139,7 +202,7 @@ func TestGeneral(t *testing.T) {
 		},
 	}
 	n := 10000
-	queue := q(tags)
+	queue := q(tags, nil)
 	var files []sts.Hashed
 	for i := n; i > 0; i-- {
 		g := 1

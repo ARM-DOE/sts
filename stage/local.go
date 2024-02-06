@@ -145,7 +145,7 @@ func (s *Stage) delWriteLock(key string) {
 	defer s.writeLock.Unlock()
 	delete(s.writeLocks, key)
 	s.lastIn = time.Now()
-	log.Debug("Write Locks:", s.name, len(s.writeLocks))
+	s.logDebug("Write Locks:", len(s.writeLocks))
 }
 
 func (s *Stage) hasWriteLock(key string) bool {
@@ -217,17 +217,17 @@ func (s *Stage) initStageFile(path string, size int64) error {
 		// In case some catastrophe causes the sender to keep sending the same
 		// file, at least we won't be clobbering legitimate companion files.
 		if cached == nil || cached.state == stateFailed {
-			log.Debug("Removing Stale Companion:", path+compExt)
+			s.logDebug("Removing Stale Companion:", path+compExt)
 			os.Remove(path + compExt)
 		}
 	}
-	log.Debug("Making Directory:", filepath.Dir(path))
+	s.logDebug("Making Directory:", filepath.Dir(path))
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	if err != nil {
 		return err
 	}
 	fh, err := os.Create(path + partExt)
-	log.Debug(fmt.Sprintf("Creating Empty File: %s (%d B)", path, size))
+	s.logDebug(fmt.Sprintf("Creating Empty File: %s (%d B)", path, size))
 	if err != nil {
 		return fmt.Errorf(
 			"failed to create empty file at %s%s with size %d: %s",
@@ -248,7 +248,7 @@ func (s *Stage) Prepare(parts []sts.Binned) {
 		err := s.initStageFile(path, part.GetFileSize())
 		lock.Unlock()
 		if err != nil {
-			log.Error(err.Error())
+			s.logError(err.Error())
 		}
 	}
 }
@@ -288,13 +288,18 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 		return
 	}
 
-	addCompanionPart(cmp, part.Beg, part.End)
+	if conflict := addCompanionPart(cmp, part.Beg, part.End); conflict != nil {
+		s.logInfo(fmt.Sprintf(
+			"Removed companion conflict: %s => %d:%d (new) %d:%d (old)",
+			cmp.Name, part.Beg, part.End, conflict.Beg, conflict.End))
+	}
+
 	if err = writeCompanion(path, cmp); err != nil {
 		err = fmt.Errorf("failed to write updated companion: %s", err.Error())
 		return
 	}
 
-	log.Debug("Part received:", file.Source, file.Name, part.Beg, part.End)
+	s.logDebug("Part received:", file.Source, file.Name, part.Beg, part.End)
 
 	done := isCompanionComplete(cmp)
 	if done {
@@ -303,7 +308,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 		if existing != nil &&
 			existing.state != stateFailed &&
 			existing.hash == final.hash {
-			log.Info("Ignoring duplicate (receive):", s.name, final.name)
+			s.logInfo("Ignoring duplicate (receive):", final.name)
 			os.Remove(path + partExt)
 			if existing.state >= stateFinalized {
 				os.Remove(path + compExt)
@@ -318,7 +323,7 @@ func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
 			return
 		}
 		s.toCache(final, stateReceived)
-		log.Debug("File received:", cmp.Source, cmp.Name)
+		s.logDebug("File received:", cmp.Source, cmp.Name)
 		go s.processQueue(final)
 	}
 	return
@@ -337,7 +342,7 @@ func (s *Stage) Received(parts []sts.Binned) (n int) {
 }
 
 func (s *Stage) partReceived(part sts.Binned) bool {
-	log.Debug("Checking for received part:", s.name, part.GetName())
+	s.logDebug("Checking for received part:", part.GetName())
 	when := part.GetFileTime()
 	monthAgo := time.Now().Add(-1 * time.Hour * 24 * 30)
 	if when.Before(monthAgo) {
@@ -361,14 +366,14 @@ func (s *Stage) partReceived(part sts.Binned) bool {
 	if existing == nil {
 		if cmp, _ := readLocalCompanion(path, final.name); cmp != nil {
 			if companionPartExists(cmp, beg, end) {
-				log.Info("Part already received:", s.name, final.name, beg, end)
+				s.logInfo("Part already received:", final.name, beg, end)
 				return true
 			}
 		} else {
 			s.delWriteLock(path)
 		}
 	} else if existing.state != stateFailed && existing.hash == final.hash {
-		log.Info("File already received:", s.name, final.name)
+		s.logInfo("File already received:", final.name)
 		if existing.state >= stateFinalized {
 			s.delWriteLock(path)
 		}
@@ -386,35 +391,35 @@ func (s *Stage) partReceived(part sts.Binned) bool {
 // -> sts.ConfirmWaiting: MD5 validation was successful but waiting on predecessor
 // -> sts.ConfirmNone: No knowledge of file
 func (s *Stage) GetFileStatus(relPath string, sent time.Time) int {
-	log.Debug("Stage polled:", sent, relPath)
+	s.logDebug("Stage polled:", sent, relPath)
 	s.buildCache(sent)
 	path := filepath.Join(s.rootDir, relPath)
 	f := s.fromCache(path)
 	if f != nil {
 		switch f.state {
 		case stateReceived:
-			log.Debug("Stage:", s.name, relPath, "(received)")
+			s.logDebug("Stage:", relPath, "(received)")
 			return sts.ConfirmNone
 		case stateFailed:
-			log.Debug("Stage:", s.name, relPath, "(failed)")
+			s.logDebug("Stage:", relPath, "(failed)")
 			return sts.ConfirmFailed
 		case stateValidated:
 			file := s.getWaiting(path)
 			if file != nil {
-				log.Debug("Stage:", s.name, relPath, "(waiting)")
+				s.logDebug("Stage:", relPath, "(waiting)")
 				return sts.ConfirmWaiting
 			}
-			log.Debug("Stage:", s.name, relPath, "(done)")
+			s.logDebug("Stage:", relPath, "(done)")
 			return sts.ConfirmPassed
 		case stateLogged:
-			log.Debug("Stage:", s.name, relPath, "(logged)")
+			s.logDebug("Stage:", relPath, "(logged)")
 			return sts.ConfirmPassed
 		case stateFinalized:
-			log.Debug("Stage:", s.name, relPath, "(done)")
+			s.logDebug("Stage:", relPath, "(done)")
 			return sts.ConfirmPassed
 		}
 	}
-	log.Debug("Stage:", s.name, relPath, "(not found)")
+	s.logDebug("Stage:", relPath, "(not found)")
 	return sts.ConfirmNone
 }
 
@@ -437,8 +442,8 @@ func (s *Stage) setCanReceive(value bool) {
 func (s *Stage) Recover() {
 	s.setCanReceive(false)
 	defer s.setCanReceive(true)
-	log.Info("Beginning stage recovery:", s.name)
-	defer log.Info("Stage recovery complete:", s.name)
+	s.logInfo("Beginning stage recovery")
+	defer s.logInfo("Stage recovery complete")
 	defer s.scheduleClean(time.Hour)
 	var validate []*sts.Partial
 	var finalize []*sts.Partial
@@ -453,7 +458,7 @@ func (s *Stage) Recover() {
 			}
 			cmp, err := readLocalCompanion(path, s.pathToName(path, compExt))
 			if err != nil {
-				log.Error("Failed to read companion:", path, err.Error())
+				s.logError("Failed to read companion:", path, err.Error())
 				return nil
 			}
 			if info.ModTime().Before(oldest) {
@@ -462,50 +467,50 @@ func (s *Stage) Recover() {
 			base := strings.TrimSuffix(path, compExt)
 			if _, err = os.Stat(base + waitExt); !os.IsNotExist(err) {
 				// .wait
-				log.Debug("Found ready to finalize:", cmp.Name)
+				s.logDebug("Found ready to finalize:", cmp.Name)
 				finalize = append(finalize, cmp)
 			} else if _, err = os.Stat(base + fullExt); !os.IsNotExist(err) {
 				// .full
-				log.Debug("Found ready to validate:", cmp.Name)
+				s.logDebug("Found ready to validate:", cmp.Name)
 				validate = append(validate, cmp)
 			} else if _, err = os.Stat(base + partExt); !os.IsNotExist(err) {
 				// .part
 				if isCompanionComplete(cmp) {
 					if err = os.Rename(base+partExt, base+fullExt); err != nil {
-						log.Error("Failed to swap in \"full\" extension:",
+						s.logError("Failed to swap in \"full\" extension:",
 							err.Error())
 						return nil
 					}
-					log.Debug("Found already done:", cmp.Name)
+					s.logDebug("Found already done:", cmp.Name)
 					validate = append(validate, cmp)
 				}
 			} else if _, err = os.Stat(base); os.IsNotExist(err) {
 				// Not found
 				if err = os.Remove(path); err != nil {
-					log.Error("Failed to remove orphaned companion:",
+					s.logError("Failed to remove orphaned companion:",
 						path, err.Error())
 					return nil
 				}
-				log.Info("Removed orphaned companion:", path)
+				s.logInfo("Removed orphaned companion:", path)
 			} else if isCompanionComplete(cmp) {
 				// No extension (backward compatibility)
 				if err = os.Rename(base, base+fullExt); err != nil {
-					log.Error("Failed to add \"full\" extension:",
+					s.logError("Failed to add \"full\" extension:",
 						err.Error())
 					return nil
 				}
-				log.Debug("Found ready to validate:", cmp.Name)
+				s.logDebug("Found ready to validate:", cmp.Name)
 				validate = append(validate, cmp)
 			}
 			return nil
 		})
 	if err != nil {
-		log.Error(err.Error())
+		s.logError(err.Error())
 	}
 	// Build the cache from the incoming log starting at the time of the oldest
 	// companion file found (or "now" if none exists) minus the cache age. Even
 	// if no files are found on the stage, we still want to build the cache.
-	log.Debug("Stage recovery cache build:", oldest.Add(-1*cacheAgeLogged))
+	s.logDebug("Stage recovery cache build:", oldest.Add(-1*cacheAgeLogged))
 	s.buildCache(oldest.Add(-1 * cacheAgeLogged))
 	if len(validate) == 0 && len(finalize) == 0 {
 		return
@@ -571,7 +576,7 @@ func (s *Stage) scheduleClean(minAge time.Duration) {
 }
 
 func (s *Stage) cleanStrays(minAge time.Duration) {
-	log.Debug("Looking for strays ...")
+	s.logDebug("Looking for strays ...")
 	err := filepath.Walk(s.rootDir,
 		func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -591,10 +596,10 @@ func (s *Stage) cleanStrays(minAge time.Duration) {
 			var cmp *sts.Partial
 			if _, err := os.Stat(cmpPath); err == nil {
 				if cmp, err = readLocalCompanion(path, relPath); err != nil {
-					log.Error(err.Error())
+					s.logError(err.Error())
 				}
 			}
-			log.Debug("Checking for stray partial:", relPath)
+			s.logDebug("Checking for stray partial:", relPath)
 			delete := false
 			deleteCmp := false
 			file := s.fromCache(strings.TrimSuffix(path, partExt))
@@ -604,7 +609,7 @@ func (s *Stage) cleanStrays(minAge time.Duration) {
 			} else {
 				end := time.Now()
 				beg := info.ModTime().Add(time.Duration(age.Minutes()) * time.Hour * -1)
-				log.Info("Checking log for stray partial:", relPath, "--", beg.Format("20060102"))
+				s.logInfo("Checking log for stray partial:", relPath, "--", beg.Format("20060102"))
 				hash := ""
 				if cmp != nil {
 					hash = cmp.Hash
@@ -616,26 +621,26 @@ func (s *Stage) cleanStrays(minAge time.Duration) {
 			}
 			if delete {
 				if err = os.Remove(path); err != nil {
-					log.Error("Failed to remove stray partial:", path, err.Error())
+					s.logError("Failed to remove stray partial:", path, err.Error())
 					return nil
 				}
-				log.Info("Deleted stray partial:", relPath)
+				s.logInfo("Deleted stray partial:", relPath)
 				if deleteCmp {
 					if err = os.Remove(cmpPath); err != nil {
-						log.Error("Failed to remove stray partial companion:", cmpPath, err.Error())
+						s.logError("Failed to remove stray partial companion:", cmpPath, err.Error())
 					}
-					log.Info("Deleted stray partial companion:", cmpPath)
+					s.logInfo("Deleted stray partial companion:", cmpPath)
 				}
 			}
 			return nil
 		})
 	if err != nil {
-		log.Error(err.Error())
+		s.logError(err.Error())
 	}
 }
 
 func (s *Stage) cleanWaiting(minAge time.Duration) {
-	log.Debug("Looking for wait loops ...")
+	s.logDebug("Looking for wait loops ...")
 	var waiting []*finalFile
 	s.cacheLock.RLock()
 	for _, cacheFile := range s.cache {
@@ -652,10 +657,11 @@ func (s *Stage) cleanWaiting(minAge time.Duration) {
 	})
 	for _, cacheFile := range waiting {
 		prevPath := filepath.Join(s.rootDir, cacheFile.prev)
-		log.Debug("Checking for wait loop:", cacheFile.prev, "<-", cacheFile.name)
+		s.logDebug("Checking for wait loop:", cacheFile.prev, "<-", cacheFile.name)
 		if s.isWaiting(prevPath) && s.isWaitLoop(prevPath) {
 			s.cacheLock.Lock()
 			if f, ok := s.cache[cacheFile.path]; ok && f.state == cacheFile.state {
+				s.logInfo("Removing wait loop:", cacheFile.name, "<-", cacheFile.prev)
 				f.prev = ""
 				s.cache[f.path] = f
 				cacheFile = f
@@ -671,10 +677,10 @@ func (s *Stage) cleanWaiting(minAge time.Duration) {
 }
 
 // Stop waits for the number of files in the pipe to be zero and then signals
-func (s *Stage) Stop(wg *sync.WaitGroup) {
-	defer wg.Done()
-	defer log.Debug("Stage shut down:", s.name)
-	log.Debug("Stage shutting down ...", s.name)
+func (s *Stage) Stop() {
+	defer s.logDebug("Stage shut down:")
+	s.logDebug("Stage shutting down ...")
+	s.setCanReceive(false)
 	for {
 		if s.inPipe() > 0 {
 			time.Sleep(100 * time.Millisecond)
@@ -703,8 +709,8 @@ func (s *Stage) processQueue(file *finalFile) {
 			go s.processHandler()
 		}
 	}
-	log.Debug("Pushing onto validate chan:", file.name)
-	defer log.Debug("Pushed onto validate chan:", file.name)
+	s.logDebug("Pushing onto validate chan:", file.name)
+	defer s.logDebug("Pushed onto validate chan:", file.name)
 	s.validateCh <- file
 }
 
@@ -715,7 +721,7 @@ func (s *Stage) processHandler() {
 }
 
 func (s *Stage) process(file *finalFile) {
-	log.Debug("Validating:", file.name)
+	s.logDebug("Validating:", file.name)
 
 	fileLock := s.getWriteLock(file.path)
 	fileLock.Lock()
@@ -723,7 +729,7 @@ func (s *Stage) process(file *finalFile) {
 
 	existing := s.fromCache(file.path)
 	if existing == nil || existing.state != stateReceived {
-		log.Debug("Ignoring invalid (process):", s.name, file.name)
+		s.logDebug("Ignoring invalid (process):", file.name)
 		return
 	}
 
@@ -732,7 +738,7 @@ func (s *Stage) process(file *finalFile) {
 	if err != nil {
 		os.Remove(file.path + compExt)
 		os.Remove(file.path + fullExt)
-		log.Error(fmt.Sprintf(
+		s.logError(fmt.Sprintf(
 			"Failed to calculate MD5 of %s: %s",
 			file.name, err.Error()))
 		s.toCache(file, stateFailed)
@@ -742,14 +748,14 @@ func (s *Stage) process(file *finalFile) {
 	valid := file.hash == hash
 
 	if !valid {
-		log.Error(fmt.Sprintf("Failed validation: %s (%s => %s)",
+		s.logError(fmt.Sprintf("Failed validation: %s (%s => %s)",
 			file.path, file.hash, hash))
 		s.toCache(file, stateFailed)
 		return
 	}
 
 	if err = os.Rename(file.path+fullExt, file.path+waitExt); err != nil {
-		log.Error(fmt.Sprintf(
+		s.logError(fmt.Sprintf(
 			"Failed to swap in \"wait\" extension: %s",
 			err.Error()))
 		s.toCache(file, stateFailed)
@@ -758,7 +764,7 @@ func (s *Stage) process(file *finalFile) {
 
 	s.toCache(file, stateValidated)
 
-	log.Debug("Validated:", file.name)
+	s.logDebug("Validated:", file.name)
 	go s.finalizeQueue(file)
 }
 
@@ -771,12 +777,12 @@ func (s *Stage) finalizeQueue(file *finalFile) {
 }
 
 func (s *Stage) finalizeHandler() {
-	defer log.Debug("Finalize channel done:", s.name)
+	defer s.logDebug("Finalize channel done:")
 	for f := range s.finalizeCh {
-		log.Debug("Finalize chain:", s.name, f.name)
+		s.logDebug("Finalize chain:", f.name)
 		if cached := s.fromCache(f.path); cached == nil || cached.state != stateValidated {
 			// Skip redundancies or mistakes in the pipe
-			log.Debug("Already finalized or not ready:", s.name, f.name)
+			s.logDebug("Already finalized or not ready:", f.name)
 			continue
 		}
 		if s.isFileReady(f) {
@@ -795,7 +801,7 @@ func (s *Stage) isFileReady(file *finalFile) bool {
 	switch {
 	case prev == nil:
 		if s.hasWriteLock(prevPath) {
-			log.Debug("Previous file in progress:", file.name, "<-", file.prev)
+			s.logDebug("Previous file in progress:", file.name, "<-", file.prev)
 			break
 		}
 		file.prevScan = time.Now()
@@ -820,27 +826,28 @@ func (s *Stage) isFileReady(file *finalFile) bool {
 		took := fmt.Sprintf("(took %s)", time.Since(t))
 		tfmt := "20060102"
 		if found {
-			log.Info("Found previous in log:",
+			s.logInfo(
+				"Found previous in log:",
 				file.name, "<-", file.prev, "--", beg.Format(tfmt), "-", end.Format(tfmt), took)
 			return true
 		}
-		log.Info("Previous file not found in log:",
+		s.logInfo("Previous file not found in log:",
 			file.name, "<-", file.prev, "--", beg.Format(tfmt), "-", end.Format(tfmt), took)
 		waitTime = time.Second * 10
 
 	case prev.state == stateReceived:
-		log.Debug("Waiting for previous file:",
-			file.name, "<-", file.prev)
+		s.logDebug("Waiting for previous file:",
+			s.name, file.name, "<-", file.prev)
 
 	case prev.state == stateFailed:
-		log.Debug("Previous file failed:",
-			file.name, "<-", file.prev)
+		s.logDebug("Previous file failed:",
+			s.name, file.name, "<-", file.prev)
 
 	case prev.state == stateValidated:
 		if s.isWaiting(prevPath) {
-			log.Debug("Previous file waiting:", file.name, "<-", file.prev)
+			s.logDebug("Previous file waiting:", file.name, "<-", file.prev)
 		} else {
-			log.Debug("Previous file validated:", file.name, "<-", file.prev)
+			s.logDebug("Previous file validated:", file.name, "<-", file.prev)
 		}
 
 	default:
@@ -859,7 +866,7 @@ func (s *Stage) finalize(file *finalFile) {
 
 	existing := s.fromCache(file.path)
 	if existing == nil || existing.state != stateValidated {
-		log.Debug("Ignoring invalid (final):", s.name, file.name, existing.state)
+		s.logDebug("Ignoring invalid (final):", file.name, existing.state)
 		return
 	}
 
@@ -868,24 +875,24 @@ func (s *Stage) finalize(file *finalFile) {
 		file.wait = nil
 	}
 
-	log.Debug("Finalizing", s.name, file.name)
+	s.logDebug("Finalizing", file.name)
 	targetPath, err := s.putFileAway(file)
 	if err != nil {
-		log.Error(err)
+		s.logError(err)
 		return
 	}
-	log.Debug("Finalized", s.name, file.name)
+	s.logDebug("Finalized", file.name)
 
 	if s.dispatcher != nil {
-		log.Debug("Dispatching", targetPath)
+		s.logDebug("Dispatching", targetPath)
 		if err := s.dispatcher.Send(targetPath); err != nil {
-			log.Error(err)
+			s.logError(err)
 		}
 	}
 
 	waiting := s.fromWait(file.path)
 	for _, waitFile := range waiting {
-		log.Debug("Stage found waiting:", waitFile.name, "<-", file.name)
+		s.logDebug("Stage found waiting:", waitFile.name, "<-", file.name)
 		go s.finalizeQueue(waitFile)
 	}
 }
@@ -915,7 +922,7 @@ func (s *Stage) putFileAway(file *finalFile) (targetPath string, err error) {
 			// it again later.
 			file.nErr++
 			time.AfterFunc(time.Second*time.Duration(file.nErr), func() {
-				log.Debug("Attempting finalize again after failure:", file.name)
+				s.logDebug("Attempting finalize again after failure:", file.name)
 				go s.finalizeQueue(file)
 			})
 		}
@@ -952,8 +959,9 @@ func (s *Stage) isWaitLoop(prevPath string) bool {
 				continue
 			}
 			for _, f := range ff {
+				s.logInfo("Checking for wait loop:", f.path, "<-", p)
 				if f.path == prevPath {
-					log.Debug("Wait loop detected:", prevPath, "<-", p)
+					s.logInfo("Wait loop detected:", prevPath, "<-", p)
 					return true
 				}
 				next = append(next, f.path)
@@ -989,7 +997,7 @@ func (s *Stage) fromWait(prevPath string) []*finalFile {
 	files, ok := s.wait[prevPath]
 	if ok {
 		delete(s.wait, prevPath)
-		log.Debug("Waiting:", s.name, len(s.wait))
+		s.logDebug("Waiting:", len(s.wait))
 		return files
 	}
 	return nil
@@ -1008,7 +1016,7 @@ func (s *Stage) toWait(prevPath string, next *finalFile, howLong time.Duration) 
 		// logs to find it
 		next.wait = time.AfterFunc(howLong, func(handle func(*finalFile), f *finalFile) func() {
 			return func() {
-				log.Debug("Attempting finalize again:", f.name)
+				s.logDebug("Attempting finalize again:", f.name)
 				handle(f)
 			}
 		}(s.finalizeQueue, next))
@@ -1076,7 +1084,7 @@ func (s *Stage) buildCache(from time.Time) {
 	if func(s *Stage, t1 time.Time) bool {
 		s.cacheLock.RLock()
 		defer s.cacheLock.RUnlock()
-		log.Debug("Cache build request:", s.name, s.cacheTime, t1)
+		s.logDebug("Cache build request:", s.cacheTime, t1)
 		return !s.cacheTime.IsZero() && (s.cacheTime.Before(t1) || s.cacheTime.Equal(t1))
 	}(s, from) {
 		return
@@ -1087,7 +1095,7 @@ func (s *Stage) buildCache(from time.Time) {
 	if cacheTime.IsZero() {
 		cacheTime = time.Now()
 	}
-	log.Info("Building cache from logs:", s.name, from)
+	s.logInfo("Building cache from logs:", from)
 	var first time.Time
 	now := time.Now()
 	s.logger.Parse(func(name, renamed, hash string, size int64, t time.Time) bool {
@@ -1113,7 +1121,7 @@ func (s *Stage) buildCache(from time.Time) {
 			state:   stateLogged,
 		}
 		s.cache[path] = file
-		log.Debug("Cached from log:", s.name, file.name)
+		s.logDebug("Cached from log:", file.name)
 		return false
 	}, from, cacheTime)
 	if !first.IsZero() {
@@ -1164,7 +1172,7 @@ func (s *Stage) cleanCache() {
 				}
 			delete:
 				delete(s.cache, cacheFile.path)
-				log.Debug("Removed from cache:", s.name, cacheFile.name)
+				s.logDebug("Removed from cache:", cacheFile.name)
 				continue
 			}
 		keep:
@@ -1176,6 +1184,22 @@ func (s *Stage) cleanCache() {
 			}
 		}
 	}
-	log.Debug("Cache Count:", s.name, len(s.cache))
-	log.Debug("Cache Batch Count:", s.name, len(s.cacheTimes))
+	s.logDebug("Cache Count:", len(s.cache))
+	s.logDebug("Cache Batch Count:", len(s.cacheTimes))
+}
+
+func (s *Stage) formatLogPrefix() string {
+	return fmt.Sprintf("(%s)", s.name)
+}
+
+func (s *Stage) logDebug(params ...interface{}) {
+	log.Debug(append([]any{s.formatLogPrefix()}, params...)...)
+}
+
+func (s *Stage) logInfo(params ...interface{}) {
+	log.Info(append([]any{s.formatLogPrefix()}, params...)...)
+}
+
+func (s *Stage) logError(params ...interface{}) {
+	log.Error(append([]any{s.formatLogPrefix()}, params...)...)
 }

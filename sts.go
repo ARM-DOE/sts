@@ -2,7 +2,6 @@ package sts
 
 import (
 	"io"
-	"sync"
 	"time"
 
 	"code.arm.gov/dataflow/sts/marshal"
@@ -113,7 +112,7 @@ type GateKeeper interface {
 	Receive(*Partial, io.Reader) error
 	Received([]Binned) (nRecvd int)
 	GetFileStatus(relPath string, sent time.Time) int
-	Stop(*sync.WaitGroup)
+	Stop()
 }
 
 // GateKeeperFactory creates GateKeeper instances

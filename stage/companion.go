@@ -120,7 +120,7 @@ func writeCompanion(path string, cmp *sts.Partial) error {
 	return fileutil.WriteJSON(path, cmp)
 }
 
-func addCompanionPart(cmp *sts.Partial, beg, end int64) {
+func addCompanionPart(cmp *sts.Partial, beg, end int64) (replaced *sts.ByteRange) {
 	j := len(cmp.Parts)
 	k := j
 	p := &sts.ByteRange{Beg: beg, End: end}
@@ -133,9 +133,7 @@ func addCompanionPart(cmp *sts.Partial, beg, end int64) {
 			k = i
 			break
 		}
-		log.Debug(fmt.Sprintf(
-			"Remove Companion Conflict: %s => %d:%d (new) %d:%d (old)",
-			cmp.Name, beg, end, part.Beg, part.End))
+		replaced = part
 		cmp.Parts[i] = p
 		return
 	}
@@ -143,6 +141,7 @@ func addCompanionPart(cmp *sts.Partial, beg, end int64) {
 	cmp.Parts = append(cmp.Parts, nil)
 	copy(cmp.Parts[k+1:], cmp.Parts[k:])
 	cmp.Parts[k] = p
+	return
 }
 
 func minInt64(a, b int64) int64 {

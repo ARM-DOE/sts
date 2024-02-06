@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"code.arm.gov/dataflow/sts/fileutil"
+	"code.arm.gov/dataflow/sts/log"
 )
 
 const (
@@ -385,4 +386,10 @@ func getCert(cert, key, ca []byte) (pem *tls.Certificate, pool *x509.CertPool, e
 		}
 	}
 	return
+}
+
+func handleError(w http.ResponseWriter, code int, err error) {
+	log.Error(err.Error())
+	w.WriteHeader(code)
+	w.Write([]byte(err.Error()))
 }
