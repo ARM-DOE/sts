@@ -411,7 +411,7 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 			poll = nil
 		}
 		broker.info(fmt.Sprintf(
-			"STARTUP: Asking server if %d (of %d) files were fully sent ...",
+			"STARTUP: Asking server if %d (of %d) files were fully received ...",
 			len(pollNow),
 			nPoll,
 		))

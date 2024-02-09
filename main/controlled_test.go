@@ -37,7 +37,7 @@ func TestMachineID(t *testing.T) {
 
 // 	bytes := []byte(`{
 //         "name": "dap",
-//         "key": "HJdQdysqCjYWNhdgccozYlcrDoI7MU1w",
+//         "key": "...",
 //         "http-host": "a2e.energy.gov:443",
 //         "http-path-prefix": "/_upload",
 //         "http-tls-cert": "",
@@ -70,7 +70,7 @@ func TestMachineID(t *testing.T) {
 // 		conf: &sts.Conf{},
 // 	}
 
-// 	clientID := "HJdQdysqCjYWNhdgccozYlcrDoI7MU1w:cf0b8b9d-cefd-4d52-aff1-3e2b58dc9edb"
+// 	clientID := "<key>:<id>"
 
 // 	if a.conf.Client, err = requestClientConf(httpClient, clientID, true); err != nil {
 // 		t.Fatal(err.Error())

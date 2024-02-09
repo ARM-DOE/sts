@@ -65,7 +65,7 @@ IN:
     - stsout-1
     - stsout-2
   keys:
-    - 'uB7Te#H>"a%5^6p['
+    - 'testing123'
   dirs:
     stage : data/stage
     final : data/in
@@ -97,7 +97,7 @@ OUT:
       poll-attempts : 1
       target:
         name          : stsin-1
-        key           : 'uB7Te#H>"a%5^6p['
+        key           : 'testing123'
         http-host     : localhost:1992
         http-tls-cert : ../../sts.server.crt
       tags:

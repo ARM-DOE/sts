@@ -65,7 +65,7 @@ func (s *Server) stopGateKeepers() {
 	for _, gk := range s.GateKeepers {
 		go func(gk sts.GateKeeper) {
 			defer wg.Done()
-			gk.Stop()
+			gk.Stop(false)
 		}(gk)
 	}
 	wg.Wait()
@@ -83,17 +83,18 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 	http.Handle(s.PathPrefix+"/clean", s.handleValidate(http.HandlerFunc(s.routeClean)))
 	http.Handle(s.PathPrefix+"/restart", s.handleValidate(http.HandlerFunc(s.routeRestart)))
 
-	go func(done chan<- bool, host string, port int, tlsConf *tls.Config) {
-		addr := fmt.Sprintf("%s:%d", host, port)
-		err := ListenAndServe(addr, tlsConf, nil)
+	go func() {
+		addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
+		err := ListenAndServe(addr, s.TLS, nil)
 		if err != http.ErrServerClosed {
 			log.Error(err.Error())
 		}
 		s.stopGateKeepers()
 		done <- true
-	}(done, s.Host, s.Port, s.TLS)
+	}()
 	<-stop
 	Close()
+	DefaultServer = nil
 }
 
 func (s *Server) handleValidate(next http.Handler) http.Handler {
@@ -132,7 +133,7 @@ func (s *Server) routeFile(w http.ResponseWriter, r *http.Request) {
 	source := getSourceName(r)
 	file := r.URL.Path[len("/static/"):]
 	root := filepath.Join(s.ServeDir, source)
-	path := filepath.Join(root, file)
+	path := filepath.Join(root, filepath.Clean(file))
 	fi, err := os.Stat(path)
 	switch r.Method {
 	case http.MethodGet:
@@ -356,11 +357,9 @@ func (s *Server) routeClean(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wg := sync.WaitGroup{}
+	wg.Add(1)
 	go func() {
-		if wait {
-			wg.Add(1)
-			defer wg.Done()
-		}
+		defer wg.Done()
 		name := getSourceName(r)
 		log.Info(name, " -> Cleaning ...")
 		defer log.Info(name, " -> Cleaned")
@@ -380,15 +379,13 @@ func (s *Server) routeRestart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wg := sync.WaitGroup{}
+	wg.Add(1)
 	go func() {
-		if wait {
-			wg.Add(1)
-			defer wg.Done()
-		}
+		defer wg.Done()
 		name := getSourceName(r)
 		log.Info(name, " -> Restarting ...")
 		defer log.Info(name, " -> Restarted")
-		gateKeeper.Stop()
+		gateKeeper.Stop(true)
 		gateKeeper.Recover()
 	}()
 	if wait {

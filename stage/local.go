@@ -677,10 +677,13 @@ func (s *Stage) cleanWaiting(minAge time.Duration) {
 }
 
 // Stop waits for the number of files in the pipe to be zero and then signals
-func (s *Stage) Stop() {
+func (s *Stage) Stop(force bool) {
 	defer s.logDebug("Stage shut down:")
 	s.logDebug("Stage shutting down ...")
 	s.setCanReceive(false)
+	if force {
+		return
+	}
 	for {
 		if s.inPipe() > 0 {
 			time.Sleep(100 * time.Millisecond)

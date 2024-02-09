@@ -11,14 +11,18 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
+	"code.arm.gov/dataflow/sts"
 	"code.arm.gov/dataflow/sts/log"
 	"code.arm.gov/dataflow/sts/mock"
 	"github.com/alecthomas/units"
 )
 
+var port = 1992
+var source = "sender"
 var root = "/var/tmp/sts"
-var rootStatic = filepath.Join(root, "serve", "sender")
+var rootStatic = filepath.Join(root, "serve", source)
 
 func tearDown() {
 	os.RemoveAll(root)
@@ -52,10 +56,12 @@ func request(method, url string, data io.Reader, respData ...interface{}) error 
 		return err
 	}
 
-	if req, err = http.NewRequest(method, "http://localhost:1992"+url, data); err != nil {
+	if req, err = http.NewRequest(
+		method, fmt.Sprintf("http://localhost:%d%s", port, url), data,
+	); err != nil {
 		return err
 	}
-	req.Header.Add(HeaderSourceName, "sender")
+	req.Header.Add(HeaderSourceName, source)
 
 	if resp, err = client.Do(req); err != nil {
 		return err
@@ -93,12 +99,17 @@ func TestCRUD(t *testing.T) {
 	tearDown()
 	stageFiles(10, fsize)
 
+	gk := &mockGk{}
 	server := &Server{
 		ServeDir: filepath.Join(root, "serve"),
 		Host:     "localhost",
-		Port:     1992,
+		Port:     port,
 		IsValid: func(source, key string) bool {
 			return true
+		},
+		GateKeepers: map[string]sts.GateKeeper{source: gk},
+		GateKeeperFactory: func(name string) sts.GateKeeper {
+			return nil
 		},
 	}
 	stop := make(chan bool)
@@ -125,6 +136,66 @@ func TestCRUD(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+
+	if err := request(http.MethodGet, "/clean?block", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if !gk.gotCleanedNow {
+		t.Fatal("not cleaned")
+	}
+
+	if err := request(http.MethodGet, "/restart?block", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if !gk.gotStopped || !gk.gotRecovered {
+		t.Fatal("not restarted")
+	}
+
 	stop <- true
 	<-done
+}
+
+type mockGk struct {
+	gotCleanedNow bool
+	gotStopped    bool
+	gotRecovered  bool
+}
+
+func (g *mockGk) Recover() {
+	g.gotRecovered = true
+}
+
+func (g *mockGk) CleanNow(t time.Duration) {
+	g.gotCleanedNow = true
+}
+
+func (g *mockGk) Ready() bool {
+	return true
+}
+
+func (g *mockGk) Scan(version string) (json []byte, err error) {
+	return
+}
+
+func (g *mockGk) Prepare(request []sts.Binned) {
+	//
+}
+
+func (g *mockGk) Receive(file *sts.Partial, reader io.Reader) (err error) {
+	return
+}
+
+func (g *mockGk) Received(parts []sts.Binned) (nRecvd int) {
+	return
+}
+
+func (g *mockGk) GetFileStatus(relPath string, sent time.Time) int {
+	return sts.ConfirmNone
+}
+
+func (g *mockGk) Stop(force bool) {
+	g.gotStopped = true
+	g.gotRecovered = false
 }

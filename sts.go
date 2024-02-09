@@ -112,7 +112,7 @@ type GateKeeper interface {
 	Receive(*Partial, io.Reader) error
 	Received([]Binned) (nRecvd int)
 	GetFileStatus(relPath string, sent time.Time) int
-	Stop()
+	Stop(bool)
 }
 
 // GateKeeperFactory creates GateKeeper instances
