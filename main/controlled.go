@@ -189,7 +189,7 @@ func runFromServer(jsonEncodedServerConfig string) {
 	}
 
 	if *once {
-		if a.conf.Client, err = requestClientConf(httpClient, clientID, true); err != nil {
+		if a.conf.Client, _, err = requestClientConf(httpClient, clientID, true); err != nil {
 			log.Error(err.Error())
 			return
 		}
@@ -219,7 +219,11 @@ func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 	var err error
 	signalCh := make(chan os.Signal, 2)
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
+	runClientCount := 0
 	for {
+		if a.conf.Client == nil {
+			goto wait
+		}
 		if a.conf.Client.Dirs == nil {
 			a.conf.Client.Dirs = &sts.ClientDirs{}
 		}
@@ -238,8 +242,11 @@ func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 			goto wait
 		}
 
-		if len(a.conf.Client.Sources) > 0 {
-			log.Info("Starting", len(a.conf.Client.Sources), "client(s) ...")
+		runClientCount = len(a.conf.Client.Sources)
+		if runClientCount == 0 {
+			log.Info("No data sources configured")
+		} else {
+			log.Info("Starting", runClientCount, "data source client(s) ...")
 			a.startClients()
 		}
 
@@ -250,12 +257,17 @@ func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 		}
 		select {
 		case <-signalCh:
-			log.Info("Shutting down", len(a.conf.Client.Sources), "client(s) ...")
-			a.stopClients(false)
+			if runClientCount > 0 {
+				log.Info("Shutting down", len(a.conf.Client.Sources), "data source client(s) ...")
+				a.stopClients(false)
+			}
 			return
 		case a.conf.Client = <-confCh:
-			log.Info("Stopping", len(a.conf.Client.Sources), "client(s) ...")
-			a.stopClients(false)
+			if runClientCount > 0 {
+				log.Info("Stopping", runClientCount, "data source client(s) ...")
+				a.stopClients(false)
+				runClientCount = 0
+			}
 			continue
 		}
 	}
@@ -344,6 +356,8 @@ func getAddr(mac bool) (addr []string, err error) {
 // updated configuration from the server as needed
 func runConfLoader(manager sts.ClientManager, clientID string, ch chan<- *sts.ClientConf) {
 	var err error
+	var disabled bool
+	var stopped bool
 	var conf *sts.ClientConf
 	var newConf *sts.ClientConf
 	heartbeat := time.Second * 30
@@ -354,10 +368,18 @@ func runConfLoader(manager sts.ClientManager, clientID string, ch chan<- *sts.Cl
 	}
 	log.Debug("Heartbeat:", heartbeat)
 	for {
-		if newConf, err = requestClientConf(manager, clientID, conf == nil); err != nil {
+		if newConf, disabled, err = requestClientConf(manager, clientID, conf == nil); err != nil {
 			log.Error(err.Error())
 		}
-		if newConf != nil {
+		if disabled {
+			if !stopped {
+				log.Info("Client disabled:", clientID)
+				stopped = true
+				ch <- nil
+			}
+		} else if newConf != nil {
+			log.Info("Client has [updated] configuration:", clientID)
+			stopped = false
 			conf = newConf
 			ch <- conf
 		}
@@ -371,7 +393,7 @@ func requestClientConf(
 	manager sts.ClientManager,
 	clientID string,
 	force bool,
-) (conf *sts.ClientConf, err error) {
+) (conf *sts.ClientConf, disabled bool, err error) {
 	var name string
 	var status sts.ClientStatus
 	log.Debug("Getting client status:", clientID)
@@ -384,20 +406,16 @@ func requestClientConf(
 	}
 	switch {
 	case status&sts.ClientIsDisabled != 0:
-		log.Info("Client disabled:", clientID)
+		disabled = true
 		return
 	case status&sts.ClientIsApproved != 0:
 		if force || status&sts.ClientHasUpdatedConfiguration != 0 {
-			log.Info("Client has [updated] configuration:", clientID)
 			if conf, err = manager.GetClientConf(clientID); err != nil {
 				return
 			}
 			if conf == nil {
 				err = fmt.Errorf("an unknown error occurred - check client configuration")
 				return
-			}
-			if len(conf.Sources) == 0 {
-				log.Info("No data sources configured")
 			}
 		}
 	}
