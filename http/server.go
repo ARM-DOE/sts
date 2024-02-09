@@ -80,20 +80,41 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 	http.Handle(s.PathPrefix+"/validate", s.handleValidate(http.HandlerFunc(s.routeValidate)))
 	http.Handle(s.PathPrefix+"/partials", s.handleValidate(http.HandlerFunc(s.routePartials)))
 	http.Handle(s.PathPrefix+"/static/", s.handleValidate(http.HandlerFunc(s.routeFile)))
-	http.Handle(s.PathPrefix+"/clean", s.handleValidate(http.HandlerFunc(s.routeClean)))
-	http.Handle(s.PathPrefix+"/restart", s.handleValidate(http.HandlerFunc(s.routeRestart)))
+
+	wg := sync.WaitGroup{}
+	wg.Add(2)
 
 	go func() {
+		defer wg.Done()
 		addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
 		err := ListenAndServe(addr, s.TLS, nil)
 		if err != http.ErrServerClosed {
-			log.Error(err.Error())
+			log.Error("Error shutting down server:", err.Error())
 		}
 		s.stopGateKeepers()
-		done <- true
 	}()
+
+	iServer := NewGracefulServer(&http.Server{
+		Addr:    fmt.Sprintf(":%d", s.Port+1),
+		Handler: http.HandlerFunc(s.routeInternal),
+	}, nil)
+
+	go func() {
+		defer wg.Done()
+		err := iServer.ListenAndServe()
+		if err != http.ErrServerClosed {
+			log.Error("Error shutting down internal server:", err.Error())
+		}
+	}()
+
 	<-stop
+
 	Close()
+	iServer.Close()
+
+	wg.Wait()
+
+	done <- true
 	DefaultServer = nil
 }
 
@@ -344,50 +365,52 @@ func (s *Server) routeDataRecovery(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add(HeaderPartCount, strconv.Itoa(n))
 }
 
-func (s *Server) routeClean(w http.ResponseWriter, r *http.Request) {
-	wait := r.URL.Query().Has("block")
-	minAgeSecs, err := strconv.Atoi(r.URL.Query().Get("minage"))
-	if err != nil {
-		minAgeSecs = 0
-	}
-	minAge := time.Duration(minAgeSecs) * time.Second
+func (s *Server) routeInternal(w http.ResponseWriter, r *http.Request) {
+	wait := r.URL.Query().Has("block") || r.URL.Query().Has("wait")
+	wg := sync.WaitGroup{}
+	wg.Add(1)
 	gateKeeper := s.getGateKeeper(r)
-	if gateKeeper == nil {
+	switch r.URL.Path {
+	case "/clean":
+		if gateKeeper == nil || r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		go func() {
+			defer wg.Done()
+			minAgeSecs, err := strconv.Atoi(r.URL.Query().Get("minage"))
+			if err != nil {
+				minAgeSecs = 0
+			}
+			minAge := time.Duration(minAgeSecs) * time.Second
+			name := getSourceName(r)
+			log.Info(name, " -> Cleaning ...")
+			defer log.Info(name, " -> Cleaned")
+			gateKeeper.CleanNow(minAge)
+		}()
+	case "/restart":
+		if gateKeeper == nil || r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		go func() {
+			defer wg.Done()
+			name := getSourceName(r)
+			log.Info(name, " -> Restarting ...")
+			defer log.Info(name, " -> Restarted")
+			gateKeeper.Stop(true)
+			gateKeeper.Recover()
+		}()
+	case "/debug":
+		if r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		log.SetDebug(!log.GetDebug())
+	default:
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		name := getSourceName(r)
-		log.Info(name, " -> Cleaning ...")
-		defer log.Info(name, " -> Cleaned")
-		gateKeeper.CleanNow(minAge)
-	}()
-	if wait {
-		wg.Wait()
-	}
-	w.WriteHeader(http.StatusOK)
-}
-
-func (s *Server) routeRestart(w http.ResponseWriter, r *http.Request) {
-	wait := r.URL.Query().Has("block")
-	gateKeeper := s.getGateKeeper(r)
-	if gateKeeper == nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		name := getSourceName(r)
-		log.Info(name, " -> Restarting ...")
-		defer log.Info(name, " -> Restarted")
-		gateKeeper.Stop(true)
-		gateKeeper.Recover()
-	}()
 	if wait {
 		wg.Wait()
 	}

@@ -45,6 +45,32 @@ func stageFiles(count int, bytes units.Base2Bytes) {
 	}
 }
 
+func requestInternal(url string) error {
+	var err error
+	var client *http.Client
+	var req *http.Request
+	var resp *http.Response
+
+	if client, err = GetClient(nil); err != nil {
+		return err
+	}
+
+	if req, err = http.NewRequest(
+		http.MethodPut, fmt.Sprintf("http://localhost:%d%s", port+1, url), nil,
+	); err != nil {
+		return err
+	}
+	req.Header.Add(HeaderSourceName, source)
+
+	if resp, err = client.Do(req); err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s: %s", url, resp.Status)
+	}
+	return nil
+}
+
 func request(method, url string, data io.Reader, respData ...interface{}) error {
 	var err error
 	var client *http.Client
@@ -137,7 +163,7 @@ func TestCRUD(t *testing.T) {
 		}
 	}
 
-	if err := request(http.MethodGet, "/clean?block", nil); err != nil {
+	if err := requestInternal("/clean?block"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -145,12 +171,16 @@ func TestCRUD(t *testing.T) {
 		t.Fatal("not cleaned")
 	}
 
-	if err := request(http.MethodGet, "/restart?block", nil); err != nil {
+	if err := requestInternal("/restart?block"); err != nil {
 		t.Fatal(err)
 	}
 
 	if !gk.gotStopped || !gk.gotRecovered {
 		t.Fatal("not restarted")
+	}
+
+	if err := requestInternal("/debug"); err != nil {
+		t.Fatal(err)
 	}
 
 	stop <- true

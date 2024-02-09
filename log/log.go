@@ -28,12 +28,17 @@ func Get() sts.Logger {
 
 // SetDebug sets debug mode to on or off
 func SetDebug(on bool) {
-	std.(*General).setDebug(on)
+	if logger, ok := std.(*General); ok {
+		logger.setDebug(on)
+	}
 }
 
 // GetDebug returns the current debug mode
 func GetDebug() bool {
-	return std.(*General).getDebug()
+	if logger, ok := std.(*General); ok {
+		return logger.getDebug()
+	}
+	return false
 }
 
 func check() {
