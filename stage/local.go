@@ -644,12 +644,12 @@ func (s *Stage) cleanWaiting(minAge time.Duration) {
 	var waiting []*finalFile
 	s.cacheLock.RLock()
 	for _, cacheFile := range s.cache {
-		if cacheFile.state != stateValidated || time.Since(cacheFile.time) < minAge {
+		if cacheFile.state != stateValidated ||
+			time.Since(cacheFile.time) < minAge ||
+			cacheFile.prev == "" {
 			continue
 		}
-		if cacheFile.prev != "" && cacheFile.wait == nil {
-			waiting = append(waiting, cacheFile)
-		}
+		waiting = append(waiting, cacheFile)
 	}
 	s.cacheLock.RUnlock()
 	sort.Slice(waiting, func(i, j int) bool {
@@ -659,18 +659,17 @@ func (s *Stage) cleanWaiting(minAge time.Duration) {
 		prevPath := filepath.Join(s.rootDir, cacheFile.prev)
 		s.logDebug("Checking for wait loop:", cacheFile.prev, "<-", cacheFile.name)
 		if s.isWaiting(prevPath) && s.isWaitLoop(prevPath) {
-			s.cacheLock.Lock()
-			if f, ok := s.cache[cacheFile.path]; ok && f.state == cacheFile.state {
-				s.logInfo("Removing wait loop:", cacheFile.name, "<-", cacheFile.prev)
-				f.prev = ""
-				s.cache[f.path] = f
-				cacheFile = f
-			} else {
-				cacheFile = nil
-			}
-			s.cacheLock.Unlock()
-			if cacheFile != nil {
-				s.finalizeQueue(cacheFile)
+			for _, waitFile := range s.fromWait(prevPath) {
+				s.logInfo("Removing wait loop:", waitFile.name, "<-", waitFile.prev)
+				f := s.fromCache(waitFile.path)
+				if f != nil && f.state == stateValidated {
+					if f.wait != nil {
+						f.wait.Stop()
+						f.wait = nil
+					}
+					f.prev = ""
+					go s.finalizeQueue(f)
+				}
 			}
 		}
 	}

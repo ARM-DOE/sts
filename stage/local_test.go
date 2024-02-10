@@ -49,9 +49,11 @@ func TestWaitLoop(t *testing.T) {
 		&logger{}, &dispatcher{})
 
 	hierarchy := map[string][]string{
-		"a": {"a", "b", "c"},
-		"b": {"d", "e", "f"},
-		"c": {"g", "h", "i"},
+		"a": {"b"},
+		"b": {"c"},
+		"c": {"d"},
+		"d": {"e"},
+		"e": {"a"},
 	}
 	for prev, names := range hierarchy {
 		for _, name := range names {
@@ -68,9 +70,10 @@ func TestWaitLoop(t *testing.T) {
 		}
 	}
 
-	detected := stage.isWaitLoop(filepath.Join(stage.rootDir, "a"))
-
-	if !detected {
-		t.Errorf("Wait loop not detected")
+	for prev := range hierarchy {
+		detected := stage.isWaitLoop(filepath.Join(stage.rootDir, prev))
+		if !detected {
+			t.Errorf("Wait loop not detected")
+		}
 	}
 }
