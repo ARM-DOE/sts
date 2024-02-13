@@ -561,6 +561,7 @@ func (s *Stage) clean(minAge time.Duration) {
 
 	s.cleanStrays(minAge)
 	s.cleanWaiting(minAge)
+	s.pruneTree(minAge)
 
 	s.cleanLock.Unlock()
 
@@ -573,6 +574,40 @@ func (s *Stage) scheduleClean(minAge time.Duration) {
 	s.cleanTimeout = time.AfterFunc(s.cleanInterval, func() {
 		s.clean(minAge)
 	})
+}
+
+func (s *Stage) pruneTree(minAge time.Duration) {
+	s.logDebug("Pruning empty directories ...")
+	var dirs []string
+	err := filepath.Walk(s.rootDir,
+		func(path string, info os.FileInfo, err error) error {
+			if err != nil || time.Since(info.ModTime()) < minAge {
+				return nil
+			}
+			if info.IsDir() {
+				dirs = append(dirs, path)
+			}
+			return nil
+		})
+	if err != nil {
+		s.logError(err.Error())
+	}
+	// Loop backward to process subdirs first (filepath.Walk is sorted)
+	for i := len(dirs) - 1; i >= 0; i-- {
+		dir := dirs[i]
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			s.logError("Prune: failed to read directory:", dir, err.Error())
+			continue
+		}
+		if len(entries) == 0 {
+			if err = os.Remove(dir); err != nil {
+				s.logError("Prune: failed to remove [supposedly empty] directory:", dir, err.Error())
+			} else {
+				s.logInfo("Prune: removed empty directory:", dir)
+			}
+		}
+	}
 }
 
 func (s *Stage) cleanStrays(minAge time.Duration) {
@@ -592,45 +627,50 @@ func (s *Stage) cleanStrays(minAge time.Duration) {
 				return nil
 			}
 			relPath := strings.TrimSuffix(path[len(s.rootDir)+1:], ext)
-			cmpPath := filepath.Join(s.rootDir, relPath+compExt)
-			var cmp *sts.Partial
-			if _, err := os.Stat(cmpPath); err == nil {
-				if cmp, err = readLocalCompanion(path, relPath); err != nil {
+			compPath := filepath.Join(s.rootDir, relPath+compExt)
+			partPath := filepath.Join(s.rootDir, relPath+partExt)
+			_, err = os.Stat(compPath)
+			compExists := err == nil
+			var comp *sts.Partial
+			if compExists {
+				if comp, err = readLocalCompanion(path, relPath); err != nil {
 					s.logError(err.Error())
 				}
 			}
-			s.logDebug("Checking for stray partial:", relPath)
+			s.logDebug("Checking for stray partial:", relPath, compExists, comp != nil)
 			delete := false
 			deleteCmp := false
 			file := s.fromCache(strings.TrimSuffix(path, partExt))
 			if file != nil && file.state > stateReceived {
-				delete = cmp == nil || cmp.Hash == file.hash
-				deleteCmp = file.state == stateLogged && cmp != nil
+				delete = comp == nil || comp.Hash == file.hash
+				deleteCmp = compExists && file.state == stateLogged
+				s.logDebug("Stray partial cache info:", relPath, file.state, file.hash)
 			} else {
 				end := time.Now()
 				beg := info.ModTime().Add(time.Duration(age.Minutes()) * time.Hour * -1)
 				s.logInfo("Checking log for stray partial:", relPath, "--", beg.Format("20060102"))
 				hash := ""
-				if cmp != nil {
-					hash = cmp.Hash
+				if comp != nil {
+					hash = comp.Hash
 				}
 				if s.logger.WasReceived(relPath, hash, beg, end) {
 					delete = true
-					deleteCmp = cmp != nil
+					deleteCmp = compExists
 				}
 			}
 			if delete {
-				if err = os.Remove(path); err != nil {
+				if err = os.Remove(partPath); err != nil {
 					s.logError("Failed to remove stray partial:", path, err.Error())
 					return nil
 				}
 				s.logInfo("Deleted stray partial:", relPath)
-				if deleteCmp {
-					if err = os.Remove(cmpPath); err != nil {
-						s.logError("Failed to remove stray partial companion:", cmpPath, err.Error())
-					}
-					s.logInfo("Deleted stray partial companion:", cmpPath)
+			}
+			if deleteCmp {
+				if err = os.Remove(compPath); err != nil {
+					s.logError("Failed to remove stray partial companion:", compPath, err.Error())
+					return nil
 				}
+				s.logInfo("Deleted stray partial companion:", compPath)
 			}
 			return nil
 		})
@@ -677,9 +717,12 @@ func (s *Stage) cleanWaiting(minAge time.Duration) {
 
 // Stop waits for the number of files in the pipe to be zero and then signals
 func (s *Stage) Stop(force bool) {
-	defer s.logDebug("Stage shut down:")
 	s.logDebug("Stage shutting down ...")
-	s.setCanReceive(false)
+	defer s.logDebug("Stage shut down")
+	// This seems like a good idea, but there's not a good way to know nothing is still
+	// "active" and it seems too risky without that knowledge.
+	// defer s.clearCache()
+	defer s.setCanReceive(false)
 	if force {
 		return
 	}
@@ -1137,6 +1180,14 @@ func (s *Stage) getCacheStartTime() time.Time {
 	defer s.cacheLock.RUnlock()
 	return s.cacheTime
 }
+
+// func (s *Stage) clearCache() {
+// 	s.cacheLock.Lock()
+// 	defer s.cacheLock.Unlock()
+// 	s.cache = make(map[string]*finalFile)
+// 	s.cacheTimes = nil
+// 	s.cacheTime = time.Time{}
+// }
 
 func (s *Stage) cleanCache() {
 	s.cacheLock.Lock()

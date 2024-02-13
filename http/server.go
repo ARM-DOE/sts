@@ -386,6 +386,8 @@ func (s *Server) routeInternal(w http.ResponseWriter, r *http.Request) {
 			name := getSourceName(r)
 			log.Info(name, " -> Cleaning ...")
 			defer log.Info(name, " -> Cleaned")
+			log.SetDebug(true)
+			defer log.SetDebug(false)
 			gateKeeper.CleanNow(minAge)
 		}()
 	case "/restart":
@@ -398,6 +400,8 @@ func (s *Server) routeInternal(w http.ResponseWriter, r *http.Request) {
 			name := getSourceName(r)
 			log.Info(name, " -> Restarting ...")
 			defer log.Info(name, " -> Restarted")
+			log.SetDebug(true)
+			defer log.SetDebug(false)
 			gateKeeper.Stop(true)
 			gateKeeper.Recover()
 		}()
