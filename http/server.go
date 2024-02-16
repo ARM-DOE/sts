@@ -80,6 +80,7 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 	http.Handle(s.PathPrefix+"/validate", s.handleValidate(http.HandlerFunc(s.routeValidate)))
 	http.Handle(s.PathPrefix+"/partials", s.handleValidate(http.HandlerFunc(s.routePartials)))
 	http.Handle(s.PathPrefix+"/static/", s.handleValidate(http.HandlerFunc(s.routeFile)))
+	http.Handle(s.PathPrefix+"/check-mapping", http.HandlerFunc(s.routeCheckMapping))
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
@@ -363,6 +364,60 @@ func (s *Server) routeDataRecovery(w http.ResponseWriter, r *http.Request) {
 	gateKeeper := s.getGateKeeper(r)
 	n := gateKeeper.Received(decoder.GetParts())
 	w.Header().Add(HeaderPartCount, strconv.Itoa(n))
+}
+
+func (s *Server) routeCheckMapping(w http.ResponseWriter, r *http.Request) {
+	var err error
+	defer r.Body.Close()
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		s.handleError(w, err)
+		return
+	}
+	type RequestBody struct {
+		ExamplePath string             `json:"path"`
+		Source      string             `json:"source"`
+		RootPath    string             `json:"root"`
+		Mapping     []*sts.MappingConf `json:"mapping"`
+	}
+	var reqBody RequestBody
+	err = json.Unmarshal(body, &reqBody)
+	if err != nil {
+		s.handleError(w, err)
+		return
+	}
+	extraVars := (&sts.SourceConf{
+		Name: reqBody.Source,
+	}).GenMappingVars()
+	funcs := fileutil.CreateDateFuncs()
+	var maps []*fileutil.PathMap
+	for _, m := range reqBody.Mapping {
+		maps = append(maps, &fileutil.PathMap{
+			Pattern:   m.Pattern,
+			Template:  m.Template,
+			ExtraVars: extraVars,
+			Funcs:     funcs,
+		})
+	}
+	pathMapper := fileutil.PathMapper{
+		Maps:   maps,
+		Logger: log.Get(),
+	}
+	path := reqBody.ExamplePath
+	if strings.HasPrefix(path, reqBody.RootPath) {
+		path = path[len(reqBody.RootPath)+1:]
+	}
+	mappedPath := pathMapper.Translate(path)
+	var respJSON []byte
+	respJSON, err = json.Marshal(map[string]string{"mapped": mappedPath})
+	if err != nil {
+		s.handleError(w, err)
+		return
+	}
+	w.Header().Set(HeaderContentType, HeaderJSON)
+	if err = s.respond(w, http.StatusOK, respJSON); err != nil {
+		log.Error(err.Error())
+	}
 }
 
 func (s *Server) routeInternal(w http.ResponseWriter, r *http.Request) {

@@ -18,6 +18,7 @@ import (
 type PathMap struct {
 	Pattern   *regexp.Regexp
 	Template  string
+	Funcs     template.FuncMap
 	ExtraVars map[string]string
 	Stat      func(string) time.Time
 }
@@ -37,7 +38,7 @@ func (pm *PathMap) Translate(
 		return
 	}
 	vars := make(map[string]interface{})
-	if strings.Contains(pm.Template, ".__modtime.") {
+	if strings.Contains(pm.Template, ".__modtime") {
 		if pm.Stat == nil {
 			pm.Stat = func(path string) time.Time {
 				info, err := os.Stat(path)
@@ -56,7 +57,7 @@ func (pm *PathMap) Translate(
 	for i, matchName := range pm.Pattern.SubexpNames()[1:] {
 		vars[matchName] = matches[i+1]
 	}
-	template, err := template.New(inputPath).Parse(pm.Template)
+	template, err := template.New(inputPath).Funcs(pm.Funcs).Parse(pm.Template)
 	if err != nil {
 		return
 	}

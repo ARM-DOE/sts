@@ -165,9 +165,7 @@ func (c *clientApp) init() (err error) {
 	// Configure automated file renaming
 	var fileToNewName sts.Rename
 	if len(c.conf.Rename) > 0 {
-		extraVars := map[string]string{
-			"__source": c.conf.Name,
-		}
+		extraVars := c.conf.GenMappingVars()
 		maps := make([]*fileutil.PathMap, len(c.conf.Rename))
 		for i, r := range c.conf.Rename {
 			dump("Rename: %s => %s", r.Pattern.String(), r.Template)

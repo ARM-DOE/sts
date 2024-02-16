@@ -71,7 +71,7 @@ func requestInternal(url string) error {
 	return nil
 }
 
-func request(method, url string, data io.Reader, respData ...interface{}) error {
+func request(method, url string, data io.Reader, respData ...any) error {
 	var err error
 	var client *http.Client
 	var req *http.Request
@@ -118,7 +118,7 @@ func request(method, url string, data io.Reader, respData ...interface{}) error 
 	return nil
 }
 
-func TestCRUD(t *testing.T) {
+func TestMisc(t *testing.T) {
 	log.InitExternal(&mock.Logger{DebugMode: true})
 
 	fsize := units.KiB
@@ -161,6 +161,33 @@ func TestCRUD(t *testing.T) {
 		if err := request(http.MethodDelete, "/static/"+n, nil); err != nil {
 			t.Fatal(err)
 		}
+	}
+
+	payload := map[string]any{
+		"path":   `C:\Data\2024\133.dat`,
+		"source": source,
+		"root":   `C:\Data`,
+		"mapping": []any{
+			map[string]string{
+				"from": `^(?P<year>\d{4})\\(?P<day>\d+)\.dat$`,
+				"to":   `{{.__source}}.{{parseDayOfYear .year .day | formatDate "Ymd"}}.000000.dat`,
+			},
+		},
+	}
+
+	marshaled, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parsedResp := make(map[string]string)
+
+	if err := request(http.MethodPost, "/check-mapping", bytes.NewReader(marshaled), &parsedResp); err != nil {
+		t.Fatal(err)
+	}
+
+	if parsedResp["mapped"] != fmt.Sprintf("%s.20240512.000000.dat", source) {
+		t.Fatal(parsedResp)
 	}
 
 	if err := requestInternal("/clean?block"); err != nil {

@@ -150,6 +150,12 @@ type SourceConf struct {
 	isStatPayloadSet bool
 }
 
+func (c *SourceConf) GenMappingVars() map[string]string {
+	return map[string]string{
+		"__source": c.Name,
+	}
+}
+
 type auxSourceConf struct {
 	Name          string           `yaml:"name" json:"name"`
 	OutDir        string           `yaml:"out-dir" json:"out-dir"`

@@ -35,6 +35,20 @@ func TestBasicPathTranslate(t *testing.T) {
 	)
 }
 
+func TestDateFunctions(t *testing.T) {
+	pm := &PathMap{
+		Pattern:  regexp.MustCompile(`^/data/(?P<Y>\d{4})/(?P<YD>\d+)(?P<ext>\.txt)$`),
+		Template: `project/{{ parseDayOfYear .Y .YD | formatDate "Y-m-d"}}{{.ext}}`,
+		Funcs:    CreateDateFuncs(),
+	}
+	runTest(
+		t,
+		pm,
+		"/data/2019/77.txt",
+		"project/2019-03-18.txt",
+	)
+}
+
 func runTest(t *testing.T, pm *PathMap, path, name string) {
 	computedName, err := pm.Translate(path)
 	if name == "" && err == nil {
