@@ -404,7 +404,8 @@ func (s *Server) routeCheckMapping(w http.ResponseWriter, r *http.Request) {
 		Logger: log.Get(),
 	}
 	path := reqBody.ExamplePath
-	if strings.HasPrefix(path, reqBody.RootPath) {
+	root := strings.TrimSuffix(strings.TrimSuffix(reqBody.RootPath, "/"), `\`)
+	if strings.HasPrefix(path, root) {
 		path = path[len(reqBody.RootPath)+1:]
 	}
 	mappedPath := pathMapper.Translate(path)

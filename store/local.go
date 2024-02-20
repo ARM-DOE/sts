@@ -149,7 +149,9 @@ func (dir *Local) getRelPath(path string) string {
 }
 
 func (dir *Local) shouldIgnore(relPath string, isDir bool) bool {
-	if !dir.IncludeHidden && strings.HasPrefix(filepath.Base(relPath), ".") {
+	if !dir.IncludeHidden &&
+		relPath != "" &&
+		strings.HasPrefix(filepath.Base(relPath), ".") {
 		return true
 	}
 	var pattern *regexp.Regexp
@@ -181,6 +183,10 @@ func (dir *Local) handleNode(path string, info os.FileInfo, err error) error {
 	}
 
 	relPath := dir.getRelPath(path)
+	if relPath == "" {
+		// Root directory
+		return nil
+	}
 	if info.IsDir() {
 		if dir.shouldIgnore(relPath, true) {
 			dir.debug("Ignored Local Directory:", path)

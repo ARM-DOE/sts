@@ -166,10 +166,10 @@ func TestMisc(t *testing.T) {
 	payload := map[string]any{
 		"path":   `C:\Data\2024\133.dat`,
 		"source": source,
-		"root":   `C:\Data`,
+		"root":   `C:\`,
 		"mapping": []any{
 			map[string]string{
-				"from": `^(?P<year>\d{4})\\(?P<day>\d+)\.dat$`,
+				"from": `(?P<year>\d{4})\\(?P<day>\d+)\.dat$`,
 				"to":   `{{.__source}}.{{parseDayOfYear .year .day | formatDate "Ymd"}}.000000.dat`,
 			},
 		},
