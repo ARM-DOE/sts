@@ -423,6 +423,7 @@ func (s *Server) routeCheckMapping(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) routeInternal(w http.ResponseWriter, r *http.Request) {
 	wait := r.URL.Query().Has("block") || r.URL.Query().Has("wait")
+	debug := r.URL.Query().Has("debug")
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	gateKeeper := s.getGateKeeper(r)
@@ -442,8 +443,10 @@ func (s *Server) routeInternal(w http.ResponseWriter, r *http.Request) {
 			name := getSourceName(r)
 			log.Info(name, " -> Cleaning ...")
 			defer log.Info(name, " -> Cleaned")
-			log.SetDebug(true)
-			defer log.SetDebug(false)
+			if debug && !log.GetDebug() {
+				log.SetDebug(true)
+				defer log.SetDebug(false)
+			}
 			gateKeeper.CleanNow(minAge)
 		}()
 	case "/restart":
@@ -456,8 +459,10 @@ func (s *Server) routeInternal(w http.ResponseWriter, r *http.Request) {
 			name := getSourceName(r)
 			log.Info(name, " -> Restarting ...")
 			defer log.Info(name, " -> Restarted")
-			log.SetDebug(true)
-			defer log.SetDebug(false)
+			if debug && !log.GetDebug() {
+				log.SetDebug(true)
+				defer log.SetDebug(false)
+			}
 			gateKeeper.Stop(true)
 			gateKeeper.Recover()
 		}()
