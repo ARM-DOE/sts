@@ -178,11 +178,27 @@ func companionPartExists(cmp *sts.Partial, beg, end int64) bool {
 }
 
 func isCompanionComplete(cmp *sts.Partial) bool {
-	size := int64(0)
-	for _, part := range cmp.Parts {
-		size += part.End - part.Beg
+	// Sometimes the companion ends up with overlapping parts but the file is intact. As
+	// long as there are no gaps, it starts at zero, and ends at the file size, we
+	// consider it complete and then if the hash doesn't happen to match, the file will
+	// be sent again.
+	if len(cmp.Parts) == 0 {
+		return false
 	}
-	return size == cmp.Size
+	if len(cmp.Parts) == 1 {
+		return cmp.Parts[0].Beg == 0 && cmp.Parts[0].End == cmp.Size
+	}
+	pf := cmp.Parts[0]
+	pl := cmp.Parts[len(cmp.Parts)-1]
+	if pf.Beg != 0 || pl.End != cmp.Size {
+		return false
+	}
+	for i, part := range cmp.Parts[1:] {
+		if part.Beg > cmp.Parts[i].End {
+			return false
+		}
+	}
+	return true
 }
 
 type oldCompanion struct {
