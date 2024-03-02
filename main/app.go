@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	golog "log"
 	"runtime"
 	"sync"
 	"syscall"
@@ -84,7 +85,7 @@ func newApp() *app {
 			return err
 		})
 	if err != nil {
-		panic(err.Error())
+		golog.Fatalln("Failed to initialize paths:", err.Error())
 	}
 
 	return a
@@ -141,13 +142,13 @@ func appFromCLI() *app {
 	if a.root == "" {
 		ex, err := os.Executable()
 		if err != nil {
-			panic(err)
+			golog.Fatalln("Failed to find executable path:", err.Error())
 		}
 		a.root = filepath.Dir(ex)
 	} else if !filepath.IsAbs(a.root) {
 		a.root, err = filepath.Abs(a.root)
 		if err != nil {
-			panic(err)
+			golog.Fatalln("Failed to resolve root path:", err.Error())
 		}
 	}
 
@@ -174,23 +175,19 @@ func appFromCLI() *app {
 			}
 		}
 		if a.confPath == "" {
-			panic(
-				fmt.Sprintf(
-					"Failed to find configuration file:\n- %s\n",
-					strings.Join(attempted, " OR\n- "),
-				),
-			)
+			golog.Fatalln("Failed to find configuration file:",
+				strings.Join(attempted, " OR\n- "))
 		}
 	} else if !filepath.IsAbs(a.confPath) {
 		// Find the configuration based on the relative path provided
 		if a.confPath, err = filepath.Abs(a.confPath); err != nil {
-			panic(err.Error())
+			golog.Fatalln("Failed to resolve configuration path:", err.Error())
 		}
 	}
 
 	// Read the local configuration file
 	if a.conf, err = sts.NewConf(a.confPath); err != nil {
-		panic(fmt.Sprintf("Failed to parse configuration:\n%s", err.Error()))
+		golog.Fatalln("Failed to parse configuration:", err.Error())
 	}
 
 	return a
@@ -211,7 +208,7 @@ func (a *app) run() {
 	i := a.startServer()
 	o := a.startClients()
 	if !i && !o {
-		panic("Not configured to do anything?")
+		golog.Fatalln("Not configured to do anything?")
 	}
 	// Run until we get a signal to shutdown if running ONLY as a "receiver" or
 	// if configured to run as a sender in a loop.
@@ -276,14 +273,14 @@ func (a *app) startServer() bool {
 		if a.mode == modeAuto {
 			return false
 		}
-		panic("Missing required SERVER configuration")
+		golog.Fatalln("Server configuration missing")
 	}
 	s := &serverApp{
 		debug: a.debug,
 		conf:  a.conf.Server,
 	}
 	if err = s.init(); err != nil {
-		panic(err)
+		golog.Fatalln("Failed to initialize server:", err.Error())
 	}
 	stop := make(chan bool)
 	done := make(chan bool)
@@ -309,22 +306,17 @@ func (a *app) startClients() bool {
 	if a.mode != modeSend && a.mode != modeAuto {
 		return false
 	}
-	if a.conf.Client == nil ||
-		a.conf.Client.Sources == nil ||
-		len(a.conf.Client.Sources) < 1 {
-		if a.mode == modeAuto {
-			return false
-		}
-		panic("Missing required CLIENT (aka SENDER) configuration")
+	if a.conf == nil ||
+		a.conf.Client == nil ||
+		a.conf.Client.Dirs == nil {
+		golog.Fatalln("Source client configuration missing")
 	}
 	a.isRunningMux.Lock()
 	defer a.isRunningMux.Unlock()
 	var err error
 	dirs := a.conf.Client.Dirs
 	log.Init(dirs.LogMsg, a.debug, nil, nil)
-	a.clients = []*clientApp{}
-	a.clientStop = make(map[chan<- bool]<-chan bool)
-	watching := make(map[string]bool)
+	clientsByWatching := make(map[string]*clientApp)
 	for _, source := range a.conf.Client.Sources {
 		c := &clientApp{
 			conf:         source,
@@ -332,15 +324,34 @@ func (a *app) startClients() bool {
 			dirOutFollow: dirs.OutFollow,
 		}
 		if err = c.init(); err != nil {
-			panic(err)
+			log.Error("Failed to initialize source client %s: %s",
+				c.conf.Name, err.Error())
+			continue
 		}
-		a.clients = append(a.clients, c)
-		watch := c.conf.OutDir
-		if _, ok := watching[watch]; ok {
-			panic("Multiple sources configured to watch the same outgoing directory")
-		}
-		watching[watch] = true
+		clientsByWatching[c.conf.OutDir] = c
 	}
+	a.clients = []*clientApp{}
+	for d0, c0 := range clientsByWatching {
+		overlap := false
+		for d1, c1 := range clientsByWatching {
+			if c0 == c1 {
+				continue
+			}
+			if d0 == d1 || strings.HasPrefix(d0, d1) || strings.HasPrefix(d1, d0) {
+				overlap = true
+				log.Error("Outgoing directory overlaps are not allowed:\n - %s:%s\n - %s:%s",
+					c0.conf.Name, d0, c1.conf.Name, d1)
+			}
+		}
+		if !overlap {
+			a.clients = append(a.clients, c0)
+		}
+	}
+	if len(a.clients) == 0 {
+		log.Error("No source clients to start")
+		return false
+	}
+	a.clientStop = make(map[chan<- bool]<-chan bool)
 	for _, c := range a.clients {
 		stop := make(chan bool)
 		done := make(chan bool)

@@ -71,6 +71,7 @@ func NewJSON(cacheDir, fileRoot, key string) (j *JSON, err error) {
 		path:  filepath.Join(cacheDir, name),
 	}
 	if err = fileutil.LoadJSON(j.path, j); err != nil && !os.IsNotExist(err) {
+		err = fmt.Errorf("error loading cache file %s: %s", j.path, err)
 		return
 	}
 	err = nil

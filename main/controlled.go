@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	golog "log"
 	"net"
 	"os"
 	"os/signal"
@@ -143,16 +144,16 @@ func runFromServer(jsonEncodedServerConfig string) {
 	bytes := []byte(jsonEncodedServerConfig)
 	serverConf := sts.TargetConf{}
 	if err := json.Unmarshal(bytes, &serverConf); err != nil {
-		panic(err)
+		golog.Fatalln("Internal JSON parsing error:", err.Error())
 	}
 
 	tls, err := getTLSConf(&serverConf)
 	if err != nil {
-		panic(err)
+		golog.Fatalln("Error getting TLS configuration:", err.Error())
 	}
 	host, port, err := serverConf.ParseHost()
 	if err != nil {
-		panic(err)
+		golog.Fatalln("Error parsing server host:", err.Error())
 	}
 	httpClient := &http.Client{
 		TargetHost:   host,
@@ -163,7 +164,7 @@ func runFromServer(jsonEncodedServerConfig string) {
 
 	machineID, err := getMachineID(false)
 	if err != nil {
-		panic(err)
+		golog.Fatalln("Error getting machine ID:", err.Error())
 	}
 	clientID := encodeClientID(serverConf.Key, machineID)
 
@@ -175,7 +176,7 @@ func runFromServer(jsonEncodedServerConfig string) {
 	if rootDir == "" {
 		rootDir, err = os.UserCacheDir()
 		if err != nil {
-			panic(err)
+			golog.Fatalln("Error getting user cache directory:", err.Error())
 		}
 		rootDir = filepath.Join(rootDir, "sts")
 	}
@@ -242,12 +243,13 @@ func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 			goto wait
 		}
 
-		runClientCount = len(a.conf.Client.Sources)
 		if runClientCount == 0 {
 			log.Info("No data sources configured")
 		} else {
-			log.Info("Starting", runClientCount, "data source client(s) ...")
+			log.Info("Starting", len(a.conf.Client.Sources), "data source client(s) ...")
 			a.startClients()
+			runClientCount = len(a.clients)
+			log.Info("Started", runClientCount, "data source client(s)")
 		}
 
 	wait:
@@ -258,7 +260,7 @@ func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 		select {
 		case <-signalCh:
 			if runClientCount > 0 {
-				log.Info("Shutting down", len(a.conf.Client.Sources), "data source client(s) ...")
+				log.Info("Shutting down", runClientCount, "data source client(s) ...")
 				a.stopClients(false)
 			}
 			return

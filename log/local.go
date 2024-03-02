@@ -284,7 +284,7 @@ func (rf *rollingFile) rotate() {
 		rf.mkdir(filepath.Dir(path), os.ModePerm)
 		rf.fh, err = rf.open(path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0644)
 		if err != nil {
-			panic(fmt.Sprintf("Failed to open log file: %s", err.Error()))
+			log.Fatalln("Failed to open log file:", err.Error())
 		}
 		rf.logger.SetOutput(rf.fh)
 	}

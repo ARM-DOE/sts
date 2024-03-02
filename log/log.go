@@ -1,6 +1,10 @@
 package log
 
-import "code.arm.gov/dataflow/sts"
+import (
+	"log"
+
+	"code.arm.gov/dataflow/sts"
+)
 
 var std sts.Logger
 
@@ -8,7 +12,7 @@ var std sts.Logger
 func Init(rootDir string, debug bool, mkdir MakeDir, open OpenFile) {
 	if std != nil {
 		if g, ok := std.(*General); ok && g.logger.root != rootDir {
-			panic("Logger already initialized with a different path")
+			log.Fatalln("Logger already initialized with a different path")
 		}
 		return
 	}
@@ -43,7 +47,7 @@ func GetDebug() bool {
 
 func check() {
 	if std == nil {
-		panic("No logger defined")
+		log.Fatalln("No logger defined")
 	}
 }
 

@@ -3,6 +3,7 @@ package sts
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -40,13 +41,13 @@ type Conf struct {
 	Server   *ServerConf `yaml:"IN" json:"in"`
 }
 
-// ClientConf is the struct for housing all outgoing configuration.
+// ClientConf is the struct for housing all outgoing configuration
 type ClientConf struct {
 	Dirs    *ClientDirs   `yaml:"dirs" json:"dirs"`
 	Sources []*SourceConf `yaml:"sources" json:"sources"`
 }
 
-// propagate fills in missing options in sources[1..].
+// propagate fills in missing options in sources[1..]
 func (conf *ClientConf) propagate() {
 	if len(conf.Sources) == 0 {
 		return
@@ -81,8 +82,8 @@ func (conf *ClientConf) propagate() {
 
 type aliasClientConf ClientConf
 
-// UnmarshalYAML implements the Unmarshaler interface for handling custom
-// member(s): https://godoc.org/gopkg.in/yaml.v2
+// UnmarshalYAML implements the Unmarshaler interface for handling custom member(s)
+// https://godoc.org/gopkg.in/yaml.v2
 func (conf *ClientConf) UnmarshalYAML(
 	unmarshal func(interface{}) error,
 ) (err error) {
@@ -94,8 +95,8 @@ func (conf *ClientConf) UnmarshalYAML(
 	return
 }
 
-// UnmarshalJSON implements the Unmarshaler interface for handling custom
-// member(s): https://golang.org/pkg/encoding/json/#Unmarshal
+// UnmarshalJSON implements the Unmarshaler interface for handling custom member(s)
+// https://golang.org/pkg/encoding/json/#Unmarshal
 func (conf *ClientConf) UnmarshalJSON(data []byte) (err error) {
 	aux := (*aliasClientConf)(conf)
 	if err = json.Unmarshal(data, aux); err != nil {
@@ -105,8 +106,7 @@ func (conf *ClientConf) UnmarshalJSON(data []byte) (err error) {
 	return
 }
 
-// ClientDirs is the struct for managing the outgoing directory configuration
-// items.
+// ClientDirs is the struct for managing the outgoing directory configuration items
 type ClientDirs struct {
 	Out       string `yaml:"out" json:"out"`
 	OutFollow bool   `yaml:"out-follow" json:"out-follow"`
@@ -116,8 +116,7 @@ type ClientDirs struct {
 	Cache     string `yaml:"cache" json:"cache"`
 }
 
-// SourceConf is the struct for managing the configuration of an outgoing
-// client source.
+// SourceConf is the struct for managing the configuration of an outgoing client source
 type SourceConf struct {
 	Name          string
 	OutDir        string
@@ -235,8 +234,7 @@ func (ss *SourceConf) applyAux(aux *auxSourceConf) (err error) {
 	return
 }
 
-// UnmarshalYAML implements the Unmarshaler interface for handling custom
-// member(s).
+// UnmarshalYAML implements the Unmarshaler interface for handling custom member(s)
 // https://godoc.org/gopkg.in/yaml.v2
 func (ss *SourceConf) UnmarshalYAML(
 	unmarshal func(interface{}) error,
@@ -249,8 +247,8 @@ func (ss *SourceConf) UnmarshalYAML(
 	return
 }
 
-// UnmarshalJSON implements the Unmarshaler interface for handling custom
-// member(s): https://golang.org/pkg/encoding/json/#Unmarshal
+// UnmarshalJSON implements the Unmarshaler interface for handling custom member(s)
+// https://golang.org/pkg/encoding/json/#Unmarshal
 func (ss *SourceConf) UnmarshalJSON(data []byte) (err error) {
 	aux := &auxSourceConf{}
 	if err = json.Unmarshal(data, aux); err != nil {
@@ -260,7 +258,7 @@ func (ss *SourceConf) UnmarshalJSON(data []byte) (err error) {
 	return
 }
 
-// MarshalJSON implements Marshaler interface for handling custom member(s):
+// MarshalJSON implements Marshaler interface for handling custom member(s)
 // https://golang.org/pkg/encoding/json/#Marshal
 func (ss *SourceConf) MarshalJSON() ([]byte, error) {
 	aux := &auxSourceConf{}
@@ -305,7 +303,7 @@ func (ss *SourceConf) MarshalJSON() ([]byte, error) {
 }
 
 // MappingConf is the struct for indicating what path pattern should be mapped
-// to a different target name based on the associated template string.
+// to a different target name based on the associated template string
 type MappingConf struct {
 	Pattern  *regexp.Regexp
 	Template string
@@ -335,8 +333,8 @@ func (m *MappingConf) UnmarshalYAML(unmarshal func(interface{}) error) (err erro
 	return
 }
 
-// UnmarshalJSON implements the Unmarshaler interface for handling custom
-// member(s): https://golang.org/pkg/encoding/json/#Unmarshal
+// UnmarshalJSON implements the Unmarshaler interface for handling custom member(s)
+// https://golang.org/pkg/encoding/json/#Unmarshal
 func (m *MappingConf) UnmarshalJSON(data []byte) (err error) {
 	aux := &auxMappingConf{}
 	if err = json.Unmarshal(data, aux); err != nil {
@@ -346,7 +344,7 @@ func (m *MappingConf) UnmarshalJSON(data []byte) (err error) {
 	return
 }
 
-// MarshalJSON implements Marshaler interface for handling custom member(s):
+// MarshalJSON implements Marshaler interface for handling custom member(s)
 // https://golang.org/pkg/encoding/json/#Marshal
 func (m *MappingConf) MarshalJSON() ([]byte, error) {
 	aux := &auxMappingConf{}
@@ -355,8 +353,7 @@ func (m *MappingConf) MarshalJSON() ([]byte, error) {
 	return json.Marshal(aux)
 }
 
-// TagConf is the struct for managing configuration options for "tags" (groups)
-// of files.
+// TagConf is the struct for managing configuration options for "tags" (groups) of files
 type TagConf struct {
 	Priority    int
 	Method      string
@@ -404,8 +401,8 @@ func (t *TagConf) applyAux(aux *auxTagConf) (err error) {
 	return
 }
 
-// UnmarshalYAML implements the Unmarshaler interface for handling custom
-// member(s): https://godoc.org/gopkg.in/yaml.v2
+// UnmarshalYAML implements the Unmarshaler interface for handling custom member(s)
+// https://godoc.org/gopkg.in/yaml.v2
 func (t *TagConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 	aux := &auxTagConf{}
 	if err = unmarshal(aux); err != nil {
@@ -415,8 +412,8 @@ func (t *TagConf) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 	return
 }
 
-// UnmarshalJSON implements the Unmarshaler interface for handling custom
-// member(s): https://golang.org/pkg/encoding/json/#Unmarshal
+// UnmarshalJSON implements the Unmarshaler interface for handling custom member(s)
+// https://golang.org/pkg/encoding/json/#Unmarshal
 func (t *TagConf) UnmarshalJSON(data []byte) (err error) {
 	aux := &auxTagConf{}
 	if err = json.Unmarshal(data, aux); err != nil {
@@ -428,7 +425,7 @@ func (t *TagConf) UnmarshalJSON(data []byte) (err error) {
 	return
 }
 
-// MarshalJSON implements Marshaler interface for handling custom member(s):
+// MarshalJSON implements Marshaler interface for handling custom member(s)
 // https://golang.org/pkg/encoding/json/#Marshal
 func (t *TagConf) MarshalJSON() ([]byte, error) {
 	aux := &auxTagConf{}
@@ -494,8 +491,7 @@ type DBConf struct {
 	DatasetsTable string `yaml:"table-datasets" json:"table-datasets"`
 }
 
-// ServerDirs is the struct for managing the incoming directory configuration
-// items.
+// ServerDirs is the struct for managing the incoming directory configuration items
 type ServerDirs struct {
 	Log    string `yaml:"logs" json:"logs"`
 	LogIn  string `yaml:"logs-in" json:"logs-in"`
@@ -533,7 +529,7 @@ func NewConf(path string) (*Conf, error) {
 	}
 	fh, err := os.ReadFile(path)
 	if err != nil {
-		panic("Configuration file not found: " + path)
+		log.Fatalln("Configuration file not found: ", path)
 	}
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".yml":
@@ -543,7 +539,7 @@ func NewConf(path string) (*Conf, error) {
 	case ".json":
 		err = json.Unmarshal(fh, conf)
 	default:
-		panic(fmt.Sprintf("Unsupported configuration file format: %s", filepath.Ext(path)))
+		log.Fatalln("Unsupported configuration file format:", filepath.Ext(path))
 	}
 	if err != nil {
 		return nil, err
@@ -551,8 +547,8 @@ func NewConf(path string) (*Conf, error) {
 	return conf, nil
 }
 
-// InitPaths will initialize all conf paths and use the provided root for
-// resolving relative paths
+// InitPaths will initialize all conf paths and use the provided root for resolving
+// relative paths
 func InitPaths(conf *Conf,
 	join func(...string) string,
 	mkpath func(*string, bool) error) (err error) {
@@ -632,8 +628,8 @@ func InitPaths(conf *Conf,
 	return
 }
 
-// SetDefault will take a map of string pointers and set the values to the
-// corresponding string in the map if it is empty
+// SetDefault will take a map of string pointers and set the values to the corresponding
+// string in the map if it is empty
 func SetDefault(def map[*string]string) {
 	for sPtr, defaultStr := range def {
 		if *sPtr == "" {
