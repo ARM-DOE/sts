@@ -309,6 +309,9 @@ func (a *app) startClients() bool {
 	if a.conf == nil ||
 		a.conf.Client == nil ||
 		a.conf.Client.Dirs == nil {
+		if a.mode == modeAuto {
+			return false
+		}
 		golog.Fatalln("Source client configuration missing")
 	}
 	a.isRunningMux.Lock()
