@@ -243,7 +243,7 @@ func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 			goto wait
 		}
 
-		if runClientCount == 0 {
+		if len(a.conf.Client.Sources) == 0 {
 			log.Info("No data sources configured")
 		} else {
 			log.Info("Starting", len(a.conf.Client.Sources), "data source client(s) ...")
