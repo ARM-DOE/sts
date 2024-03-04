@@ -1004,7 +1004,6 @@ func (s *Stage) isWaitLoop(prevPath string) bool {
 				continue
 			}
 			for _, f := range ff {
-				s.logInfo("Checking for wait loop:", f.path, "<-", p)
 				if f.path == prevPath {
 					s.logInfo("Wait loop detected:", prevPath, "<-", p)
 					return true
