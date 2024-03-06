@@ -59,4 +59,4 @@ find $STS_HOME/data/in -type f | sort
 echo "Restarting..."
 $cmd > /dev/null
 
-/bin/bash done.sh
+/bin/bash $basedir/done.sh

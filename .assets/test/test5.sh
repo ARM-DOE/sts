@@ -24,10 +24,10 @@ tar -C $STS_HOME/data/out/stsin-1 -xzf $PWD/$basedir/clean.tgz
 tar -C $STS_HOME/data/out/stsin-2 -xzf $PWD/$basedir/clean.tgz
 
 echo "Running in background..."
-$cmd > /dev/null &
+$cmd > $STS_HOME/debug.log &
 
 echo "Sleeping..."
-sleep 5
+sleep 10
 
 echo "Putting the same data in there again..."
 tar -C $STS_HOME/data/out/stsin-2 -xzf $PWD/$basedir/clean.tgz
@@ -39,4 +39,4 @@ sleep 20
 echo "Done"
 pkill $exe
 
-/bin/bash done.sh
+/bin/bash $basedir/done.sh

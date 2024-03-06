@@ -33,4 +33,4 @@ mv $STS_HOME/data/log/incoming_from/stsout-2/$ym/22 \
 echo "Running..."
 $cmd > /dev/null
 
-/bin/bash done.sh
+/bin/bash $basedir/done.sh
