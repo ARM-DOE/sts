@@ -575,6 +575,8 @@ func (s *Stage) CleanNow(minAge time.Duration) {
 func (s *Stage) clean(minAge time.Duration) {
 	// We only want one cleanup at a time to run
 	s.cleanLock.Lock()
+	defer s.scheduleClean(minAge)
+	defer s.cleanLock.Unlock()
 
 	if s.cleanTimeout != nil {
 		s.cleanTimeout.Stop()
@@ -582,19 +584,18 @@ func (s *Stage) clean(minAge time.Duration) {
 	}
 
 	s.cleanStrays(minAge)
-	s.cleanWaiting(minAge)
+	s.cleanWaiting()
 
 	s.pruneTree(s.rootDir, minAge)
 	s.pruneTree(s.targetDir, minAge)
-
-	s.cleanLock.Unlock()
-
-	s.scheduleClean(minAge)
 }
 
 func (s *Stage) scheduleClean(minAge time.Duration) {
 	s.cleanLock.Lock()
 	defer s.cleanLock.Unlock()
+	if s.cleanTimeout != nil {
+		s.cleanTimeout.Stop()
+	}
 	s.cleanTimeout = time.AfterFunc(s.cleanInterval, func() {
 		s.clean(minAge)
 	})
@@ -705,13 +706,12 @@ func (s *Stage) cleanStrays(minAge time.Duration) {
 	}
 }
 
-func (s *Stage) cleanWaiting(minAge time.Duration) {
+func (s *Stage) cleanWaiting() {
 	s.logDebug("Looking for wait loops ...")
 	var waiting []*finalFile
 	s.cacheLock.RLock()
 	for _, cacheFile := range s.cache {
 		if cacheFile.state != stateValidated ||
-			time.Since(cacheFile.time) < minAge ||
 			cacheFile.prev == "" {
 			continue
 		}
@@ -723,19 +723,25 @@ func (s *Stage) cleanWaiting(minAge time.Duration) {
 	})
 	for _, cacheFile := range waiting {
 		prevPath := filepath.Join(s.rootDir, cacheFile.prev)
+		if !s.isWaiting(prevPath) {
+			continue
+		}
 		s.logDebug("Checking for wait loop:", cacheFile.prev, "<-", cacheFile.name)
-		if s.isWaiting(prevPath) && s.isWaitLoop(prevPath) {
-			for _, waitFile := range s.fromWait(prevPath) {
-				s.logInfo("Removing wait loop:", waitFile.name, "<-", waitFile.prev)
-				f := s.fromCache(waitFile.path)
-				if f != nil && f.state == stateValidated {
-					if f.wait != nil {
-						f.wait.Stop()
-						f.wait = nil
-					}
-					f.prev = ""
-					go s.finalizeQueue(f)
+		loop := s.detectWaitLoop(prevPath)
+		if len(loop) == 0 {
+			continue
+		}
+		loop = nil
+		for _, waitFile := range s.fromWait(prevPath) {
+			s.logInfo("Removing wait loop:", waitFile.name, "<-", waitFile.prev)
+			f := s.fromCache(waitFile.path)
+			if f != nil && f.state == stateValidated {
+				if f.wait != nil {
+					f.wait.Stop()
+					f.wait = nil
 				}
+				f.prev = ""
+				go s.finalizeQueue(f)
 			}
 		}
 	}
@@ -1022,13 +1028,15 @@ func (s *Stage) isWaiting(path string) bool {
 	return s.getWaiting(path) != nil
 }
 
-// isWaitLoop recurses through the wait tree to see if there is a file that
-// points back to the original, thus indicating a loop
-func (s *Stage) isWaitLoop(prevPath string) bool {
+// delectWaitLoop recurses through the wait tree to see if there is a file that
+// points back to the original (thus indicating a loop) and returns the names of
+// the files in the loop
+func (s *Stage) detectWaitLoop(prevPath string) (loop map[string]string) {
 	s.waitLock.RLock()
 	defer s.waitLock.RUnlock()
 	paths := []string{prevPath}
 	var next []string
+	loop = make(map[string]string)
 	for {
 		for _, p := range paths {
 			ff, ok := s.wait[p]
@@ -1037,9 +1045,13 @@ func (s *Stage) isWaitLoop(prevPath string) bool {
 			}
 			for _, f := range ff {
 				if f.path == prevPath {
-					s.logInfo("Wait loop detected:", prevPath, "<-", p)
-					return true
+					s.logInfo("Wait loop detected:", prevPath, "<-", p, "--", len(loop))
+					return
 				}
+				if _, ok := loop[f.path]; ok {
+					continue
+				}
+				loop[f.path] = p
 				next = append(next, f.path)
 			}
 		}
@@ -1049,7 +1061,8 @@ func (s *Stage) isWaitLoop(prevPath string) bool {
 		paths = next
 		next = nil
 	}
-	return false
+	loop = nil
+	return
 }
 
 // getWaiting returns a finalFile instance currently waiting on its predecessor
