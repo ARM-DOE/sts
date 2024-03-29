@@ -102,12 +102,6 @@ type Stage struct {
 	cacheTime  time.Time
 	cacheTimes []time.Time
 
-	// Every normal file I/O function does a read lock, so write locking
-	// it will block the stage area from interacting with the file system.
-	// This is useful for when we want to clean up the stage and target
-	// areas.
-	ioLock sync.RWMutex
-
 	pathLock  sync.RWMutex
 	pathLocks map[string]*sync.RWMutex
 	readyLock sync.RWMutex
@@ -181,8 +175,6 @@ func (s *Stage) pathToName(path, stripExt string) (name string) {
 // Scan walks the stage area tree looking for companion files and returns any
 // found in the form of a JSON-encoded byte array
 func (s *Stage) Scan(version string) (jsonBytes []byte, err error) {
-	s.ioLock.RLock()
-	defer s.ioLock.RUnlock()
 	var name string
 	var lock *sync.RWMutex
 	var partials []*sts.Partial
@@ -216,8 +208,6 @@ func (s *Stage) Scan(version string) (jsonBytes []byte, err error) {
 }
 
 func (s *Stage) initStageFile(path string, size int64) error {
-	s.ioLock.RLock()
-	defer s.ioLock.RUnlock()
 	var err error
 	info, err := os.Stat(path + partExt)
 	if err == nil && info.Size() == size {
@@ -266,9 +256,6 @@ func (s *Stage) Prepare(parts []sts.Binned) {
 
 // Receive reads a single file part with file metadata and reader
 func (s *Stage) Receive(file *sts.Partial, reader io.Reader) (err error) {
-	s.ioLock.RLock()
-	defer s.ioLock.RUnlock()
-
 	if len(file.Parts) != 1 {
 		err = fmt.Errorf(
 			"can only receive a single part for a single reader (%d given)",
@@ -460,8 +447,6 @@ func (s *Stage) setCanReceive(value bool) {
 // files in the stage area that should be completed from the previous server
 // run
 func (s *Stage) Recover() {
-	s.ioLock.Lock()
-	defer s.ioLock.Unlock()
 	s.setCanReceive(false)
 	defer s.setCanReceive(true)
 	s.logInfo("Beginning stage recovery")
@@ -602,9 +587,8 @@ func (s *Stage) scheduleClean(minAge time.Duration) {
 }
 
 func (s *Stage) pruneTree(dir string, minAge time.Duration) {
-	s.ioLock.Lock()
-	defer s.ioLock.Unlock()
-	s.logDebug("Pruning empty directories ...")
+	s.logInfo("Pruning empty directories ...")
+	defer s.logInfo("Pruning complete")
 	var dirs []string
 	err := filepath.Walk(dir,
 		func(path string, info os.FileInfo, err error) error {
@@ -798,8 +782,6 @@ func (s *Stage) processHandler() {
 }
 
 func (s *Stage) process(file *finalFile) {
-	s.ioLock.RLock()
-	defer s.ioLock.RUnlock()
 
 	s.logDebug("Validating:", file.name)
 
@@ -978,8 +960,6 @@ func (s *Stage) finalize(file *finalFile) {
 }
 
 func (s *Stage) putFileAway(file *finalFile) (targetPath string, err error) {
-	s.ioLock.RLock()
-	defer s.ioLock.RUnlock()
 
 	// Better to log the file twice rather than receive it twice.  If we log
 	// after putting the file away, it's possible that a crash could occur
