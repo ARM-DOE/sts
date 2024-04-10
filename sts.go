@@ -106,6 +106,7 @@ type Dispatcher interface {
 type GateKeeper interface {
 	Recover()
 	CleanNow(time.Duration)
+	Prune(time.Duration)
 	Ready() bool
 	Scan(version string) ([]byte, error)
 	Prepare(request []Binned)

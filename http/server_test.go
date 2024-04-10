@@ -216,6 +216,7 @@ func TestMisc(t *testing.T) {
 
 type mockGk struct {
 	gotCleanedNow bool
+	gotPruned     bool
 	gotStopped    bool
 	gotRecovered  bool
 }
@@ -226,6 +227,10 @@ func (g *mockGk) Recover() {
 
 func (g *mockGk) CleanNow(t time.Duration) {
 	g.gotCleanedNow = true
+}
+
+func (g *mockGk) Prune(t time.Duration) {
+	g.gotPruned = true
 }
 
 func (g *mockGk) Ready() bool {

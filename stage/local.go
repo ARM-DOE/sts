@@ -570,9 +570,6 @@ func (s *Stage) clean(minAge time.Duration) {
 
 	s.cleanStrays(minAge)
 	s.cleanWaiting()
-
-	s.pruneTree(s.rootDir, minAge)
-	s.pruneTree(s.targetDir, minAge)
 }
 
 func (s *Stage) scheduleClean(minAge time.Duration) {
@@ -584,6 +581,11 @@ func (s *Stage) scheduleClean(minAge time.Duration) {
 	s.cleanTimeout = time.AfterFunc(s.cleanInterval, func() {
 		s.clean(minAge)
 	})
+}
+
+func (s *Stage) Prune(minAge time.Duration) {
+	s.pruneTree(s.rootDir, minAge)
+	s.pruneTree(s.targetDir, minAge)
 }
 
 func (s *Stage) pruneTree(dir string, minAge time.Duration) {

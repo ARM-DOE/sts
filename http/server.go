@@ -424,6 +424,11 @@ func (s *Server) routeCheckMapping(w http.ResponseWriter, r *http.Request) {
 func (s *Server) routeInternal(w http.ResponseWriter, r *http.Request) {
 	wait := r.URL.Query().Has("block") || r.URL.Query().Has("wait")
 	debug := r.URL.Query().Has("debug")
+	minAgeSecs, err := strconv.Atoi(r.URL.Query().Get("minage"))
+	if err != nil {
+		minAgeSecs = 0
+	}
+	minAge := time.Duration(minAgeSecs) * time.Second
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	gateKeeper := s.getGateKeeper(r)
@@ -435,11 +440,6 @@ func (s *Server) routeInternal(w http.ResponseWriter, r *http.Request) {
 		}
 		go func() {
 			defer wg.Done()
-			minAgeSecs, err := strconv.Atoi(r.URL.Query().Get("minage"))
-			if err != nil {
-				minAgeSecs = 0
-			}
-			minAge := time.Duration(minAgeSecs) * time.Second
 			name := getSourceName(r)
 			log.Info(name, " -> Cleaning ...")
 			defer log.Info(name, " -> Cleaned")
@@ -448,6 +448,22 @@ func (s *Server) routeInternal(w http.ResponseWriter, r *http.Request) {
 				defer log.SetDebug(false)
 			}
 			gateKeeper.CleanNow(minAge)
+		}()
+	case "/prune":
+		if gateKeeper == nil || r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		go func() {
+			defer wg.Done()
+			name := getSourceName(r)
+			log.Info(name, " -> Pruning ...")
+			defer log.Info(name, " -> Pruned")
+			if debug && !log.GetDebug() {
+				log.SetDebug(true)
+				defer log.SetDebug(false)
+			}
+			gateKeeper.Prune(minAge)
 		}()
 	case "/restart":
 		if gateKeeper == nil || r.Method != http.MethodPut {
