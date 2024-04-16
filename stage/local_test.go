@@ -54,6 +54,7 @@ func TestWaitLoop(t *testing.T) {
 		"c": {"d"},
 		"d": {"c", "e"},
 		"e": {"a"},
+		"f": {"f"},
 	}
 	for prev, names := range hierarchy {
 		for _, name := range names {
@@ -70,7 +71,7 @@ func TestWaitLoop(t *testing.T) {
 		}
 	}
 
-	for _, prev := range []string{"a", "b", "c", "d", "e"} {
+	for prev := range hierarchy {
 		loop := stage.detectWaitLoop(filepath.Join(stage.rootDir, prev))
 		if len(loop) == 0 {
 			t.Errorf("Wait loop not detected")

@@ -1027,6 +1027,10 @@ func (s *Stage) detectWaitLoop(prevPath string) (loop map[string]string) {
 			}
 			for _, f := range ff {
 				if f.path == prevPath {
+					if len(loop) == 0 {
+						// If the file ends up waiting on itself for some reason
+						loop[f.path] = p
+					}
 					s.logInfo("Wait loop detected:", prevPath, "<-", p, "--", len(loop))
 					return
 				}
