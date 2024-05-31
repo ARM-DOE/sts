@@ -124,8 +124,9 @@ func New(name, rootDir, targetDir string, logger sts.ReceiveLogger, dispatcher s
 	s.cache = make(map[string]*finalFile)
 	s.pathLocks = make(map[string]*sync.RWMutex)
 	s.lastIn = time.Now()
-	s.cleanInterval = time.Hour * 12
+	s.cleanInterval = time.Minute * 30
 	s.canReceive = true
+	s.scheduleClean()
 	return s
 }
 
@@ -451,7 +452,6 @@ func (s *Stage) Recover() {
 	defer s.setCanReceive(true)
 	s.logInfo("Beginning stage recovery")
 	defer s.logInfo("Stage recovery complete")
-	defer s.scheduleClean(time.Hour)
 	var validate []*sts.Partial
 	var finalize []*sts.Partial
 	oldest := time.Now()
@@ -550,17 +550,14 @@ func (s *Stage) Recover() {
 	}
 }
 
-func (s *Stage) CleanNow(minAge time.Duration) {
-	if minAge == 0 {
-		minAge = s.cleanInterval
-	}
-	s.clean(minAge)
+func (s *Stage) CleanNow() {
+	s.clean()
 }
 
-func (s *Stage) clean(minAge time.Duration) {
+func (s *Stage) clean() {
 	// We only want one cleanup at a time to run
 	s.cleanLock.Lock()
-	defer s.scheduleClean(minAge)
+	defer s.scheduleClean()
 	defer s.cleanLock.Unlock()
 
 	if s.cleanTimeout != nil {
@@ -568,18 +565,18 @@ func (s *Stage) clean(minAge time.Duration) {
 		s.cleanTimeout = nil
 	}
 
-	s.cleanStrays(minAge)
+	s.cleanStrays(time.Hour * 24)
 	s.cleanWaiting()
 }
 
-func (s *Stage) scheduleClean(minAge time.Duration) {
+func (s *Stage) scheduleClean() {
 	s.cleanLock.Lock()
 	defer s.cleanLock.Unlock()
 	if s.cleanTimeout != nil {
 		s.cleanTimeout.Stop()
 	}
 	s.cleanTimeout = time.AfterFunc(s.cleanInterval, func() {
-		s.clean(minAge)
+		s.clean()
 	})
 }
 
@@ -712,7 +709,7 @@ func (s *Stage) cleanWaiting() {
 		if !s.isWaiting(prevPath) {
 			continue
 		}
-		s.logDebug("Checking for wait loop:", cacheFile.prev, "<-", cacheFile.name)
+		s.logDebug("Checking for wait loop:", cacheFile.name, "<-", cacheFile.prev)
 		loop := s.detectWaitLoop(prevPath)
 		if len(loop) == 0 {
 			continue
@@ -1031,7 +1028,7 @@ func (s *Stage) detectWaitLoop(prevPath string) (loop map[string]string) {
 						// If the file ends up waiting on itself for some reason
 						loop[f.path] = p
 					}
-					s.logInfo("Wait loop detected:", prevPath, "<-", p, "--", len(loop))
+					s.logInfo("Wait loop detected:", p, "<-", prevPath, "--", len(loop))
 					return
 				}
 				if _, ok := loop[f.path]; ok {

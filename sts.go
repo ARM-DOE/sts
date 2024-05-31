@@ -105,7 +105,7 @@ type Dispatcher interface {
 // received on the server
 type GateKeeper interface {
 	Recover()
-	CleanNow(time.Duration)
+	CleanNow()
 	Prune(time.Duration)
 	Ready() bool
 	Scan(version string) ([]byte, error)

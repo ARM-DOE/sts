@@ -428,7 +428,6 @@ func (s *Server) routeInternal(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		minAgeSecs = 0
 	}
-	minAge := time.Duration(minAgeSecs) * time.Second
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	gateKeeper := s.getGateKeeper(r)
@@ -447,13 +446,14 @@ func (s *Server) routeInternal(w http.ResponseWriter, r *http.Request) {
 				log.SetDebug(true)
 				defer log.SetDebug(false)
 			}
-			gateKeeper.CleanNow(minAge)
+			gateKeeper.CleanNow()
 		}()
 	case "/prune":
 		if gateKeeper == nil || r.Method != http.MethodPut {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		minAge := time.Duration(minAgeSecs) * time.Second
 		go func() {
 			defer wg.Done()
 			name := getSourceName(r)

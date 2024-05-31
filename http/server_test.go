@@ -225,7 +225,7 @@ func (g *mockGk) Recover() {
 	g.gotRecovered = true
 }
 
-func (g *mockGk) CleanNow(t time.Duration) {
+func (g *mockGk) CleanNow() {
 	g.gotCleanedNow = true
 }
 
