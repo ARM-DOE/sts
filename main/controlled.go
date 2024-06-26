@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -21,6 +22,7 @@ import (
 	"code.arm.gov/dataflow/sts/http"
 	"code.arm.gov/dataflow/sts/log"
 	"github.com/google/uuid"
+	"github.com/postfinance/single"
 )
 
 var (
@@ -168,6 +170,12 @@ func runFromServer(jsonEncodedServerConfig string) {
 	}
 	clientID := encodeClientID(serverConf.Key, machineID)
 
+	procLock, err := acquireProcLock(clientID)
+	if err != nil {
+		golog.Fatalln("Error acquiring process lock:", err.Error())
+	}
+	defer releaseProcLock(procLock)
+
 	log.Info("Server:", fmt.Sprintf("%s:%d", host, port))
 	log.Info("Server Prefix:", serverConf.PathPrefix)
 	log.Info("Client ID:", clientID)
@@ -271,6 +279,29 @@ func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 				runClientCount = 0
 			}
 			continue
+		}
+	}
+}
+
+func acquireProcLock(clientID string) (lock *single.Single, err error) {
+	dir := path.Join(os.TempDir(), "sts")
+	if err = os.MkdirAll(dir, 0700); err != nil {
+		dir, err = os.UserCacheDir()
+		if err != nil {
+			return
+		}
+	}
+	lock, err = single.New(
+		fmt.Sprintf("sts-client-%s", fileutil.StringMD5(clientID)),
+		single.WithLockPath(dir),
+	)
+	return
+}
+
+func releaseProcLock(lock *single.Single) {
+	if lock != nil {
+		if err := lock.Unlock(); err != nil {
+			log.Error(err.Error())
 		}
 	}
 }

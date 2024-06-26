@@ -11,6 +11,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/jmoiron/sqlx v1.3.1
 	github.com/lib/pq v1.10.0
+	github.com/postfinance/single v0.0.2
 	github.com/stackimpact/stackimpact-go v2.3.10+incompatible
 	gopkg.in/yaml.v2 v2.4.0
 )
