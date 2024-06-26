@@ -232,26 +232,32 @@ func (c *clientApp) init() (err error) {
 		}
 	}
 
-	grouper := func(name string) (group string) {
-		m := c.conf.GroupBy.FindStringSubmatch(name)
-		if len(m) == 0 {
-			return
-		}
-		group = m[1]
-		return
-	}
 	tagger := func(group string) (tag string) {
 		for i, t := range c.conf.Tags {
 			if t.Pattern == nil {
 				continue
 			}
-			if t.Pattern.MatchString(group) {
+			if qtags[i].Name == group || t.Pattern.MatchString(group) {
 				tag = qtags[i].Name
 				return
 			}
 		}
 		return
 	}
+
+	grouper := func(name string) (group string) {
+		m := c.conf.GroupBy.FindStringSubmatch(name)
+		if len(m) > 1 {
+			group = m[1]
+			if group != "" && group != name {
+				return
+			}
+		}
+		// If the group matches the name or is empty, use the tag as the group
+		group = tagger(name)
+		return
+	}
+
 	nameToTag := func(name string) (tag string) {
 		group := grouper(name)
 		tag = tagger(group)

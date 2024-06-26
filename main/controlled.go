@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -444,6 +445,12 @@ func requestClientConf(
 	case status&sts.ClientIsApproved != 0:
 		if force || status&sts.ClientHasUpdatedConfiguration != 0 {
 			if conf, err = manager.GetClientConf(clientID); err != nil {
+				for _, src := range conf.Sources {
+					// This can be anything that doesn't return a matched group because
+					// it will invoke the logic that uses the matching tag as the group
+					// itself (see main/client.go, grouper & tagger).
+					src.GroupBy = regexp.MustCompile(`.`)
+				}
 				return
 			}
 			if conf == nil {
