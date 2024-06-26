@@ -106,8 +106,7 @@ func (dir *Local) AddStandardIgnore() {
 	ignore := []*regexp.Regexp{
 		regexp.MustCompile(
 			fmt.Sprintf(
-				`(?:^|%s)%s$`,
-				regexp.QuoteMeta(string(filepath.Separator)),
+				`%s$`,
 				regexp.QuoteMeta(fileutil.LockExt))),
 		regexp.MustCompile(
 			fmt.Sprintf(
