@@ -255,6 +255,12 @@ func (a *app) runControlledClients(confCh <-chan *sts.ClientConf) {
 		if len(a.conf.Client.Sources) == 0 {
 			log.Info("No data sources configured")
 		} else {
+			for _, src := range a.conf.Client.Sources {
+				// This can be anything that doesn't return a matched group because
+				// it will invoke the logic that uses the matching tag as the group
+				// itself (see main/client.go, grouper & tagger).
+				src.GroupBy = regexp.MustCompile(`.`)
+			}
 			log.Info("Starting", len(a.conf.Client.Sources), "data source client(s) ...")
 			a.startClients()
 			runClientCount = len(a.clients)
@@ -445,12 +451,6 @@ func requestClientConf(
 	case status&sts.ClientIsApproved != 0:
 		if force || status&sts.ClientHasUpdatedConfiguration != 0 {
 			if conf, err = manager.GetClientConf(clientID); err != nil {
-				for _, src := range conf.Sources {
-					// This can be anything that doesn't return a matched group because
-					// it will invoke the logic that uses the matching tag as the group
-					// itself (see main/client.go, grouper & tagger).
-					src.GroupBy = regexp.MustCompile(`.`)
-				}
 				return
 			}
 			if conf == nil {
