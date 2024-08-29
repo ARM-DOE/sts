@@ -1,13 +1,14 @@
 IN: # Incoming configuration.
-    log-buffering: true  # Set to true only when potentially redundant transfers it not critical
-    sources:
-      - stsout-1
-      - stsout-2
-    dirs: # Incoming directory configuration.
-        stage : data/stage # Directory to stage data as it comes in; appends "source" name
-        final : data/in    # Final location for incoming files; appends "/{source}"
-        logs  : data/log   # Root directory for log files
-    server: # Server configuration.
-        http-host     : localhost
-        http-port     : 1992 # What port to listen on
-        compress      : 0 # Use GZIP compression level (0-9) on response data
+  log-buffering: true # Set to true only when potentially redundant transfers it not critical
+  sources:
+    - stsout-1
+    - stsout-2
+  dirs: # Incoming directory configuration.
+    stage: data/stage # Directory to stage data as it comes in; appends "source" name
+    final: data/in # Final location for incoming files; appends "/{source}"
+    logs: data/log # Root directory for log files
+  server: # Server configuration.
+    http-host: localhost
+    http-port: 1992 # What port to listen on
+    compress: 0 # Use GZIP compression level (0-9) on response data
+    chance-of-simulated-failure: 0.10 # Chance of simulated network failure

@@ -98,15 +98,16 @@ func (a *serverApp) init() (err error) {
 		}
 	}
 	a.server = &http.Server{
-		ServeDir:          dirs.Serve,
-		Host:              conf.Server.Host,
-		Port:              conf.Server.Port,
-		PathPrefix:        conf.Server.PathPrefix,
-		Compression:       conf.Server.Compression,
-		DecoderFactory:    payload.NewDecoder,
-		IsValid:           a.standardValidator,
-		GateKeepers:       stagers,
-		GateKeeperFactory: newStage,
+		ServeDir:                 dirs.Serve,
+		Host:                     conf.Server.Host,
+		Port:                     conf.Server.Port,
+		PathPrefix:               conf.Server.PathPrefix,
+		Compression:              conf.Server.Compression,
+		DecoderFactory:           payload.NewDecoder,
+		IsValid:                  a.standardValidator,
+		GateKeepers:              stagers,
+		GateKeeperFactory:        newStage,
+		ChanceOfSimulatedFailure: conf.Server.ChanceOfSimulatedFailure,
 	}
 	if conf.Server.TLSCertPath != "" && conf.Server.TLSKeyPath != "" {
 		if a.server.TLS, err = http.LoadTLSConf(

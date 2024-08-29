@@ -319,7 +319,7 @@ type Payload interface {
 	GetSize() int64
 	GetParts() []Binned
 	EncodeHeader() ([]byte, error)
-	GetEncoder() io.Reader
+	GetEncoder() io.ReadCloser
 	GetStarted() time.Time
 	GetCompleted() time.Time
 }

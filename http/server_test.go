@@ -47,11 +47,11 @@ func stageFiles(count int, bytes units.Base2Bytes) {
 
 func requestInternal(url string) error {
 	var err error
-	var client *http.Client
+	var client *BandwidthLoggingClient
 	var req *http.Request
 	var resp *http.Response
 
-	if client, err = GetClient(nil); err != nil {
+	if client, err = GetClient(nil, time.Duration(0), ""); err != nil {
 		return err
 	}
 
@@ -73,12 +73,12 @@ func requestInternal(url string) error {
 
 func request(method, url string, data io.Reader, respData ...any) error {
 	var err error
-	var client *http.Client
+	var client *BandwidthLoggingClient
 	var req *http.Request
 	var resp *http.Response
 	var reader io.ReadCloser
 
-	if client, err = GetClient(nil); err != nil {
+	if client, err = GetClient(nil, time.Duration(0), ""); err != nil {
 		return err
 	}
 

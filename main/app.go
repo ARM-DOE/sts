@@ -24,6 +24,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	httpbase "net/http"
+
 	"github.com/coreos/go-systemd/v22/daemon"
 )
 
@@ -226,7 +228,9 @@ func (a *app) run() {
 		sc := make(chan os.Signal, 1)
 		signal.Notify(sc, os.Interrupt, syscall.SIGTERM)
 
-		daemon.SdNotify(false, daemon.SdNotifyReady)
+		if _, err := daemon.SdNotify(false, daemon.SdNotifyReady); err != nil {
+			log.Error("Failed to notify systemd:", err.Error())
+		}
 
 		var dogTicker *time.Ticker
 		var dogDone chan bool
@@ -240,7 +244,9 @@ func (a *app) run() {
 					case <-dogDone:
 						return
 					case <-dogTicker.C:
-						daemon.SdNotify(false, daemon.SdNotifyWatchdog)
+						if _, err = daemon.SdNotify(false, daemon.SdNotifyWatchdog); err != nil {
+							log.Error("Failed to notify watchdog:", err.Error())
+						}
 					}
 				}
 			}()
@@ -255,7 +261,9 @@ func (a *app) run() {
 			dogTicker.Stop()
 			dogDone <- true
 		}
-		daemon.SdNotify(false, daemon.SdNotifyStopping)
+		if _, err := daemon.SdNotify(false, daemon.SdNotifyStopping); err != nil {
+			log.Error("Failed to notify systemd:", err.Error())
+		}
 	}
 	a.stopClients(stopFull)
 	a.stopServer()
@@ -384,6 +392,9 @@ func (a *app) stopClients(stopGraceful bool) {
 		}(stop, stopGraceful, done, &wg)
 	}
 	wg.Wait()
+	for _, c := range a.clients {
+		c.destroy()
+	}
 	a.clients = nil
 	a.clientStop = nil
 }
@@ -392,8 +403,12 @@ func (a *app) startInternalServer() {
 	if a.iPort == 0 {
 		return
 	}
+	fmt.Println("Starting internal server...", a.iPort)
 	server := &http.Internal{
 		Port: a.iPort,
+		Handlers: map[string]httpbase.HandlerFunc{
+			"restart-clients": a.restartHandler,
+		},
 	}
 	stop := make(chan bool)
 	done := make(chan bool)
@@ -408,4 +423,18 @@ func (a *app) stopInternalServer() {
 	}
 	a.iServerStop <- true
 	<-a.iServerDone
+}
+
+func (a *app) restartHandler(w httpbase.ResponseWriter, r *httpbase.Request) {
+	log.Debug("Restarting clients...")
+	switch r.Method {
+	case httpbase.MethodPut:
+		fallthrough
+	case httpbase.MethodPost:
+		a.stopClients(false)
+		a.startClients()
+		w.WriteHeader(httpbase.StatusOK)
+	default:
+		w.WriteHeader(httpbase.StatusBadRequest)
+	}
 }

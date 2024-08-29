@@ -31,23 +31,30 @@ if [ ! -z "$serverdebug" ]; then
     mkdir -p $(dirname $serveroutput)
 fi
 
-cmd_client1="$bin$VCLIENT1 $clientdebug--mode=out --loop"
-cmd_client2="$bin$VCLIENT2 $clientdebug--mode=out --loop"
+iport=1990
+
+cmd_client1="$bin$VCLIENT1 $clientdebug--mode=out --loop --iport=$iport"
+cmd_client2="$bin$VCLIENT2 $clientdebug--mode=out --loop --iport=$iport"
 
 cmd_server1="$bin$VSERVER1 $serverdebug--mode=in"
 cmd_server2="$bin$VSERVER2 $serverdebug--mode=in"
 
-sim=(
-    "stsin-1 xs       100   5000 0"
-    "stsin-1 xl 100000000      2 0"
-    "stsin-2 lg  10000000     20 0"
-    "stsin-2 md    100000    500 0"
-    "stsin-2 sm     10000   1000 0"
-)
-for args in "${sim[@]}"; do
-    echo "Making data: $args ..."
-    $PWD/$basedir/makedata.py $args
-done
+function makedata() {
+    sim=(
+        "stsin-1 xs       100  10000 0"
+        "stsin-1 xl 100000000      4 0"
+        "stsin-2 lg  10000000     40 0"
+        "stsin-2 md    100000   1000 0"
+        "stsin-2 sm     10000   2000 0"
+    )
+    for args in "${sim[@]}"; do
+        echo "Making data: $args ..."
+        $PWD/$basedir/makedata.py $args
+    done
+}
+
+makedata &
+makedata_pid=$!
 
 echo "Running server ..."
 $cmd_server1 > $serveroutput &
@@ -56,7 +63,22 @@ pid_server=$!
 echo "Running client ..."
 $cmd_client1 > $clientoutput &
 pid_client=$!
-pids=( "$pid_client" "$pid_server" )
+pids=( "$pid_client" "$pid_server" "$makedata_pid" )
+
+function memory() {
+    while true; do
+        sleep $(( 10 * $sleepfactor ))
+        echo ""
+        echo "Memory Usage:"
+        ps -o rss,args -p $pid_client $pid_server \
+            | awk 'NR>1 {printf "%.2f GB %s\n", $1/1024/1024, substr($0, index($0,$2))}'
+        echo ""
+    done
+}
+
+memory &
+memory_pid=$!
+pids+=($memory_pid)
 
 function monkey() {
     count_stg=0
@@ -94,11 +116,30 @@ function ctrl_c() {
     exit 0
 }
 
+function cleanrestart() {
+    echo "Doing a 'clean' client restart ..."
+    curl -XPUT "http://localhost:$iport/restart-clients"
+    echo "Client(s) restarted!"
+}
+
 # Handle interrupt signal
 trap ctrl_c INT
 
-# Sleep for a bit to send some of the data
-sleep $(( 20 * $sleepfactor ))
+# Sleep until the count of outgoing files goes down
+countprev=0
+while true; do
+    sleep $(( 5 * $sleepfactor ))
+    out=`find $STS_HOME/data/out -type f 2>/dev/null | sort`
+    if [ "$out" ]; then
+        lines=($out)
+        count=${#lines[@]}
+        # break if the count is going down
+        if (( countprev > 0 && count < countprev )); then
+            break
+        fi
+        countprev=$count
+    fi
+done
 
 echo "Stopping ..."
 
@@ -106,11 +147,17 @@ echo "Stopping ..."
 kill -9 $pid_client
 kill -9 $pid_server
 kill $monkey_pid > /dev/null 2>&1
+kill $memory_pid > /dev/null 2>&1
 
-# Make more data
-for args in "${sim[@]}"; do
-    echo "Making data: $args ..."
-    $PWD/$basedir/makedata.py $args
+# Wait until PIDs are gone
+while true; do
+    sleep $(( 1 * $sleepfactor ))
+    for pid in "${pids[@]}"; do
+        if ps -p $pid > /dev/null 2>&1; then
+            continue
+        fi
+        break 2
+    done
 done
 
 echo "Restarting server ..."
@@ -127,12 +174,28 @@ echo "Restarting monkey ..."
 monkey &
 monkey_pid=$!
 
-pids=( "$pid_client" "$pid_server" "$monkey_pid" )
+echo "Restarting memory monitor ..."
+memory &
+memory_pid=$!
 
-echo "Waiting ..."
+# Make more data
+makedata &
+makedata_pid=$!
+
+pids=( "$pid_client" "$pid_server" "$monkey_pid" "$memory_pid" "$makedata_pid" )
+
+restarttime=$(date +%s)
+restartinterval=60
 
 # Wait for the client to be done
 while true; do
+    now=$(date +%s)
+    elapsed=$((now - restarttime))
+    echo "Elapsed: $elapsed"
+    if (( elapsed > restartinterval )); then
+        cleanrestart
+        restarttime=$(date +%s)
+    fi
     sleep $(( 5 * $sleepfactor ))
     out=`find $STS_HOME/data/out -type f 2>/dev/null | sort`
     if [ "$out" ]; then
@@ -146,7 +209,7 @@ while true; do
 done
 
 # Trigger a stage cleanup manually
-curl 'localhost:1992/clean?block&minage=1'
+# curl 'localhost:1992/clean?block&minage=1'
 
 while true; do
     sleep $(( 1 * $sleepfactor ))
@@ -157,6 +220,7 @@ while true; do
         continue
     fi
     kill $pid_server
+    kill $memory_pid > /dev/null 2>&1
     echo "Done!"
     break
 done
@@ -197,11 +261,20 @@ if [ "$stale" ]; then
 fi
 
 sortd=`cut -d ":" -f 1 $STS_HOME/data/log/incoming_from/*/*/* | sort`
-uniqd=`uniq -c <(cat <(echo "$sortd")) | grep -v " 1"`
+uniqd=`uniq -c <(cat <(echo "$sortd")) | grep -v " 1 "`
 if [ "$uniqd" ]; then
     echo "Incoming Duplicates (probably OK):"
     cat <(echo "$uniqd")
     echo "SUCCESS?"
+    exit 0
+fi
+
+sortd=`cut -d ":" -f 1 $STS_HOME/data/log/outgoing_to/*/*/* | sort`
+uniqd=`uniq -c <(cat <(echo "$sortd")) | grep -v " 1 "`
+if [ "$uniqd" ]; then
+    echo "Outgoing Duplicates:"
+    cat <(echo "$uniqd")
+    echo "FAILED!"
     exit 0
 fi
 

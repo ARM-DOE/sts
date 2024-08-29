@@ -6,16 +6,19 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"code.arm.gov/dataflow/sts/fileutil"
 	"code.arm.gov/dataflow/sts/log"
+	"github.com/alecthomas/units"
 )
 
 const (
@@ -91,11 +94,18 @@ func ListenAndServe(addr string, tlsConf *tls.Config, handler http.Handler) erro
 
 // Close gracefully shuts down the DefaultServer.
 func Close() error {
+	if DefaultServer == nil {
+		return nil
+	}
 	return DefaultServer.Close()
 }
 
 // GetClient returns a secure http.Client instance pointer based on cert paths.
-func GetClient(tlsConf *tls.Config) (client *http.Client, err error) {
+func GetClient(
+	tlsConf *tls.Config,
+	logInterval time.Duration,
+	logPrefix string,
+) (client *BandwidthLoggingClient, err error) {
 	// Create new client using tls config
 	// NOTE: cloning the default transport means we get things like honoring
 	// proxy env vars (e.g. HTTP_PROXY, HTTPS_PROXY, etc)...
@@ -104,7 +114,9 @@ func GetClient(tlsConf *tls.Config) (client *http.Client, err error) {
 		tr.TLSClientConfig = tlsConf
 	}
 	tr.DisableKeepAlives = true
-	client = &http.Client{Transport: tr}
+	client = newBandwidthLoggingClient(tr, logInterval, func(i ...interface{}) {
+		log.Info(append([]interface{}{logPrefix}, i...)...)
+	})
 	return
 }
 
@@ -392,4 +404,140 @@ func handleError(w http.ResponseWriter, code int, err error) {
 	log.Error(err.Error())
 	w.WriteHeader(code)
 	w.Write([]byte(err.Error()))
+}
+
+type bandwidthMonitorTransport struct {
+	transport     http.RoundTripper
+	bytesSent     uint64
+	bytesReceived uint64
+	totalDuration uint64 // in nanoseconds
+}
+
+func (t *bandwidthMonitorTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t.transport == nil {
+		t.transport = http.DefaultTransport
+	}
+
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		atomic.AddUint64(&t.totalDuration, uint64(duration))
+	}()
+
+	if req.Body != nil {
+		originalBody := req.Body
+		req.Body = &readCounter{req.Body, &t.bytesSent}
+		defer originalBody.Close()
+	}
+
+	resp, err := t.transport.RoundTrip(req)
+	if err != nil {
+		return resp, err
+	}
+
+	resp.Body = &readCounter{resp.Body, &t.bytesReceived}
+	return resp, nil
+}
+
+func (t *bandwidthMonitorTransport) GetBytesSent() uint64 {
+	return atomic.LoadUint64(&t.bytesSent)
+}
+
+func (t *bandwidthMonitorTransport) GetBytesReceived() uint64 {
+	return atomic.LoadUint64(&t.bytesReceived)
+}
+
+func (t *bandwidthMonitorTransport) GetTotalDuration() time.Duration {
+	return time.Duration(atomic.LoadUint64(&t.totalDuration))
+}
+
+func (t *bandwidthMonitorTransport) ResetCounters() {
+	atomic.StoreUint64(&t.bytesSent, 0)
+	atomic.StoreUint64(&t.bytesReceived, 0)
+	atomic.StoreUint64(&t.totalDuration, 0)
+}
+
+type readCounter struct {
+	reader  io.Reader
+	counter *uint64
+}
+
+func (r *readCounter) Read(p []byte) (n int, err error) {
+	n, err = r.reader.Read(p)
+	atomic.AddUint64(r.counter, uint64(n))
+	return
+}
+
+func (r *readCounter) Close() error {
+	if c, ok := r.reader.(io.Closer); ok {
+		return c.Close()
+	}
+	return nil
+}
+
+type BandwidthLoggingClient struct {
+	*http.Client
+	monitor  *bandwidthMonitorTransport
+	stopChan chan struct{}
+}
+
+func newBandwidthLoggingClient(
+	baseTransport http.RoundTripper,
+	logInterval time.Duration,
+	logFn func(...interface{}),
+) *BandwidthLoggingClient {
+	monitor := &bandwidthMonitorTransport{transport: baseTransport}
+	client := &http.Client{Transport: monitor}
+	blc := &BandwidthLoggingClient{
+		Client:   client,
+		monitor:  monitor,
+		stopChan: make(chan struct{}),
+	}
+	if logInterval > 0 {
+		go blc.logBandwidthUsage(logInterval, logFn)
+	}
+	return blc
+}
+
+func (blc *BandwidthLoggingClient) Stop() {
+	close(blc.stopChan)
+}
+
+func (blc *BandwidthLoggingClient) logBandwidthUsage(
+	interval time.Duration,
+	logFn func(...interface{}),
+) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			sent := blc.monitor.GetBytesSent()
+			received := blc.monitor.GetBytesReceived()
+			duration := blc.monitor.GetTotalDuration()
+
+			if duration > 0 {
+				sentBps := int64(float64(sent) / duration.Seconds())
+				receivedBps := int64(float64(received) / duration.Seconds())
+
+				lines := []string{
+					fmt.Sprintf("Raw bandwidth usage in the last %s:", interval),
+					fmt.Sprintf("  - Sent: %s (%s/s)", units.Base2Bytes(sent), units.Base2Bytes(sentBps)),
+					fmt.Sprintf("  - Received: %s (%s/s)", units.Base2Bytes(received), units.Base2Bytes(receivedBps)),
+					fmt.Sprintf("  - Total duration: %s", duration),
+				}
+				logFn(strings.Join(lines, "\n"))
+			} else {
+				logFn(fmt.Sprintf("No requests made in the last %s", interval))
+			}
+			// sent := blc.monitor.GetBytesSent()
+			// received := blc.monitor.GetBytesReceived()
+			// logFn("Bandwidth usage in the last %s - Sent: %s, Received: %s",
+			// 	interval, units.Base2Bytes(sent), units.Base2Bytes(received))
+			blc.monitor.ResetCounters()
+		case <-blc.stopChan:
+			return
+		}
+	}
 }

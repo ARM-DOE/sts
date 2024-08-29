@@ -58,9 +58,13 @@ func (conf *ClientConf) propagate() {
 		if src != nil {
 			tgt = conf.Sources[i]
 			origStat := tgt.StatPayload
+			origBackoff := tgt.ErrorBackoff
 			reflectutil.CopyStruct(tgt, src)
 			if tgt.isStatPayloadSet {
 				tgt.StatPayload = origStat
+			}
+			if tgt.isErrorBackoffSet {
+				tgt.ErrorBackoff = origBackoff
 			}
 			if src.Target != nil && tgt.Target != nil {
 				reflectutil.CopyStruct(tgt.Target, src.Target)
@@ -141,12 +145,14 @@ type SourceConf struct {
 	IncludeHidden bool
 	Include       []*regexp.Regexp
 	Ignore        []*regexp.Regexp
+	ErrorBackoff  float64
 
 	// We have to do this mumbo jumbo if we ever want a false value to
 	// override a true value because a false boolean value is the "empty"
 	// value and it's impossible to know if it was set in the config file or
 	// if it was just the default value because it wasn't specified.
-	isStatPayloadSet bool
+	isStatPayloadSet  bool
+	isErrorBackoffSet bool
 }
 
 func (c *SourceConf) GenMappingVars() map[string]string {
@@ -179,6 +185,7 @@ type auxSourceConf struct {
 	IncludeHidden string           `yaml:"include-hidden" json:"include-hidden"`
 	Include       []string         `yaml:"include" json:"include"`
 	Ignore        []string         `yaml:"ignore" json:"ignore"`
+	ErrorBackoff  string           `yaml:"error-backoff" json:"error-backoff"`
 }
 
 func (ss *SourceConf) applyAux(aux *auxSourceConf) (err error) {
@@ -231,6 +238,10 @@ func (ss *SourceConf) applyAux(aux *auxSourceConf) (err error) {
 	}
 	ss.Include = patterns[0:len(aux.Include)]
 	ss.Ignore = patterns[len(aux.Include):]
+	if aux.ErrorBackoff != "" {
+		ss.ErrorBackoff, err = strconv.ParseFloat(aux.ErrorBackoff, 64)
+		ss.isErrorBackoffSet = true
+	}
 	return
 }
 
@@ -299,6 +310,9 @@ func (ss *SourceConf) MarshalJSON() ([]byte, error) {
 	}
 	aux.Include = strings[0:len(ss.Include)]
 	aux.Ignore = strings[len(ss.Include):]
+	if ss.isErrorBackoffSet {
+		aux.ErrorBackoff = fmt.Sprintf("%f", ss.ErrorBackoff)
+	}
 	return json.Marshal(aux)
 }
 
@@ -503,12 +517,13 @@ type ServerDirs struct {
 
 // HTTPServer is the struct for managing the incoming HTTP host
 type HTTPServer struct {
-	Host        string `yaml:"http-host" json:"http-host"`
-	Port        int    `yaml:"http-port" json:"http-port"`
-	PathPrefix  string `yaml:"http-path-prefix" json:"http-path-prefix"`
-	TLSCertPath string `yaml:"http-tls-cert" json:"http-tls-cert"`
-	TLSKeyPath  string `yaml:"http-tls-key" json:"http-tls-key"`
-	Compression int    `yaml:"compress" json:"compress"`
+	Host                     string  `yaml:"http-host" json:"http-host"`
+	Port                     int     `yaml:"http-port" json:"http-port"`
+	PathPrefix               string  `yaml:"http-path-prefix" json:"http-path-prefix"`
+	TLSCertPath              string  `yaml:"http-tls-cert" json:"http-tls-cert"`
+	TLSKeyPath               string  `yaml:"http-tls-key" json:"http-tls-key"`
+	Compression              int     `yaml:"compress" json:"compress"`
+	ChanceOfSimulatedFailure float64 `yaml:"chance-of-simulated-failure" json:"chance-of-simulated-failure"`
 }
 
 // Queue is the struct for managing an AWS queue resource

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -35,6 +36,8 @@ type Server struct {
 
 	IsValid       sts.RequestValidator
 	ClientManager sts.ClientManager
+
+	ChanceOfSimulatedFailure float64
 
 	lock sync.RWMutex
 }
@@ -320,6 +323,7 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		s.potentiallySimulateFailure(w, float64(index+1)/float64(len(parts)))
 		file := &sts.Partial{
 			Name:    parts[index].GetName(),
 			Renamed: parts[index].GetRenamed(),
@@ -529,4 +533,18 @@ func getKey(r *http.Request) string {
 		key = r.URL.Query().Get("key")
 	}
 	return key
+}
+
+func (s *Server) potentiallySimulateFailure(w http.ResponseWriter, pctDone float64) {
+	if s.ChanceOfSimulatedFailure == 0 {
+		return
+	}
+	if s.ChanceOfSimulatedFailure*pctDone < rand.Float64() {
+		return
+	}
+	conn, _, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		return
+	}
+	conn.Close()
 }

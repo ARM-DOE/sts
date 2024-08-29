@@ -323,7 +323,6 @@ func getMachineID(forceCompute bool) (id string, err error) {
 	if !compute {
 		_, err = os.Stat(cachePath)
 		compute = os.IsNotExist(err)
-		err = nil
 	}
 	if compute {
 		id = uuid.New().String()

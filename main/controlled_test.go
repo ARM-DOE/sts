@@ -79,9 +79,9 @@ func TestConf(t *testing.T) {
 	}
 
 	a := &app{
-		loop: true,
-		mode: modeSend,
-		root: rootDir,
+		// loop: true,
+		// mode: modeSend,
+		// root: rootDir,
 		conf: &sts.Conf{},
 	}
 

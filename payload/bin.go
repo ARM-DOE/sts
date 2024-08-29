@@ -7,6 +7,7 @@ import (
 	"math"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"code.arm.gov/dataflow/sts"
@@ -255,7 +256,7 @@ func (bin *Bin) EncodeHeader() (byteMeta []byte, err error) {
 }
 
 // GetEncoder returns an io.Reader for reading the bin content
-func (bin *Bin) GetEncoder() io.Reader {
+func (bin *Bin) GetEncoder() io.ReadCloser {
 	return NewEncoder(bin)
 }
 
@@ -268,6 +269,8 @@ type Encoder struct {
 	eop          bool  // Set to true when a part is completely read.
 	eob          bool  // Set to true when when the bin is completely read.
 	handle       sts.Readable
+	mux          sync.RWMutex
+	closed       bool
 }
 
 // NewEncoder returns a new BinWriter instance
@@ -316,6 +319,11 @@ func (b *Encoder) startNextPart() error {
 
 // Read reads the next bit of bytes from the current file part
 func (b *Encoder) Read(p []byte) (n int, err error) {
+	b.mux.RLock()
+	defer b.mux.RUnlock()
+	if b.closed {
+		return 0, io.EOF
+	}
 	if b.partIndex == 0 {
 		b.bin.setStarted()
 	}
@@ -356,6 +364,16 @@ func (b *Encoder) Read(p []byte) (n int, err error) {
 		b.bin.setCompleted()
 	}
 	return
+}
+
+func (b *Encoder) Close() error {
+	b.mux.Lock()
+	defer b.mux.Unlock()
+	if b.handle != nil {
+		b.handle.Close()
+	}
+	b.closed = true
+	return nil
 }
 
 // PartDecoder is responsible for parsing individual "parts" of "bin" requests

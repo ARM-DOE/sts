@@ -55,18 +55,19 @@ func (c *confirmed) Received() bool {
 
 // Client is the main client struct
 type Client struct {
-	SourceName      string
-	TargetHost      string
-	TargetPort      int
-	TargetPrefix    string
-	TargetKey       string
-	Compression     int
-	Timeout         time.Duration
-	TLS             *tls.Config
-	PartialsDecoder sts.DecodePartials
+	SourceName           string
+	TargetHost           string
+	TargetPort           int
+	TargetPrefix         string
+	TargetKey            string
+	Compression          int
+	Timeout              time.Duration
+	TLS                  *tls.Config
+	PartialsDecoder      sts.DecodePartials
+	BandwidthLogInterval time.Duration
 
 	root   string
-	client *http.Client
+	client *BandwidthLoggingClient
 }
 
 func (h *Client) rootURL() string {
@@ -89,11 +90,20 @@ func (h *Client) init() error {
 		return nil
 	}
 	var err error
-	if h.client, err = GetClient(h.TLS); err != nil {
+	if h.client, err = GetClient(
+		h.TLS,
+		h.BandwidthLogInterval,
+		fmt.Sprintf("(%s) ", h.SourceName)); err != nil {
 		return err
 	}
 	h.client.Timeout = h.Timeout
 	return nil
+}
+
+func (h *Client) Destroy() {
+	if h.client != nil {
+		h.client.Stop()
+	}
 }
 
 // Transmit is of type sts.Transmit for sending a payload
@@ -114,6 +124,7 @@ func (h *Client) Transmit(payload sts.Payload) (n int, err error) {
 	mr := bytes.NewReader(meta)
 	dr := payload.GetEncoder()
 	pr, pw := io.Pipe()
+	defer dr.Close()
 	go func() {
 		if gz != nil {
 			gz.Reset(pw)

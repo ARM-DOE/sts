@@ -47,6 +47,7 @@ type Conf struct {
 	PollInterval time.Duration    // How long to wait between between validation requests
 	PollAttempts int              // How many times to attempt validation for a single file before giving up
 	Tags         []*FileTag       // Options for files of a particular pattern
+	ErrorBackoff float64          // Multiplier for backoff time
 }
 
 // FileTag is the struct for defining settings relevant to files of a "tag"
@@ -289,8 +290,7 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 		if err != nil {
 			broker.error("Recovery request failed:", err.Error())
 			nErr++
-			// Wait longer the more it fails
-			time.Sleep(time.Duration(nErr) * time.Second)
+			broker.applyErrorBackoff(nErr)
 			continue
 		}
 		break
@@ -868,21 +868,23 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 	in := broker.chTransmit
 	out := broker.chTransmitted
 	var nErr int
+	var payload sts.Payload
+	var ok bool
 	for {
 		log.Debug("Send loop ...")
-		payload, ok := <-in
+		payload, ok = <-in
 		if !ok || broker.shouldStopNow() {
 			return
-		}
-		for _, p := range payload.GetParts() {
-			beg, len := p.GetSlice()
-			log.Debug("Sending:", p.GetName(), beg, beg+len,
-				"T:", p.GetFileTime())
 		}
 		nErr = 0
 		for {
 			if broker.shouldStopNow() {
 				return
+			}
+			for _, p := range payload.GetParts() {
+				beg, len := p.GetSlice()
+				log.Debug("Sending:", p.GetName(), beg, beg+len,
+					"T:", p.GetFileTime())
 			}
 			n, err := broker.Conf.Transmitter(payload)
 			if err == nil {
@@ -918,8 +920,7 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 				payload = nil
 				break
 			}
-			// Wait longer the more it fails
-			time.Sleep(time.Duration(nErr) * time.Second)
+			broker.applyErrorBackoff(nErr)
 		}
 		if payload != nil {
 			broker.stat(payload)
@@ -995,6 +996,10 @@ func (broker *Broker) handleSendError(payload sts.Payload, nPartsReceived int) s
 			if n > 0 {
 				next := payload.Split(n)
 				broker.stat(payload)
+				for i, p := range payload.GetParts() {
+					beg, len := p.GetSlice()
+					log.Debug("Successfully recovered part:", i, p.GetName(), beg, beg+len)
+				}
 				// broker.chTransmitted <- payload
 				if !sendCh(
 					broker.shouldStopNow,
@@ -1004,14 +1009,19 @@ func (broker *Broker) handleSendError(payload sts.Payload, nPartsReceived int) s
 				) {
 					break
 				}
+				if next != nil {
+					for i, p := range next.GetParts() {
+						beg, len := p.GetSlice()
+						log.Debug("Recovering failed part:", i, p.GetName(), beg, beg+len)
+					}
+				}
 				payload = next
 			}
 			break
 		}
 		nErr++
 		broker.error("Payload recovery request failed:", err.Error())
-		// Wait longer the more it fails
-		time.Sleep(time.Duration(nErr) * time.Second)
+		broker.applyErrorBackoff(nErr)
 	}
 	return payload
 }
@@ -1081,6 +1091,7 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 				wait = time.After(time.Second)
 			}
 		}
+		payload = nil
 		select {
 		case payload, ok = <-in:
 			if !ok {
@@ -1129,6 +1140,7 @@ func (broker *Broker) startTrack(wg *sync.WaitGroup) {
 					pFile.completed = payload.GetCompleted()
 				}
 				broker.Conf.Logger.Sent(pFile)
+				log.Debug("Logged:", pFile.GetName(), pFile.sent, pFile.size)
 			}
 		}
 	}
@@ -1207,8 +1219,7 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 			if err != nil {
 				broker.error("Poll request failed:", err.Error())
 				nErr++
-				// Wait longer the more it fails
-				time.Sleep(time.Duration(nErr) * time.Second)
+				broker.applyErrorBackoff(nErr)
 				continue
 			}
 			break
@@ -1327,6 +1338,16 @@ func (broker *Broker) startRetry(wg *sync.WaitGroup) {
 			return
 		}
 	}
+}
+
+func (broker *Broker) applyErrorBackoff(nErr int) {
+	if broker.Conf.ErrorBackoff == 0 {
+		return
+	}
+	// Wait longer the more it fails
+	time.Sleep(
+		time.Duration(nErr*int(broker.Conf.ErrorBackoff)) * time.Second,
+	)
 }
 
 type placeholderFile struct {

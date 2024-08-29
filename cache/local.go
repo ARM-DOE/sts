@@ -20,33 +20,48 @@ type cacheFile struct {
 	Meta []byte           `json:"meta"`
 	Hash string           `json:"hash"`
 	Done bool             `json:"done"`
+	mux  sync.RWMutex
 }
 
 func (f *cacheFile) GetPath() string {
+	f.mux.RLock()
+	defer f.mux.RUnlock()
 	return f.path
 }
 
 func (f *cacheFile) GetName() string {
+	f.mux.RLock()
+	defer f.mux.RUnlock()
 	return f.name
 }
 
 func (f *cacheFile) GetSize() int64 {
+	f.mux.RLock()
+	defer f.mux.RUnlock()
 	return f.Size
 }
 
 func (f *cacheFile) GetTime() time.Time {
+	f.mux.RLock()
+	defer f.mux.RUnlock()
 	return f.Time.Time
 }
 
 func (f *cacheFile) GetMeta() []byte {
+	f.mux.RLock()
+	defer f.mux.RUnlock()
 	return f.Meta
 }
 
 func (f *cacheFile) GetHash() string {
+	f.mux.RLock()
+	defer f.mux.RUnlock()
 	return f.Hash
 }
 
 func (f *cacheFile) IsDone() bool {
+	f.mux.RLock()
+	defer f.mux.RUnlock()
 	return f.Done
 }
 
@@ -128,7 +143,9 @@ func (j *JSON) Done(key string, whileLocked func(sts.Cached)) {
 		return
 	}
 	j.dirty = true
+	f.(*cacheFile).mux.Lock()
 	f.(*cacheFile).Done = true
+	f.(*cacheFile).mux.Unlock()
 	if whileLocked != nil {
 		whileLocked(f)
 	}
@@ -142,7 +159,9 @@ func (j *JSON) Reset(key string) {
 	}
 	j.mutex.Lock()
 	defer j.mutex.Unlock()
+	f.(*cacheFile).mux.Lock()
 	f.(*cacheFile).Hash = ""
+	f.(*cacheFile).mux.Unlock()
 	j.dirty = true
 }
 

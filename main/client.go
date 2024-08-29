@@ -43,6 +43,7 @@ type clientApp struct {
 	port         int
 	tls          *tls.Config
 	broker       *client.Broker
+	httpClient   *http.Client
 }
 
 func (c *clientApp) setDefaults() (err error) {
@@ -87,6 +88,9 @@ func (c *clientApp) setDefaults() (err error) {
 	}
 	if c.conf.ScanDelay == 0 {
 		c.conf.ScanDelay = time.Second * 30
+	}
+	if c.conf.ErrorBackoff == 0 {
+		c.conf.ErrorBackoff = 1
 	}
 	if c.conf.GroupBy == nil || c.conf.GroupBy.String() == "" {
 		// Default is up to the first dot of the relative path.
@@ -273,16 +277,17 @@ func (c *clientApp) init() (err error) {
 		}
 	}
 
-	httpClient := &http.Client{
-		SourceName:      c.conf.Name,
-		TargetHost:      c.host,
-		TargetPort:      c.port,
-		TargetPrefix:    c.conf.Target.PathPrefix,
-		TargetKey:       c.conf.Target.Key,
-		Timeout:         c.conf.Timeout,
-		Compression:     c.conf.Compression,
-		TLS:             c.tls,
-		PartialsDecoder: stage.ReadCompanions,
+	c.httpClient = &http.Client{
+		SourceName:           c.conf.Name,
+		TargetHost:           c.host,
+		TargetPort:           c.port,
+		TargetPrefix:         c.conf.Target.PathPrefix,
+		TargetKey:            c.conf.Target.Key,
+		Timeout:              c.conf.Timeout,
+		Compression:          c.conf.Compression,
+		TLS:                  c.tls,
+		PartialsDecoder:      stage.ReadCompanions,
+		BandwidthLogInterval: c.conf.StatInterval,
 	}
 
 	dump("Server Host: %s", c.host)
@@ -302,6 +307,7 @@ func (c *clientApp) init() (err error) {
 	dump("Poll Delay: %s", c.conf.PollDelay.String())
 	dump("Poll Interval: %s", c.conf.PollInterval.String())
 	dump("Log Directory: %s", c.conf.LogDir)
+	dump("Error Backoff Multiplier: %f", c.conf.ErrorBackoff)
 
 	// Keeping the config dump as a single log entry means fetching recent
 	// "lines" from the log will make sure the entire config is captured
@@ -313,11 +319,11 @@ func (c *clientApp) init() (err error) {
 			Store:        store,
 			Cache:        cache,
 			Queue:        queue.NewTagged(qtags, tagger, grouper),
-			Recoverer:    httpClient.Recover,
+			Recoverer:    c.httpClient.Recover,
 			BuildPayload: payload.NewBin,
-			Transmitter:  httpClient.Transmit,
-			TxRecoverer:  httpClient.RecoverTransmission,
-			Validator:    httpClient.Validate,
+			Transmitter:  c.httpClient.Transmit,
+			TxRecoverer:  c.httpClient.RecoverTransmission,
+			Validator:    c.httpClient.Validate,
 			Logger:       log.NewFileIO(c.conf.LogDir, nil, nil, false),
 			Renamer:      fileToNewName,
 			Tagger:       nameToTag,
@@ -330,7 +336,12 @@ func (c *clientApp) init() (err error) {
 			PollDelay:    c.conf.PollDelay,
 			PollInterval: c.conf.PollInterval,
 			Tags:         tags,
+			ErrorBackoff: c.conf.ErrorBackoff,
 		},
 	}
 	return
+}
+
+func (c *clientApp) destroy() {
+	c.httpClient.Destroy()
 }

@@ -10,12 +10,16 @@ import (
 // Internal responds to internal HTTP command requests for altering the behavior
 // of the running executable
 type Internal struct {
-	Port int
+	Port     int
+	Handlers map[string]http.HandlerFunc
 }
 
 // Serve starts HTTP server.
 func (s *Internal) Serve(stop <-chan bool, done chan<- bool) {
 	http.Handle("/debug", http.HandlerFunc(s.routeDebug))
+	for key, handler := range s.Handlers {
+		http.Handle("/"+key, handler)
+	}
 
 	addr := fmt.Sprintf("localhost:%d", s.Port)
 	server := NewGracefulServer(
