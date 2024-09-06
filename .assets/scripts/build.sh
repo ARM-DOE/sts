@@ -19,6 +19,10 @@ for i in "$@"; do
         export GOOS="${i#*=}"
         shift
         ;;
+        --arch=*)
+        export GOARCH="${i#*=}"
+        shift
+        ;;
         --outdir=*)
         outdir="${i#*=}"
         shift
