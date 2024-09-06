@@ -2,10 +2,10 @@
 
 root="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-GOOS=windows GOARCH=386 $root/build.sh
+$root/build.sh --os=windows --arch=386
 cp $GOPATH/bin/sts.exe $root/sts-32.exe
 
-GOOS=windows GOARCH=amd64 $root/build.sh
+$root/build.sh --os=windows --arch=amd64
 cp $GOPATH/bin/sts.exe $root/sts-64.exe
 
 zip ~/sts-ms.zip sts-32.exe sts-64.exe
