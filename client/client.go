@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"code.arm.gov/dataflow/sts"
-	"code.arm.gov/dataflow/sts/fileutil"
-	"code.arm.gov/dataflow/sts/log"
+	"github.com/arm-doe/sts"
+	"github.com/arm-doe/sts/fileutil"
+	"github.com/arm-doe/sts/log"
 	"github.com/alecthomas/units"
 )
 

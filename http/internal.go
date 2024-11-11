@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"code.arm.gov/dataflow/sts/log"
+	"github.com/arm-doe/sts/log"
 )
 
 // Internal responds to internal HTTP command requests for altering the behavior

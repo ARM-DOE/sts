@@ -4,7 +4,7 @@ import (
 	"io"
 	"time"
 
-	"code.arm.gov/dataflow/sts/marshal"
+	"github.com/arm-doe/sts/marshal"
 )
 
 const (

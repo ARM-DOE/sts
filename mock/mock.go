@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"code.arm.gov/dataflow/sts"
+	"github.com/arm-doe/sts"
 )
 
 // File is meant to implement as many of the file-typed interfaces as possible

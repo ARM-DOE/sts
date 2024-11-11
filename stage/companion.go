@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"code.arm.gov/dataflow/sts"
-	"code.arm.gov/dataflow/sts/fileutil"
-	"code.arm.gov/dataflow/sts/log"
+	"github.com/arm-doe/sts"
+	"github.com/arm-doe/sts/fileutil"
+	"github.com/arm-doe/sts/log"
 )
 
 func newLocalCompanion(path string, file *sts.Partial) (cmp *sts.Partial, err error) {

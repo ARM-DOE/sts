@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"code.arm.gov/dataflow/sts"
-	"code.arm.gov/dataflow/sts/fileutil"
+	"github.com/arm-doe/sts"
+	"github.com/arm-doe/sts/fileutil"
 )
 
 type logMsg struct {

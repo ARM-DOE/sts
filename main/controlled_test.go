@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"code.arm.gov/dataflow/sts"
-	"code.arm.gov/dataflow/sts/http"
-	"code.arm.gov/dataflow/sts/log"
+	"github.com/arm-doe/sts"
+	"github.com/arm-doe/sts/http"
+	"github.com/arm-doe/sts/log"
 )
 
 const (

@@ -3,8 +3,8 @@ package client
 import (
 	"testing"
 
-	"code.arm.gov/dataflow/sts/log"
-	"code.arm.gov/dataflow/sts/mock"
+	"github.com/arm-doe/sts/log"
+	"github.com/arm-doe/sts/mock"
 )
 
 func TestScan(t *testing.T) {

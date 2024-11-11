@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"code.arm.gov/dataflow/sts"
-	"code.arm.gov/dataflow/sts/log"
+	"github.com/arm-doe/sts"
+	"github.com/arm-doe/sts/log"
 )
 
 type link interface {

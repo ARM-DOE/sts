@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"code.arm.gov/dataflow/sts/log"
+	"github.com/arm-doe/sts/log"
 )
 
 type throughput struct {

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"code.arm.gov/dataflow/sts"
-	"code.arm.gov/dataflow/sts/fileutil"
-	"code.arm.gov/dataflow/sts/log"
+	"github.com/arm-doe/sts"
+	"github.com/arm-doe/sts/fileutil"
+	"github.com/arm-doe/sts/log"
 )
 
 // disabledName is the file name used to disable scanning externally.

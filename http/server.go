@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
-	"code.arm.gov/dataflow/sts"
-	"code.arm.gov/dataflow/sts/fileutil"
-	"code.arm.gov/dataflow/sts/log"
-	"code.arm.gov/dataflow/sts/marshal"
+	"github.com/arm-doe/sts"
+	"github.com/arm-doe/sts/fileutil"
+	"github.com/arm-doe/sts/log"
+	"github.com/arm-doe/sts/marshal"
 )
 
 // Server responds to client HTTP requests

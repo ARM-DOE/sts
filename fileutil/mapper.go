@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"code.arm.gov/dataflow/sts"
+	"github.com/arm-doe/sts"
 )
 
 // PathMap houses a single translation from a pattern to a string template used

@@ -7,13 +7,13 @@ import (
 	"regexp"
 	"strings"
 
-	"code.arm.gov/dataflow/sts"
-	"code.arm.gov/dataflow/sts/control"
-	"code.arm.gov/dataflow/sts/dispatch"
-	"code.arm.gov/dataflow/sts/http"
-	"code.arm.gov/dataflow/sts/log"
-	"code.arm.gov/dataflow/sts/payload"
-	"code.arm.gov/dataflow/sts/stage"
+	"github.com/arm-doe/sts"
+	"github.com/arm-doe/sts/control"
+	"github.com/arm-doe/sts/dispatch"
+	"github.com/arm-doe/sts/http"
+	"github.com/arm-doe/sts/log"
+	"github.com/arm-doe/sts/payload"
+	"github.com/arm-doe/sts/stage"
 	"github.com/aws/aws-sdk-go/aws"
 )
 

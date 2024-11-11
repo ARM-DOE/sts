@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"code.arm.gov/dataflow/sts/fileutil"
-	"code.arm.gov/dataflow/sts/mock"
+	"github.com/arm-doe/sts/fileutil"
+	"github.com/arm-doe/sts/mock"
 )
 
 var root = "/var/tmp/sts-log"

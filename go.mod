@@ -1,4 +1,4 @@
-module code.arm.gov/dataflow/sts
+module github.com/arm-doe/sts
 
 go 1.18
 

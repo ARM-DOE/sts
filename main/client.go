@@ -9,16 +9,16 @@ import (
 	"strings"
 	"time"
 
-	"code.arm.gov/dataflow/sts"
-	"code.arm.gov/dataflow/sts/cache"
-	"code.arm.gov/dataflow/sts/client"
-	"code.arm.gov/dataflow/sts/fileutil"
-	"code.arm.gov/dataflow/sts/http"
-	"code.arm.gov/dataflow/sts/log"
-	"code.arm.gov/dataflow/sts/payload"
-	"code.arm.gov/dataflow/sts/queue"
-	"code.arm.gov/dataflow/sts/stage"
-	"code.arm.gov/dataflow/sts/store"
+	"github.com/arm-doe/sts"
+	"github.com/arm-doe/sts/cache"
+	"github.com/arm-doe/sts/client"
+	"github.com/arm-doe/sts/fileutil"
+	"github.com/arm-doe/sts/http"
+	"github.com/arm-doe/sts/log"
+	"github.com/arm-doe/sts/payload"
+	"github.com/arm-doe/sts/queue"
+	"github.com/arm-doe/sts/stage"
+	"github.com/arm-doe/sts/store"
 )
 
 func getTLSConf(conf *sts.TargetConf) (*tls.Config, error) {

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"code.arm.gov/dataflow/sts"
+	"github.com/arm-doe/sts"
 )
 
 const apiVersion = 1

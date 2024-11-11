@@ -11,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"code.arm.gov/dataflow/sts"
+	"github.com/arm-doe/sts"
 )
 
 // LockExt is the file extension added to file names as contents are written.

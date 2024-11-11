@@ -3,7 +3,7 @@ package log
 import (
 	"log"
 
-	"code.arm.gov/dataflow/sts"
+	"github.com/arm-doe/sts"
 )
 
 var std sts.Logger

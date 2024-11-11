@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"code.arm.gov/dataflow/sts"
-	"code.arm.gov/dataflow/sts/log"
-	"code.arm.gov/dataflow/sts/mock"
+	"github.com/arm-doe/sts"
+	"github.com/arm-doe/sts/log"
+	"github.com/arm-doe/sts/mock"
 )
 
 var (

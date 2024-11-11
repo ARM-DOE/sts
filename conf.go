@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"code.arm.gov/dataflow/sts/marshal"
-	"code.arm.gov/dataflow/sts/reflectutil"
+	"github.com/arm-doe/sts/marshal"
+	"github.com/arm-doe/sts/reflectutil"
 
 	"github.com/alecthomas/units"
 	yaml "gopkg.in/yaml.v2"
