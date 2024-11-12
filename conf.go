@@ -433,8 +433,6 @@ func (t *TagConf) UnmarshalJSON(data []byte) (err error) {
 	if err = json.Unmarshal(data, aux); err != nil {
 		return
 	}
-	t.LastDelay = aux.LastDelay.Duration
-	t.DeleteDelay = aux.DeleteDelay.Duration
 	err = t.applyAux(aux)
 	return
 }
@@ -445,6 +443,7 @@ func (t *TagConf) MarshalJSON() ([]byte, error) {
 	aux := &auxTagConf{}
 	aux.Priority = t.Priority
 	aux.Method = t.Method
+	aux.Order = t.Order
 	if t.Pattern != nil {
 		aux.Pattern = t.Pattern.String()
 	}
