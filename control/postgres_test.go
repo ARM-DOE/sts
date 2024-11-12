@@ -27,7 +27,7 @@ func TestSQL(t *testing.T) {
 	p := NewPostgres(uint(0), "localhost", "sts", "sts_admin", "sts", "", "", decodeClientID)
 	p.destroy()
 	p.create()
-	p.connect()
+	_ = p.connect()
 	if err = p.initClient("somerandomstring", "anotherrandomstring", "somerandomname", "darwin"); err != nil {
 		t.Fatal(err)
 	}

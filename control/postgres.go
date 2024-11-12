@@ -287,7 +287,7 @@ func (p *Postgres) initClient(id, key, name, os string) (err error) {
 }
 
 func (p *Postgres) getClients() (clients []*Client, err error) {
-	p.db.Select(
+	err = p.db.Select(
 		&clients,
 		fmt.Sprintf(`
             SELECT id, upload_key, name, alias, os, dirs_conf,
@@ -310,7 +310,7 @@ func (p *Postgres) getClientByID(id string) (client *Client, err error) {
 }
 
 func (p *Postgres) getDatasetsByClient(uid string) (datasets []*Dataset, err error) {
-	p.db.Select(
+	err = p.db.Select(
 		&datasets,
 		fmt.Sprintf(`
 			SELECT name, source_conf, client_id, created_at, updated_at
@@ -334,7 +334,7 @@ func (p *Postgres) getDatasetsByClient(uid string) (datasets []*Dataset, err err
 // }
 
 func (p *Postgres) getDatasets() (datasets []*Dataset, err error) {
-	p.db.Select(&datasets, fmt.Sprintf(`
+	err = p.db.Select(&datasets, fmt.Sprintf(`
 		SELECT name, source_conf, client_id, created_at, updated_at
 		FROM %s
 	`, p.datasetsTable))
@@ -470,7 +470,7 @@ func (p *Postgres) SetClientState(clientID string, state sts.ClientState) error 
 func (p *Postgres) IsValid(source, clientID string) bool {
 	if p.cache == nil {
 		// A connection will build the cache
-		p.connect()
+		_ = p.connect()
 	}
 	key, cid := p.idDecoder(clientID)
 	if k, ok := p.cache.getClientKey(cid); !ok || k != key {
