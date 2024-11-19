@@ -348,10 +348,10 @@ func (a *app) startClients() bool {
 			if c0 == c1 {
 				continue
 			}
-			if d0 == d1 || strings.HasPrefix(d0, d1) || strings.HasPrefix(d1, d0) {
+			if fileutil.PathsOverlap(d0, d1) {
 				overlap = true
-				log.Error("Outgoing directory overlaps are not allowed:\n - %s:%s\n - %s:%s",
-					c0.conf.Name, d0, c1.conf.Name, d1)
+				log.Error(fmt.Sprintf("Outgoing directory overlaps are not allowed:\n - %s:%s\n - %s:%s",
+					c0.conf.Name, d0, c1.conf.Name, d1))
 			}
 		}
 		if !overlap {

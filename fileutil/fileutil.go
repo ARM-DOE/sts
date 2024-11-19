@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/arm-doe/sts"
 )
@@ -150,7 +151,10 @@ func PartialMD5(path string, start int64, end int64) (hash string, err error) {
 		return
 	}
 	defer fh.Close()
-	fh.Seek(start, 0)
+	_, err = fh.Seek(start, 0)
+	if err != nil {
+		return
+	}
 	h := md5.New()
 	if _, err = io.CopyN(h, fh, end-start); err != nil {
 		return
@@ -308,4 +312,10 @@ func Walk(
 		return nil
 	}
 	return
+}
+
+func PathsOverlap(path1, path2 string) bool {
+	path1 = strings.TrimRight(path1, string(os.PathSeparator)) + string(os.PathSeparator)
+	path2 = strings.TrimRight(path2, string(os.PathSeparator)) + string(os.PathSeparator)
+	return path1 == path2 || strings.HasPrefix(path1, path2) || strings.HasPrefix(path2, path1)
 }
