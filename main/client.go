@@ -80,6 +80,9 @@ func (c *clientApp) setDefaults() (err error) {
 	if c.conf.PollDelay == 0 {
 		c.conf.PollDelay = 5
 	}
+	if c.conf.PollMaxCount == 0 {
+		c.conf.PollMaxCount = 1000
+	}
 	if c.conf.StatInterval == 0 {
 		c.conf.StatInterval = time.Minute * 5
 	}
@@ -335,6 +338,8 @@ func (c *clientApp) init() (err error) {
 			StatInterval: c.conf.StatInterval,
 			PollDelay:    c.conf.PollDelay,
 			PollInterval: c.conf.PollInterval,
+			PollAttempts: c.conf.PollAttempts,
+			PollMaxCount: c.conf.PollMaxCount,
 			Tags:         tags,
 			ErrorBackoff: c.conf.ErrorBackoff,
 		},

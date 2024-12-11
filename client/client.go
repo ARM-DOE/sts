@@ -6,14 +6,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/arm-doe/sts"
 	"github.com/arm-doe/sts/fileutil"
 	"github.com/arm-doe/sts/log"
-	"github.com/alecthomas/units"
-)
-
-const (
-	maxPoll = 1000
 )
 
 // Conf is the struct for storing all the settable components and options for
@@ -46,6 +42,7 @@ type Conf struct {
 	PollDelay    time.Duration    // How long to wait before validating completed files after final transmission
 	PollInterval time.Duration    // How long to wait between between validation requests
 	PollAttempts int              // How many times to attempt validation for a single file before giving up
+	PollMaxCount int              // How many files to validate in a single request
 	Tags         []*FileTag       // Options for files of a particular pattern
 	ErrorBackoff float64          // Multiplier for backoff time
 }
@@ -404,6 +401,7 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 			break
 		}
 		pollNow := poll
+		maxPoll := broker.Conf.PollMaxCount
 		if nPoll > maxPoll {
 			pollNow = poll[:maxPoll]
 			poll = poll[maxPoll:]
@@ -549,8 +547,7 @@ func (broker *Broker) scan() []sts.Hashed {
 	} else if time.Since(broker.stuckSince) > broker.Conf.CacheAge {
 		// Every cache age interval, check the files that have been in the
 		// cache at least that long to see if they still exist.  Remove the
-		// ones that don't and simply log the ones that do and aren't "done"
-		// yet.
+		// ones that don't.
 		//
 		// This helps with pesky files like .nfs000* that come and go from the
 		// file system and need to not linger in our cache.  It also helps in
@@ -565,9 +562,6 @@ func (broker *Broker) scan() []sts.Hashed {
 					broker.info("Not found--removing from cache:", cached.GetName())
 					cache.Remove(cached.GetName())
 					return false
-				}
-				if !cached.IsDone() {
-					broker.info("Potentially stuck file:", cached.GetName())
 				}
 			}
 			return false
@@ -1200,7 +1194,7 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 				log.Debug("Polling:", f.GetName())
 				ready = append(ready, f)
 				// Let's limit the number of files polled in a single request
-				if len(ready) == maxPoll {
+				if len(ready) == broker.Conf.PollMaxCount {
 					break
 				}
 			}
@@ -1266,13 +1260,15 @@ func (broker *Broker) finish(file sts.Polled) {
 		// picked up again to be sent redundantly.
 		broker.Conf.Cache.Done(file.GetName(), func(cached sts.Cached) {
 			if broker.canDelete(cached) {
-				broker.Conf.Store.Remove(cached)
+				if err := broker.Conf.Store.Remove(cached); err != nil {
+					broker.error("Failed to delete:", cached.GetName(), err.Error())
+					return
+				}
 				log.Debug("Deleted:", cached.GetName())
 			}
 		})
 	default:
 		log.Debug("Trying again:", file.GetName())
-		// broker.chRetry <- file
 		sendCh(broker.shouldStopNow, broker.chRetry, file, 0)
 	}
 }

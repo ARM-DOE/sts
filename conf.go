@@ -136,6 +136,7 @@ type SourceConf struct {
 	PollDelay     time.Duration
 	PollInterval  time.Duration
 	PollAttempts  int
+	PollMaxCount  int
 	Target        *TargetConf
 	Rename        []*MappingConf
 	Tags          []*TagConf
@@ -176,6 +177,7 @@ type auxSourceConf struct {
 	PollDelay     marshal.Duration `yaml:"poll-delay" json:"poll-delay"`
 	PollInterval  marshal.Duration `yaml:"poll-interval" json:"poll-interval"`
 	PollAttempts  int              `yaml:"poll-attempts" json:"poll-attempts"`
+	PollMaxCount  int              `yaml:"poll-max-count" json:"poll-max-count"`
 	Target        *TargetConf      `yaml:"target" json:"target"`
 	Rename        []*MappingConf   `yaml:"rename" json:"rename"`
 	Tags          []*TagConf       `yaml:"tags" json:"tags"`
@@ -203,6 +205,7 @@ func (ss *SourceConf) applyAux(aux *auxSourceConf) (err error) {
 	ss.PollDelay = aux.PollDelay.Duration
 	ss.PollInterval = aux.PollInterval.Duration
 	ss.PollAttempts = aux.PollAttempts
+	ss.PollMaxCount = aux.PollMaxCount
 	ss.Target = aux.Target
 	ss.Rename = aux.Rename
 	ss.Tags = aux.Tags
@@ -287,6 +290,7 @@ func (ss *SourceConf) MarshalJSON() ([]byte, error) {
 	aux.PollDelay.Duration = ss.PollDelay
 	aux.PollInterval.Duration = ss.PollInterval
 	aux.PollAttempts = ss.PollAttempts
+	aux.PollMaxCount = ss.PollMaxCount
 	aux.Target = ss.Target
 	aux.Rename = ss.Rename
 	aux.Tags = ss.Tags
