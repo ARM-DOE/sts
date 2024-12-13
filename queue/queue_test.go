@@ -1,7 +1,9 @@
 package queue
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/arm-doe/sts"
 	"github.com/arm-doe/sts/log"
+	"github.com/arm-doe/sts/marshal"
 	"github.com/arm-doe/sts/mock"
 )
 
@@ -491,5 +494,117 @@ func TestGroupEqualsTag(t *testing.T) {
 	}
 	if headFile.next != nil {
 		t.Fatal("Expected reset to have only one file")
+	}
+}
+
+const (
+	CachePath = ""
+)
+
+func TestJSONFile(t *testing.T) {
+	if CachePath == "" {
+		t.Skip("CachePath not set")
+	}
+
+	log.InitExternal(&mock.Logger{})
+	tags := []*Tag{
+		{
+			Order: sts.OrderFIFO,
+		},
+	}
+	queue := q(tags, nil)
+
+	// Read JSON file
+	data, err := os.ReadFile(CachePath)
+	if err != nil {
+		t.Fatalf("Failed to read JSON file: %v", err)
+	}
+
+	// Unmarshal JSON data
+	var cache struct {
+		Files map[string]struct {
+			Size int64            `json:"size"`
+			Time marshal.NanoTime `json:"mtime"`
+			Hash string           `json:"hash"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal(data, &cache); err != nil {
+		t.Fatalf("Failed to unmarshal JSON data: %v", err)
+	}
+
+	// Convert to sts.Hashed
+	var hashedFiles []sts.Hashed
+	for name, f := range cache.Files {
+		hashedFiles = append(hashedFiles, &mock.File{
+			Path: name,
+			Name: name,
+			Size: f.Size,
+			Time: f.Time.Time,
+		})
+	}
+
+	// byName := make(map[string]sts.Hashed)
+	// for _, f := range hashedFiles {
+	//     byName[f.GetName()] = f
+	// }
+
+	// Push files to queue
+	queue.Push(hashedFiles)
+
+	// Pop files and check order
+	prevToNext := make(map[string]sts.Sendable)
+	files := make(map[string][]sts.Sendable)
+	filesCtl := make(map[string][]sts.Sendable)
+	for {
+		f := queue.Pop()
+		if f == nil {
+			break
+		}
+		g := groupBy.FindStringSubmatch(f.GetName())[1]
+		filesCtl[g] = append(filesCtl[g], f)
+		p := f.GetPrev()
+		if p == "" {
+			if len(files[g]) > 0 {
+				t.Errorf("File '%s' has no predecessor", f.GetName())
+				continue
+			}
+			files[g] = append(files[g], f)
+			continue
+		}
+		if _, ok := prevToNext[p]; ok {
+			t.Errorf("File '%s' has multiple successors", p)
+			continue
+		}
+		prevToNext[p] = f
+	}
+	for g := range files {
+		f := files[g][0]
+		for {
+			next, ok := prevToNext[f.GetName()]
+			if !ok {
+				break
+			}
+			files[g] = append(files[g], next)
+			f = next
+		}
+		n0 := files[g]
+		n1 := filesCtl[g]
+		var names0 []string
+		for _, f := range n0 {
+			names0 = append(names0, f.GetName())
+		}
+		names0str := strings.Join(names0, ":")
+		sort.Slice(n1, func(i, j int) bool {
+			return n1[i].GetTime().Before(n1[j].GetTime())
+		})
+		var names1 []string
+		for _, f := range n1 {
+			names1 = append(names1, f.GetName())
+		}
+		names1str := strings.Join(names1, ":")
+		if names0str != names1str {
+			t.Errorf("Incorrect order for group %s", g)
+		}
+		t.Logf("Group %s: %d", g, len(names0))
 	}
 }
