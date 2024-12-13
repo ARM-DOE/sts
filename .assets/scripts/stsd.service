@@ -8,7 +8,7 @@ Type=simple
 User=dsmgr
 Group=data
 RestartSec=5
-ExecStart=/apps/transfer/bin/sts -loop -conf /apps/transfer/conf/sts.yaml
+ExecStart=/apps/transfer/bin/sts -loop -conf /apps/transfer/conf/sts.yaml -iport 2991
 WatchdogSec=600s
 Restart=on-failure
 
