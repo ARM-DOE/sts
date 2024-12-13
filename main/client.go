@@ -309,6 +309,8 @@ func (c *clientApp) init() (err error) {
 	dump("Scan Delay: %s", c.conf.ScanDelay.String())
 	dump("Poll Delay: %s", c.conf.PollDelay.String())
 	dump("Poll Interval: %s", c.conf.PollInterval.String())
+	dump("Poll Attempts: %d", c.conf.PollAttempts)
+	dump("Poll Max Count: %d", c.conf.PollMaxCount)
 	dump("Log Directory: %s", c.conf.LogDir)
 	dump("Error Backoff Multiplier: %f", c.conf.ErrorBackoff)
 
