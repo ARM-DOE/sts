@@ -129,7 +129,7 @@ func NewStore(n, size int) *Store {
 			Time: now.Add(time.Duration(i-n) * time.Second),
 			data: make([]byte, size),
 		}
-		rand.Read(f.data)
+		_, _ = rand.Read(f.data)
 		store.files[name] = f
 		total += size
 	}

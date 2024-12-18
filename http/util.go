@@ -16,9 +16,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/arm-doe/sts/fileutil"
 	"github.com/arm-doe/sts/log"
-	"github.com/alecthomas/units"
 )
 
 const (
@@ -176,7 +176,7 @@ func GetJSONReader(data interface{}, compression int) (r io.Reader, err error) {
 		wj = json.NewEncoder(wp)
 	}
 	go func(d interface{}) {
-		wj.Encode(d)
+		_ = wj.Encode(d)
 		if wz != nil {
 			wz.Close()
 		}
@@ -403,7 +403,7 @@ func getCert(cert, key, ca []byte) (pem *tls.Certificate, pool *x509.CertPool, e
 func handleError(w http.ResponseWriter, code int, err error) {
 	log.Error(err.Error())
 	w.WriteHeader(code)
-	w.Write([]byte(err.Error()))
+	_, _ = w.Write([]byte(err.Error()))
 }
 
 type bandwidthMonitorTransport struct {

@@ -19,6 +19,7 @@ import (
 	"github.com/arm-doe/sts/fileutil"
 	"github.com/arm-doe/sts/log"
 	"github.com/arm-doe/sts/marshal"
+	"go.bryk.io/pkg/net/middleware/hsts"
 )
 
 // Server responds to client HTTP requests
@@ -29,6 +30,7 @@ type Server struct {
 	PathPrefix  string
 	TLS         *tls.Config
 	Compression int
+	HSTS        *hsts.Options
 
 	GateKeepers       map[string]sts.GateKeeper
 	GateKeeperFactory sts.GateKeeperFactory
@@ -76,14 +78,14 @@ func (s *Server) stopGateKeepers() {
 
 // Serve starts HTTP server.
 func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
-	http.Handle(s.PathPrefix+"/", http.HandlerFunc(s.routeHealthCheck))
-	http.Handle(s.PathPrefix+"/client/", http.HandlerFunc(s.routeClientManagement))
-	http.Handle(s.PathPrefix+"/data", s.handleValidate(http.HandlerFunc(s.routeData)))
-	http.Handle(s.PathPrefix+"/data-recovery", s.handleValidate(http.HandlerFunc(s.routeDataRecovery)))
-	http.Handle(s.PathPrefix+"/validate", s.handleValidate(http.HandlerFunc(s.routeValidate)))
-	http.Handle(s.PathPrefix+"/partials", s.handleValidate(http.HandlerFunc(s.routePartials)))
-	http.Handle(s.PathPrefix+"/static/", s.handleValidate(http.HandlerFunc(s.routeFile)))
-	http.Handle(s.PathPrefix+"/check-mapping", http.HandlerFunc(s.routeCheckMapping))
+	http.Handle(s.PathPrefix+"/", s.handle(http.HandlerFunc(s.routeHealthCheck)))
+	http.Handle(s.PathPrefix+"/client/", s.handle(http.HandlerFunc(s.routeClientManagement)))
+	http.Handle(s.PathPrefix+"/data", s.handle(s.handleValidate(http.HandlerFunc(s.routeData))))
+	http.Handle(s.PathPrefix+"/data-recovery", s.handle(s.handleValidate(http.HandlerFunc(s.routeDataRecovery))))
+	http.Handle(s.PathPrefix+"/validate", s.handle(s.handleValidate(http.HandlerFunc(s.routeValidate))))
+	http.Handle(s.PathPrefix+"/partials", s.handle(s.handleValidate(http.HandlerFunc(s.routePartials))))
+	http.Handle(s.PathPrefix+"/static/", s.handle(s.handleValidate(http.HandlerFunc(s.routeFile))))
+	http.Handle(s.PathPrefix+"/check-mapping", s.handle(http.HandlerFunc(s.routeCheckMapping)))
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
@@ -113,7 +115,7 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 
 	<-stop
 
-	Close()
+	_ = Close()
 	iServer.Close()
 
 	wg.Wait()
@@ -122,8 +124,15 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 	DefaultServer = nil
 }
 
+func (s *Server) handle(next http.Handler) http.Handler {
+	if s.HSTS != nil {
+		return hsts.Handler(*s.HSTS)(next)
+	}
+	return next
+}
+
 func (s *Server) handleValidate(next http.Handler) http.Handler {
-	fn := func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gateKeeper := s.getGateKeeper(r)
 		if gateKeeper == nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -141,8 +150,7 @@ func (s *Server) handleValidate(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r)
-	}
-	return http.HandlerFunc(fn)
+	})
 }
 
 func (s *Server) handleError(w http.ResponseWriter, err error) {
@@ -202,7 +210,7 @@ func (s *Server) routeFile(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			defer fp.Close()
-			io.Copy(w, fp)
+			_, _ = io.Copy(w, fp)
 		}
 	case http.MethodDelete:
 		switch {
@@ -506,16 +514,16 @@ func (s *Server) respond(w http.ResponseWriter, status int, data []byte) error {
 	if s.Compression != gzip.NoCompression {
 		gz, err := gzip.NewWriterLevel(w, s.Compression)
 		if err != nil {
-			w.Write(data)
+			_, _ = w.Write(data)
 			return err
 		}
 		w.Header().Add("Content-Encoding", "gzip")
 		w.WriteHeader(status)
 		defer gz.Close()
-		gz.Write(data)
+		_, _ = gz.Write(data)
 		return nil
 	}
-	w.Write(data)
+	_, _ = w.Write(data)
 	return nil
 }
 

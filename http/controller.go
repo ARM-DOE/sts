@@ -177,7 +177,7 @@ func (s *Server) routeClientManagement(w http.ResponseWriter, r *http.Request) {
 			if err = s.respond(w, http.StatusOK, respJSON); err != nil {
 				log.Error(err.Error())
 			}
-			s.ClientManager.SetClientConfReceived(clientID, time.Now())
+			_ = s.ClientManager.SetClientConfReceived(clientID, time.Now())
 			return
 		}
 	case http.MethodPut:

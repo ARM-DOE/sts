@@ -15,6 +15,7 @@ import (
 	"github.com/arm-doe/sts/reflectutil"
 
 	"github.com/alecthomas/units"
+	"go.bryk.io/pkg/net/middleware/hsts"
 	yaml "gopkg.in/yaml.v2"
 )
 
@@ -520,13 +521,15 @@ type ServerDirs struct {
 
 // HTTPServer is the struct for managing the incoming HTTP host
 type HTTPServer struct {
-	Host                     string  `yaml:"http-host" json:"http-host"`
-	Port                     int     `yaml:"http-port" json:"http-port"`
-	PathPrefix               string  `yaml:"http-path-prefix" json:"http-path-prefix"`
-	TLSCertPath              string  `yaml:"http-tls-cert" json:"http-tls-cert"`
-	TLSKeyPath               string  `yaml:"http-tls-key" json:"http-tls-key"`
-	Compression              int     `yaml:"compress" json:"compress"`
-	ChanceOfSimulatedFailure float64 `yaml:"chance-of-simulated-failure" json:"chance-of-simulated-failure"`
+	Host                     string       `yaml:"http-host" json:"http-host"`
+	Port                     int          `yaml:"http-port" json:"http-port"`
+	PathPrefix               string       `yaml:"http-path-prefix" json:"http-path-prefix"`
+	TLSCertPath              string       `yaml:"http-tls-cert" json:"http-tls-cert"`
+	TLSKeyPath               string       `yaml:"http-tls-key" json:"http-tls-key"`
+	Compression              int          `yaml:"compress" json:"compress"`
+	ChanceOfSimulatedFailure float64      `yaml:"chance-of-simulated-failure" json:"chance-of-simulated-failure"`
+	HSTSEnabled              bool         `yaml:"hsts-enabled" json:"hsts-enabled"`
+	HSTS                     hsts.Options `yaml:"hsts-options" json:"hsts-options"`
 }
 
 // Queue is the struct for managing an AWS queue resource

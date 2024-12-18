@@ -328,7 +328,9 @@ func (b *Encoder) Read(p []byte) (n int, err error) {
 		b.bin.setStarted()
 	}
 	if b.binPart == nil {
-		b.startNextPart()
+		if err = b.startNextPart(); err != nil {
+			return
+		}
 	}
 	b.eop = false
 	// Calculate bytes left
@@ -418,10 +420,10 @@ func NewDecoder(n int, sep string, r io.Reader) (sts.PayloadDecoder, error) {
 	pr, pw := io.Pipe()
 	go func() {
 		if n > 0 {
-			io.CopyN(pw, r, int64(n))
+			_, _ = io.CopyN(pw, r, int64(n))
 		} else {
 			// When no length provided, assume the meta is the entire payload
-			io.Copy(pw, r)
+			_, _ = io.Copy(pw, r)
 		}
 	}()
 	jr := json.NewDecoder(pr)

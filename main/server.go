@@ -97,6 +97,12 @@ func (a *serverApp) init() (err error) {
 			go stager.Recover()
 		}
 	}
+
+	hsts := &conf.Server.HSTS
+	if !conf.Server.HSTSEnabled {
+		hsts = nil
+	}
+
 	a.server = &http.Server{
 		ServeDir:                 dirs.Serve,
 		Host:                     conf.Server.Host,
@@ -108,6 +114,7 @@ func (a *serverApp) init() (err error) {
 		GateKeepers:              stagers,
 		GateKeeperFactory:        newStage,
 		ChanceOfSimulatedFailure: conf.Server.ChanceOfSimulatedFailure,
+		HSTS:                     hsts,
 	}
 	if conf.Server.TLSCertPath != "" && conf.Server.TLSKeyPath != "" {
 		if a.server.TLS, err = http.LoadTLSConf(

@@ -281,7 +281,7 @@ func (rf *rollingFile) rotate() {
 	if rf.path != path || os.IsNotExist(err) || rf.fh == nil {
 		rf.close()
 		rf.path = path
-		rf.mkdir(filepath.Dir(path), os.ModePerm)
+		_ = rf.mkdir(filepath.Dir(path), os.ModePerm)
 		rf.fh, err = rf.open(path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0644)
 		if err != nil {
 			log.Fatalln("Failed to open log file:", err.Error())
@@ -296,7 +296,7 @@ func (rf *rollingFile) log(t ...interface{}) {
 	if rf.keepInSync {
 		// This can add significant overhead but is important when integrity of
 		// the written file is necessary
-		rf.fh.Sync()
+		_ = rf.fh.Sync()
 	}
 }
 

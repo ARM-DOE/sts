@@ -20,7 +20,7 @@ func tearDown() {
 
 func TestJSON(t *testing.T) {
 	tearDown()
-	os.MkdirAll(root, 0775)
+	_ = os.MkdirAll(root, 0775)
 	rootPath := "/an/example/root"
 	cache, err := NewJSON(root, rootPath, "")
 	if err != nil {

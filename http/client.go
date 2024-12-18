@@ -128,12 +128,12 @@ func (h *Client) Transmit(payload sts.Payload) (n int, err error) {
 	go func() {
 		if gz != nil {
 			gz.Reset(pw)
-			io.Copy(gz, mr)
-			io.Copy(gz, dr)
-			gz.Close()
+			_, _ = io.Copy(gz, mr)
+			_, _ = io.Copy(gz, dr)
+			_ = gz.Close()
 		} else {
-			io.Copy(pw, mr)
-			io.Copy(pw, dr)
+			_, _ = io.Copy(pw, mr)
+			_, _ = io.Copy(pw, dr)
 		}
 		pw.Close()
 	}()
@@ -192,10 +192,10 @@ func (h *Client) RecoverTransmission(payload sts.Payload) (n int, err error) {
 	go func() {
 		if gz != nil {
 			gz.Reset(pw)
-			io.Copy(gz, mr)
+			_, _ = io.Copy(gz, mr)
 			gz.Close()
 		} else {
-			io.Copy(pw, mr)
+			_, _ = io.Copy(pw, mr)
 		}
 		pw.Close()
 	}()

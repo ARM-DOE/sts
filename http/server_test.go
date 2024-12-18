@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/arm-doe/sts"
 	"github.com/arm-doe/sts/log"
 	"github.com/arm-doe/sts/mock"
-	"github.com/alecthomas/units"
 )
 
 var port = 1992
@@ -29,7 +29,7 @@ func tearDown() {
 }
 
 func stageFiles(count int, bytes units.Base2Bytes) {
-	os.MkdirAll(rootStatic, os.ModePerm)
+	_ = os.MkdirAll(rootStatic, os.ModePerm)
 	b := make([]byte, bytes)
 	for i := 0; i < count; i++ {
 		f, err := os.CreateTemp(rootStatic, "example."+strconv.Itoa(i)+".")
@@ -40,7 +40,7 @@ func stageFiles(count int, bytes units.Base2Bytes) {
 		if err != nil {
 			panic(err)
 		}
-		f.Write(b)
+		_, _ = f.Write(b)
 		f.Close()
 	}
 }
@@ -113,7 +113,7 @@ func request(method, url string, data io.Reader, respData ...any) error {
 			return err
 		}
 	default:
-		respData[0].(*bytes.Buffer).ReadFrom(reader)
+		_, _ = respData[0].(*bytes.Buffer).ReadFrom(reader)
 	}
 	return nil
 }
