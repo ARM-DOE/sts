@@ -126,7 +126,21 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 
 func (s *Server) handle(next http.Handler) http.Handler {
 	if s.HSTS != nil {
-		return hsts.Handler(*s.HSTS)(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if s.TLS != nil {
+				// SJB: can't figure out why these aren't being set automatically but they
+				// are important for the HSTS middleware to work correctly
+				if r.URL.Scheme == "" {
+					r.URL.Scheme = "https"
+				}
+				if r.TLS == nil {
+					r.TLS = &tls.ConnectionState{
+						HandshakeComplete: true,
+					}
+				}
+			}
+			hsts.Handler(*s.HSTS)(next).ServeHTTP(w, r)
+		})
 	}
 	return next
 }

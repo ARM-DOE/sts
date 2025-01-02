@@ -10,5 +10,8 @@ IN: # Incoming configuration.
   server: # Server configuration.
     http-host: localhost
     http-port: 1992 # What port to listen on
+    http-tls-key: localhost.key
+    http-tls-cert: localhost.crt
+    hsts-enabled: true
     compress: 0 # Use GZIP compression level (0-9) on response data
-    chance-of-simulated-failure: 0.10 # Chance of simulated network failure
+    # chance-of-simulated-failure: 0.10 # Chance of simulated network failure

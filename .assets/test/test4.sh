@@ -16,6 +16,8 @@ rm -rf $STS_HOME
 mkdir -p $STS_HOME/conf
 cp $basedir/test4.server.yaml $STS_HOME/conf/sts.in.yaml
 cp $basedir/test4.client.yaml $STS_HOME/conf/sts.out.yaml
+cp $basedir/../localhost.key $STS_HOME
+cp $basedir/../localhost.crt $STS_HOME
 
 sim=(
     "stsin-1 xl 100000000     4  600"
