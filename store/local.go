@@ -175,7 +175,11 @@ func (dir *Local) handleNode(path string, info os.FileInfo, err error) error {
 		// If a file just doesn't exist anymore, we probably don't need to stop
 		// the scan for that.
 		if os.IsNotExist(err) {
-			dir.debug("Local File Vanished:", path)
+			dir.debug("Local Path Vanished:", path)
+			return nil
+		}
+		if os.IsPermission(err) {
+			dir.debug("Local Path Permission Denied:", path)
 			return nil
 		}
 		return err
