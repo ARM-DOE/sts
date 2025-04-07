@@ -174,7 +174,10 @@ func (c *clientApp) init() (err error) {
 	if len(c.conf.Rename) > 0 {
 		extraVars := c.conf.GenMappingVars()
 		maps := make([]*fileutil.PathMap, len(c.conf.Rename))
-		funcs := fileutil.CreateDateFuncs()
+		funcs := fileutil.CombineFuncs(
+			fileutil.CreateStringFuncs(),
+			fileutil.CreateDateFuncs(),
+		)
 		for i, r := range c.conf.Rename {
 			dump("Rename: %s => %s", r.Pattern.String(), r.Template)
 			maps[i] = &fileutil.PathMap{

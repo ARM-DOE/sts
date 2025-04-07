@@ -49,6 +49,34 @@ func TestDateFunctions(t *testing.T) {
 	)
 }
 
+func TestStringFunctions(t *testing.T) {
+	pm := &PathMap{
+		Pattern:  regexp.MustCompile(`^/data/(?P<name>[^\.]+)`),
+		Template: `project/{{ toUpper .name }}.txt`,
+		Funcs:    CreateStringFuncs(),
+	}
+	runTest(
+		t,
+		pm,
+		"/data/file.txt",
+		"project/FILE.txt",
+	)
+}
+
+func TestCombinedFunctions(t *testing.T) {
+	pm := &PathMap{
+		Pattern:  regexp.MustCompile(`^/data/(?P<name>[^\.]+)\.(?P<YMD>\d{8})\.txt`),
+		Template: `project/{{ toUpper .name }}.{{ parseDate .YMD | formatDate "Y-m-d" }}.txt`,
+		Funcs:    CombineFuncs(CreateStringFuncs(), CreateDateFuncs()),
+	}
+	runTest(
+		t,
+		pm,
+		"/data/file.20250407.txt",
+		"project/FILE.2025-04-07.txt",
+	)
+}
+
 func runTest(t *testing.T, pm *PathMap, path, name string) {
 	computedName, err := pm.Translate(path)
 	if name == "" && err == nil {

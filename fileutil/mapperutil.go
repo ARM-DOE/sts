@@ -3,6 +3,7 @@ package fileutil
 import (
 	"html/template"
 	"strconv"
+	"strings"
 
 	"github.com/golang-module/carbon/v2"
 )
@@ -27,4 +28,27 @@ func CreateDateFuncs() template.FuncMap {
 			return c.Format(format)
 		},
 	}
+}
+
+func CreateStringFuncs() template.FuncMap {
+	return template.FuncMap{
+		"toUpper": func(s string) string {
+			return strings.ToUpper(s)
+		},
+		"toLower": func(s string) string {
+			return strings.ToLower(s)
+		},
+	}
+}
+
+func CombineFuncs(
+	funcs ...template.FuncMap,
+) template.FuncMap {
+	combined := make(template.FuncMap)
+	for _, f := range funcs {
+		for k, v := range f {
+			combined[k] = v
+		}
+	}
+	return combined
 }
