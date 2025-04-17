@@ -1,11 +1,11 @@
 module github.com/arm-doe/sts
 
-go 1.22.7
+go 1.23.4
 
-toolchain go1.23.4
+toolchain go1.24.2
 
 require (
-	github.com/alecthomas/units v0.0.0-20210208195552-ff826a37aa15
+	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 	github.com/aws/aws-sdk-go v1.37.26
 	github.com/coreos/go-systemd/v22 v22.2.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
@@ -15,7 +15,7 @@ require (
 	github.com/jmoiron/sqlx v1.3.1
 	github.com/postfinance/single v0.0.2
 	github.com/stackimpact/stackimpact-go v2.3.10+incompatible
-	go.bryk.io/pkg v0.0.0-20241217174839-869dfa3978af
+	go.bryk.io/pkg v0.0.0-20250411182835-130bbccf42ad
 	gopkg.in/yaml.v2 v2.4.0
 )
 
@@ -27,7 +27,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.10.0 // indirect
 	github.com/rogpeppe/go-internal v1.6.1 // indirect
-	golang.org/x/crypto v0.31.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/crypto v0.37.0 // indirect
+	golang.org/x/sync v0.13.0 // indirect
+	golang.org/x/text v0.24.0 // indirect
 )
