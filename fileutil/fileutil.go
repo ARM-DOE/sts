@@ -319,3 +319,15 @@ func PathsOverlap(path1, path2 string) bool {
 	path2 = strings.TrimRight(path2, string(os.PathSeparator)) + string(os.PathSeparator)
 	return path1 == path2 || strings.HasPrefix(path1, path2) || strings.HasPrefix(path2, path1)
 }
+
+func Clean(path string) (string, error) {
+	cleanPath := filepath.Clean(path)
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	if cleanPath != absPath {
+		return "", fmt.Errorf("invalid path: %s", path)
+	}
+	return cleanPath, nil
+}

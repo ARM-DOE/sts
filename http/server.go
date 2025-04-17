@@ -179,8 +179,18 @@ func (s *Server) routeHealthCheck(w http.ResponseWriter, r *http.Request) {
 func (s *Server) routeFile(w http.ResponseWriter, r *http.Request) {
 	source := getSourceName(r)
 	file := r.URL.Path[len("/static/"):]
-	root := filepath.Join(s.ServeDir, source)
-	path := filepath.Join(root, filepath.Clean(file))
+	root, err := fileutil.Clean(filepath.Join(s.ServeDir, source))
+	if err != nil {
+		log.Error(err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	path, err := fileutil.Clean(filepath.Join(root, file))
+	if err != nil {
+		log.Error(err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 	fi, err := os.Stat(path)
 	switch r.Method {
 	case http.MethodGet:
