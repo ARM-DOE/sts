@@ -10,22 +10,26 @@ import (
 	"github.com/arm-doe/sts/mock"
 )
 
-var hasDatabase = flag.Bool("db", false, strings.TrimSpace(`
+var hasDatabase bool
+
+func init() {
+	flag.BoolVar(&hasDatabase, "db", false, strings.TrimSpace(`
 Current system has a local Postgres server with database named "sts"
 `))
+}
 
 func decodeClientID(clientID string) (string, string) {
 	return clientID, ""
 }
 
 func TestSQL(t *testing.T) {
-	if !*hasDatabase {
+	if !hasDatabase {
 		return
 	}
 	log.InitExternal(&mock.Logger{DebugMode: true})
 	var err error
 	p := NewPostgres(uint(0), "localhost", "sts", "sts_admin", "sts", "", "", decodeClientID)
-	p.destroy()
+	// p.destroy()
 	p.create()
 	_ = p.connect()
 	if err = p.initClient("somerandomstring", "anotherrandomstring", "somerandomname", "darwin"); err != nil {

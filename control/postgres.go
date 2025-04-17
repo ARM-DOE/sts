@@ -11,8 +11,8 @@ import (
 
 	"github.com/arm-doe/sts"
 	"github.com/arm-doe/sts/log"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/lib/pq"
 )
 
 const schema = `
@@ -53,9 +53,9 @@ type Client struct {
 	State      *sts.ClientState `db:"state"`
 	CreatedAt  time.Time        `db:"created_at"`
 	UpdatedAt  time.Time        `db:"updated_at"`
-	VerifiedAt pq.NullTime      `db:"verified_at"`
-	PingedAt   pq.NullTime      `db:"pinged_at"`
-	LoadedAt   pq.NullTime      `db:"loaded_at"`
+	VerifiedAt sql.NullTime     `db:"verified_at"`
+	PingedAt   sql.NullTime     `db:"pinged_at"`
+	LoadedAt   sql.NullTime     `db:"loaded_at"`
 }
 
 // Dataset represents a dataset record
@@ -250,7 +250,7 @@ func (p *Postgres) connect() (err error) {
 		return
 	}
 	p.db, err = sqlx.Connect(
-		"postgres",
+		"pgx",
 		fmt.Sprintf(
 			"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 			p.host, p.port, p.user, p.pass, p.name,
