@@ -249,11 +249,15 @@ func (p *Postgres) connect() (err error) {
 	if p.db != nil {
 		return
 	}
+    sslmode := "require"
+    if p.host == "localhost" {
+        sslmode = "disable"
+    }
 	p.db, err = sqlx.Connect(
 		"pgx",
 		fmt.Sprintf(
-			"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-			p.host, p.port, p.user, p.pass, p.name,
+			"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+			p.host, p.port, p.user, p.pass, p.name, sslmode,
 		),
 	)
 	if p.cache == nil {
