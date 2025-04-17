@@ -1,8 +1,7 @@
 module github.com/arm-doe/sts
 
 go 1.22.7
-
-toolchain go1.23.4
+toolchain go1.24.1
 
 require (
 	github.com/alecthomas/units v0.0.0-20210208195552-ff826a37aa15
@@ -27,7 +26,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.10.0 // indirect
 	github.com/rogpeppe/go-internal v1.6.1 // indirect
-	golang.org/x/crypto v0.31.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/crypto v0.35.0 // indirect
+	golang.org/x/sync v0.11.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
 )
