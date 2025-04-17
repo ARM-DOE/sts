@@ -120,7 +120,7 @@ type GateKeeper interface {
 type GateKeeperFactory func(source string) GateKeeper
 
 // ClientStatus uses bitmasking to represent the status of a client
-type ClientStatus uint
+type ClientStatus uint8
 
 const (
 	// ClientIsDisabled indicates that transfer is to not occur

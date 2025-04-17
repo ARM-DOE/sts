@@ -46,13 +46,13 @@ func (c *Client) GetClientStatus(
 	if err != nil {
 		return
 	}
-	status64, err := strconv.ParseUint(string(statusBytes), 10, 64)
+	status8, err := strconv.ParseUint(string(statusBytes), 10, 8)
 	if err != nil {
 		err = fmt.Errorf(
 			"failed to parse status: %s (server response: %s)", err, string(statusBytes),
 		)
 	}
-	status = sts.ClientStatus(status64)
+	status = sts.ClientStatus(status8)
 	return
 }
 
