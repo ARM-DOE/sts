@@ -88,6 +88,7 @@ type Stage struct {
 	targetDir     string
 	logger        sts.ReceiveLogger
 	dispatcher    sts.Dispatcher
+	exporter      sts.Exporter
 	nPipe         int
 	lastIn        time.Time
 	cleanInterval time.Duration
@@ -113,7 +114,12 @@ type Stage struct {
 // for the stage area (will append {source}/), targetDir is where files
 // should be moved once validated, and logger instance for logging files
 // received
-func New(name, rootDir, targetDir string, logger sts.ReceiveLogger, dispatcher sts.Dispatcher) *Stage {
+func New(
+	name, rootDir, targetDir string,
+	logger sts.ReceiveLogger,
+	dispatcher sts.Dispatcher,
+	exporter sts.Exporter,
+) *Stage {
 	s := &Stage{
 		name:       name,
 		rootDir:    rootDir,
@@ -951,6 +957,17 @@ func (s *Stage) finalize(file *finalFile) {
 		return
 	}
 	s.logDebug("Finalized", file.name)
+
+	if s.exporter != nil {
+		s.logDebug("Exporting", targetPath)
+		if err := s.exporter.Upload(targetPath, file.name); err != nil {
+			s.logError(err)
+		} else {
+			s.logDebug("Exported", targetPath)
+			os.Remove(targetPath)
+			s.logDebug("Removed exported file:", targetPath)
+		}
+	}
 
 	if s.dispatcher != nil {
 		s.logDebug("Dispatching", targetPath)

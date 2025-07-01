@@ -495,6 +495,7 @@ type ServerConf struct {
 	Dirs          *ServerDirs `yaml:"dirs" json:"dirs"`
 	Server        *HTTPServer `yaml:"server" json:"server"`
 	Queue         *Queue      `yaml:"queue" json:"queue"`
+	S3            *S3         `yaml:"s3" json:"s3"`
 	PermitLogBuf  bool        `yaml:"log-buffering" json:"log-buffering"`
 }
 
@@ -530,6 +531,13 @@ type HTTPServer struct {
 	ChanceOfSimulatedFailure float64      `yaml:"chance-of-simulated-failure" json:"chance-of-simulated-failure"`
 	HSTSEnabled              bool         `yaml:"hsts-enabled" json:"hsts-enabled"`
 	HSTS                     hsts.Options `yaml:"hsts-options" json:"hsts-options"`
+}
+
+// S3 is the struct for managing the S3 storage configuration
+type S3 struct {
+	Region string `yaml:"aws-region" json:"aws-region"`
+	Bucket string `yaml:"bucket" json:"bucket"`
+	Prefix string `yaml:"prefix" json:"prefix"`
 }
 
 // Queue is the struct for managing an AWS queue resource
@@ -638,7 +646,7 @@ func InitPaths(conf *Conf,
 			&conf.Server.Server.TLSCertPath)
 	}
 	for i, p := range append(dirs, files...) {
-		if *p == "" {
+		if *p == "" || strings.HasPrefix(*p, "s3://") {
 			continue
 		}
 		err = mkpath(p, i < len(dirs))

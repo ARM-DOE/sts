@@ -1,36 +1,37 @@
 package dispatch
 
 import (
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sqs"
+	"context"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 )
 
 // Queue wraps an SQS reference
-type Queue struct {
+type SQS struct {
 	// name string
 	url  string
-	conn *sqs.SQS
+	ctx  context.Context
+	conn *sqs.Client
 }
 
 // NewQueue initializes the state of the queue struct by fetching the queue URL
 // from AWS
-func NewQueue(config *aws.Config, name string) (q *Queue, err error) {
-	var sn *session.Session
-	if sn, err = session.NewSession(config); err != nil {
-		return
-	}
-	conn := sqs.New(sn)
+func NewSQS(config aws.Config, name string) (q *SQS, err error) {
+	conn := sqs.NewFromConfig(config)
 
-	qInput := &sqs.GetQueueUrlInput{}
-	qInput.SetQueueName(name)
-	resp, err := conn.GetQueueUrl(qInput)
+	ctx := context.Background()
+
+	resp, err := conn.GetQueueUrl(ctx, &sqs.GetQueueUrlInput{
+		QueueName: aws.String(name),
+	})
 	if err != nil {
 		return
 	}
 
-	q = &Queue{
+	q = &SQS{
 		url:  *resp.QueueUrl,
+		ctx:  ctx,
 		conn: conn,
 	}
 
@@ -38,8 +39,8 @@ func NewQueue(config *aws.Config, name string) (q *Queue, err error) {
 }
 
 // Send will put a message on the SQS queue
-func (q *Queue) Send(message string) error {
-	_, err := q.conn.SendMessage(&sqs.SendMessageInput{
+func (q *SQS) Send(message string) error {
+	_, err := q.conn.SendMessage(q.ctx, &sqs.SendMessageInput{
 		MessageBody: aws.String(message),
 		QueueUrl:    &q.url,
 	})

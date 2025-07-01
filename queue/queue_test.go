@@ -328,6 +328,7 @@ func TestGeneral(t *testing.T) {
 	headFile := queue.headFile[group]
 	if headFile == nil {
 		t.Fatalf("Group (%s) head file should not be nil", group)
+		return
 	}
 	if headFile.orig != lastOne {
 		t.Fatal("List reset failed")
@@ -485,6 +486,7 @@ func TestGroupEqualsTag(t *testing.T) {
 	headFile := queue.headFile[group]
 	if headFile == nil {
 		t.Fatalf("Group (%s) head file should not be nil", group)
+		return
 	}
 	if headFile.orig != lastOne {
 		t.Fatal("List reset failed")

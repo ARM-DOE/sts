@@ -34,10 +34,14 @@ func (l *logger) WasReceived(relPath, hash string, after time.Time, before time.
 type dispatcher struct {
 }
 
-func (d *dispatcher) Dispatch(file string, hash string, size int64, t time.Time) {
+func (d *dispatcher) Send(file string) error {
+	return nil
 }
 
-func (d *dispatcher) Send(file string) error {
+type exporter struct {
+}
+
+func (e *exporter) Upload(path string, name string) error {
 	return nil
 }
 
@@ -46,7 +50,7 @@ func TestWaitLoop(t *testing.T) {
 
 	stage := New(
 		"test", "/var/tmp/ststest/stage/test", "/var/tmp/ststest/in/test",
-		&logger{}, &dispatcher{})
+		&logger{}, &dispatcher{}, &exporter{})
 
 	hierarchy := map[string][]string{
 		"a": {"b"},

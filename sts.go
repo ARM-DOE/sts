@@ -101,6 +101,11 @@ type Dispatcher interface {
 	Send(string) error
 }
 
+// Exporter is the interface for uploading files to a remote storage provider
+type Exporter interface {
+	Upload(filePath, fileName string) error
+}
+
 // GateKeeper is the interface for managing the "putting away" of files
 // received on the server
 type GateKeeper interface {

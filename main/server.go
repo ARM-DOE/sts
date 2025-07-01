@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,11 +11,13 @@ import (
 	"github.com/arm-doe/sts"
 	"github.com/arm-doe/sts/control"
 	"github.com/arm-doe/sts/dispatch"
+	"github.com/arm-doe/sts/export"
 	"github.com/arm-doe/sts/http"
 	"github.com/arm-doe/sts/log"
 	"github.com/arm-doe/sts/payload"
 	"github.com/arm-doe/sts/stage"
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
 )
 
 func strToIndex(needle string, haystack []string) int {
@@ -55,11 +58,46 @@ func (a *serverApp) init() (err error) {
 	}
 	dirs := conf.Dirs
 	log.Init(dirs.LogMsg, a.debug, nil, nil)
+
 	var dispatcher sts.Dispatcher
 	if conf.Queue != nil {
-		dispatcher, err = dispatch.NewQueue(
-			&aws.Config{Region: aws.String(conf.Queue.Region)},
+		var cfg aws.Config
+		cfg, err = config.LoadDefaultConfig(context.Background(),
+			func(o *config.LoadOptions) error {
+				if conf.Queue.Region != "" {
+					o.Region = conf.Queue.Region
+				}
+				return nil
+			})
+		if err != nil {
+			return
+		}
+		dispatcher, err = dispatch.NewSQS(
+			cfg,
 			conf.Queue.Name,
+		)
+		if err != nil {
+			return
+		}
+	}
+
+	var exporter sts.Exporter
+	if conf.S3 != nil {
+		var cfg aws.Config
+		cfg, err = config.LoadDefaultConfig(context.Background(),
+			func(o *config.LoadOptions) error {
+				if conf.S3.Region != "" {
+					o.Region = conf.S3.Region
+				}
+				return nil
+			})
+		if err != nil {
+			return
+		}
+		exporter, err = export.NewS3Upload(
+			cfg,
+			conf.S3.Bucket,
+			conf.S3.Prefix,
 		)
 		if err != nil {
 			return
@@ -79,6 +117,7 @@ func (a *serverApp) init() (err error) {
 				filepath.Join(dirs.LogIn, sourcePathReady),
 				nil, nil, !a.conf.PermitLogBuf),
 			dispatcher,
+			exporter,
 		)
 	}
 
