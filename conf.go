@@ -378,6 +378,7 @@ type TagConf struct {
 	Method      string
 	Order       string
 	Pattern     *regexp.Regexp
+	ChunkSize   units.Base2Bytes
 	Delete      bool
 	LastDelay   time.Duration
 	DeleteDelay time.Duration
@@ -394,6 +395,7 @@ type auxTagConf struct {
 	Method      string           `yaml:"method" json:"method"`
 	Order       string           `yaml:"order" json:"order"`
 	Pattern     string           `yaml:"pattern" json:"pattern"`
+	ChunkSize   string           `yaml:"chunk-size" json:"chunk-size"`
 	Delete      string           `yaml:"delete" json:"delete"`
 	LastDelay   marshal.Duration `yaml:"last-delay" json:"last-delay"`
 	DeleteDelay marshal.Duration `yaml:"delete-delay" json:"delete-delay"`
@@ -407,6 +409,11 @@ func (t *TagConf) applyAux(aux *auxTagConf) (err error) {
 	t.DeleteDelay = aux.DeleteDelay.Duration
 	if aux.Pattern != defaultTag && aux.Pattern != "" {
 		if t.Pattern, err = regexp.Compile(aux.Pattern); err != nil {
+			return
+		}
+	}
+	if aux.ChunkSize != "" {
+		if t.ChunkSize, err = units.ParseBase2Bytes(aux.ChunkSize); err != nil {
 			return
 		}
 	}
@@ -452,6 +459,7 @@ func (t *TagConf) MarshalJSON() ([]byte, error) {
 	if t.Pattern != nil {
 		aux.Pattern = t.Pattern.String()
 	}
+	aux.ChunkSize = t.ChunkSize.String()
 	aux.LastDelay.Duration = t.LastDelay
 	aux.DeleteDelay.Duration = t.DeleteDelay
 	switch {

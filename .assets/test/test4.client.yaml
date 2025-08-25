@@ -32,6 +32,7 @@ OUT: # Outgoing configuration
           method: http
         - pattern: ^xs/
           priority: 3
+          chunk-size: 1MB
         - pattern: ^sm/
           priority: 2
         - pattern: ^xl/

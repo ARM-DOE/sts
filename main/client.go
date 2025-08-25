@@ -217,11 +217,15 @@ func (c *clientApp) init() (err error) {
 		if t.Order == "" {
 			t.Order = sts.OrderFIFO
 		}
+		chunkSize := t.ChunkSize
+		if chunkSize == 0 {
+			chunkSize = c.conf.BinSize
+		}
 		qtags[i] = &queue.Tag{
 			Name:      name,
 			Priority:  t.Priority,
 			Order:     t.Order,
-			ChunkSize: int64(c.conf.BinSize),
+			ChunkSize: int64(chunkSize),
 			LastDelay: t.LastDelay,
 		}
 		if name == "" {
