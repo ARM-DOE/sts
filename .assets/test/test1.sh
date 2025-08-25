@@ -43,7 +43,7 @@ echo "some content" > $STS_HOME/data/out/stsin-1/newdir/bettersend
 echo "Running in background..."
 $cmd > /dev/null &
 
-sleep 10 # Wait for it do some stuff.
+sleep 2 # Wait for it do some stuff.
 
 echo "Simulating crash..."
 pkill $exe
@@ -57,6 +57,6 @@ echo "IN DIR:"
 find $STS_HOME/data/in -type f | sort
 
 echo "Restarting..."
-$cmd > /dev/null
+$cmd > $STS_HOME/debug.log
 
 /bin/bash $basedir/done.sh

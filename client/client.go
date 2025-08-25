@@ -201,6 +201,12 @@ func (broker *Broker) shouldStopNow() bool {
 	return broker.stop && !broker.stopGraceful
 }
 
+func (broker *Broker) shouldStop() bool {
+	broker.stopMux.RLock()
+	defer broker.stopMux.RUnlock()
+	return broker.stop
+}
+
 // GetState returns the standard state struct providing a snapshot of the client
 func (broker *Broker) GetState() sts.SourceState {
 	state := sts.SourceState{}
@@ -958,9 +964,12 @@ func recvCh[T any](
 	timer := time.NewTimer(grace)
 	for {
 		select {
-		case item := <-ch:
+		case item, ok := <-ch:
 			if !timer.Stop() {
 				<-timer.C
+			}
+			if !ok {
+				return nil
 			}
 			return &item
 		case <-timer.C:
@@ -1269,7 +1278,8 @@ func (broker *Broker) finish(file sts.Polled) {
 		})
 	default:
 		log.Debug("Trying again:", file.GetName())
-		sendCh(broker.shouldStopNow, broker.chRetry, file, 0)
+		// On any stop (graceful or immediate), don't enqueue more retries.
+		sendCh(broker.shouldStop, broker.chRetry, file, 0)
 	}
 }
 
@@ -1287,7 +1297,8 @@ func (broker *Broker) startRetry(wg *sync.WaitGroup) {
 	var filePtr *sts.Polled
 	var file sts.Polled
 	for {
-		filePtr = recvCh(broker.shouldStopNow, broker.chRetry, 0)
+		// Exit on any stop or if the retry channel is closed.
+		filePtr = recvCh(broker.shouldStop, broker.chRetry, 0)
 		if filePtr == nil {
 			return
 		}
@@ -1330,7 +1341,8 @@ func (broker *Broker) startRetry(wg *sync.WaitGroup) {
 			prev:   file.GetPrev(),
 			left:   []*sts.ByteRange{{Beg: 0, End: cached.GetSize()}},
 		}}
-		if !sendCh(broker.shouldStopNow, broker.chScanned, recovered, 0) {
+		// Don't feed recovered items back into the pipeline after a stop signal.
+		if !sendCh(broker.shouldStop, broker.chScanned, recovered, 0) {
 			return
 		}
 	}
