@@ -177,6 +177,11 @@ func (s *Store) IsNotExist(err error) bool {
 	return ok
 }
 
+func (s *Store) ShouldIgnore(file sts.File) bool {
+	// For testing purposes, ignore files with "ignore" in the name
+	return bytes.Contains([]byte(file.GetName()), []byte("ignore"))
+}
+
 func (s *Store) opener(file sts.File) (sts.Readable, error) {
 	if f, ok := file.(*File); ok {
 		return Readable{bytes.NewReader(f.data)}, nil

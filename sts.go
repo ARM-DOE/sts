@@ -77,6 +77,7 @@ type FileSource interface {
 	Remove(File) error
 	Sync(File) (File, error)
 	IsNotExist(error) bool
+	ShouldIgnore(File) bool
 }
 
 // FileCache is the interface for caching a collection of files

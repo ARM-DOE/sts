@@ -340,16 +340,24 @@ func (broker *Broker) recover() (send []sts.Hashed, err error) {
 		}
 		var file sts.File
 		file, err = store.Sync(f)
+		if store.ShouldIgnore(f) {
+			broker.info("File is now ignored, removing from cache:", f.GetName(), f.GetHash())
+			cache.Remove(f.GetName())
+			return false
+		}
 		if store.IsNotExist(err) {
 			cache.Done(f.GetName(), nil)
 			return false
-		} else if err != nil {
+		}
+		if err != nil {
 			broker.error("Failed to stat cached file:", f.GetPath(), err.Error())
 			return false
-		} else if file != nil {
+		}
+		if file != nil {
 			log.Debug("Ignore changed file:", f.GetPath())
 			return false
-		} else if f.GetHash() == "" {
+		}
+		if f.GetHash() == "" {
 			log.Debug("Ignore file without a hash:", f.GetPath())
 			return false
 		}

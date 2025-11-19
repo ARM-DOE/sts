@@ -147,6 +147,10 @@ func (dir *Local) getRelPath(path string) string {
 	return strings.Replace(path, root+sep, "", 1)
 }
 
+func (dir *Local) ShouldIgnore(file sts.File) bool {
+	return dir.shouldIgnore(file.GetName(), false)
+}
+
 func (dir *Local) shouldIgnore(relPath string, isDir bool) bool {
 	if !dir.IncludeHidden &&
 		relPath != "" &&
