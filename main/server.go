@@ -83,6 +83,7 @@ func (a *serverApp) init() (err error) {
 
 	var exporter sts.Exporter
 	if conf.S3 != nil {
+		log.Debug("Initializing S3 exporter with bucket:", conf.S3.Bucket, "region:", conf.S3.Region, "prefix:", conf.S3.Prefix)
 		var cfg aws.Config
 		cfg, err = config.LoadDefaultConfig(context.Background(),
 			func(o *config.LoadOptions) error {
@@ -92,6 +93,7 @@ func (a *serverApp) init() (err error) {
 				return nil
 			})
 		if err != nil {
+			log.Error("Failed to load AWS config:", err)
 			return
 		}
 		exporter, err = export.NewS3Upload(
@@ -100,8 +102,12 @@ func (a *serverApp) init() (err error) {
 			conf.S3.Prefix,
 		)
 		if err != nil {
+			log.Error("Failed to create S3 exporter:", err)
 			return
 		}
+		log.Debug("S3 exporter initialized successfully")
+	} else {
+		log.Debug("S3 configuration is nil, exporter will not be initialized")
 	}
 
 	pathSep := string(os.PathSeparator)
