@@ -960,8 +960,13 @@ func (s *Stage) finalize(file *finalFile) {
 	s.logDebug("Finalized", file.name)
 
 	if s.exporter != nil {
-		s.logDebug("Exporting", targetPath)
-		if err := s.exporter.Upload(targetPath, file.name); err != nil {
+		// Use the renamed name if available, otherwise use original name
+		exportName := file.name
+		if file.renamed != "" {
+			exportName = file.renamed
+		}
+		s.logDebug("Exporting", targetPath, "as", exportName)
+		if err := s.exporter.Upload(targetPath, exportName); err != nil {
 			s.logError(err)
 		} else {
 			s.logDebug("Exported", targetPath)
