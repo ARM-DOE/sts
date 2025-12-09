@@ -126,6 +126,7 @@ func New(
 		targetDir:  targetDir,
 		logger:     logger,
 		dispatcher: dispatcher,
+		exporter:   exporter,
 	}
 	s.wait = make(map[string][]*finalFile)
 	s.cache = make(map[string]*finalFile)
