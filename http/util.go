@@ -477,8 +477,11 @@ func (r *readCounter) Close() error {
 
 type BandwidthLoggingClient struct {
 	*http.Client
-	monitor  *bandwidthMonitorTransport
-	stopChan chan struct{}
+	monitor         *bandwidthMonitorTransport
+	stopChan        chan struct{}
+	FallbackOnError func(error) (*BandwidthLoggingClient, error)
+	hasFallenBack   bool
+	fallbackMutex   sync.Mutex
 }
 
 func newBandwidthLoggingClient(
@@ -497,6 +500,37 @@ func newBandwidthLoggingClient(
 		go blc.logBandwidthUsage(logInterval, logFn)
 	}
 	return blc
+}
+
+// Do wraps http.Client.Do to support automatic fallback from HTTP3 to HTTPS
+func (blc *BandwidthLoggingClient) Do(req *http.Request) (*http.Response, error) {
+	resp, err := blc.Client.Do(req)
+
+	// Check if we should fallback
+	if err != nil && !blc.hasFallenBack && blc.FallbackOnError != nil {
+		if isHTTP3SpecificError(err) {
+			blc.fallbackMutex.Lock()
+			defer blc.fallbackMutex.Unlock()
+
+			// Double-check after acquiring lock
+			if !blc.hasFallenBack {
+				fallbackClient, fbErr := blc.FallbackOnError(err)
+				if fbErr != nil {
+					return resp, err // Return original error
+				}
+
+				// Replace internal client
+				blc.Client = fallbackClient.Client
+				blc.monitor = fallbackClient.monitor
+				blc.hasFallenBack = true
+
+				// Retry request
+				return blc.Client.Do(req)
+			}
+		}
+	}
+
+	return resp, err
 }
 
 func (blc *BandwidthLoggingClient) Stop() {

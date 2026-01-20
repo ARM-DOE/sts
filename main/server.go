@@ -160,6 +160,9 @@ func (a *serverApp) init() (err error) {
 		GateKeeperFactory:        newStage,
 		ChanceOfSimulatedFailure: conf.Server.ChanceOfSimulatedFailure,
 		HSTS:                     hsts,
+		// HTTP3/QUIC configuration
+		EnableHTTP3: conf.Server.EnableHTTP3,
+		HTTP3Port:   conf.Server.HTTP3Port,
 	}
 	if conf.Server.TLSCertPath != "" && conf.Server.TLSKeyPath != "" {
 		if a.server.TLS, err = http.LoadTLSConf(
@@ -168,10 +171,49 @@ func (a *serverApp) init() (err error) {
 			return
 		}
 	}
+	// Configure QUIC if HTTP3 is enabled
+	if conf.Server.EnableHTTP3 {
+		// Apply smart defaults for server QUIC parameters
+		quicMaxStreams := conf.Server.QUICMaxStreams
+		if quicMaxStreams == 0 {
+			quicMaxStreams = http.DefaultQUICMaxStreams
+		}
+
+		quicMaxIdleTimeout := conf.Server.QUICMaxIdleTimeout
+		if quicMaxIdleTimeout == 0 {
+			quicMaxIdleTimeout = http.DefaultQUICMaxIdleTimeout
+		}
+
+		quicKeepAlive := conf.Server.QUICKeepAlive
+		if quicKeepAlive == 0 {
+			quicKeepAlive = http.DefaultQUICKeepAlive
+		}
+
+		quicMaxStreamReceiveWindow := conf.Server.QUICMaxStreamReceiveWindow
+		if quicMaxStreamReceiveWindow == 0 {
+			quicMaxStreamReceiveWindow = http.DefaultQUICMaxStreamReceiveWindow
+		}
+
+		quicMaxConnectionReceiveWindow := conf.Server.QUICMaxConnectionReceiveWindow
+		if quicMaxConnectionReceiveWindow == 0 {
+			quicMaxConnectionReceiveWindow = http.DefaultQUICMaxConnectionReceiveWindow
+		}
+
+		a.server.QUICConfig = http.ConfigureQUICFromHTTPServer(
+			nil,
+			quicMaxStreams,
+			quicMaxIdleTimeout,
+			quicKeepAlive,
+			quicMaxStreamReceiveWindow,
+			quicMaxConnectionReceiveWindow,
+			conf.Server.QUICEnableDatagrams,
+			conf.Server.QUICDisablePathMTUDiscovery,
+		)
+	}
 	if conf.SourceControl != nil {
 		db := control.NewPostgres(
 			conf.SourceControl.Port,
-			conf.SourceControl.Host,
+			conf.Server.Host,
 			conf.SourceControl.Name,
 			conf.SourceControl.User,
 			conf.SourceControl.Pass,

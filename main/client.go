@@ -115,6 +115,46 @@ func (c *clientApp) setDefaults() (err error) {
 			Method: sts.MethodHTTP,
 		})
 	}
+
+	// Set QUIC configuration defaults
+	// Max streams: scale with concurrency (2x threads, minimum 100)
+	if c.conf.Target.QUICMaxStreams == 0 {
+		threadsDefault := int64(c.conf.Threads * 2)
+		if threadsDefault > http.DefaultQUICMaxStreams {
+			c.conf.Target.QUICMaxStreams = threadsDefault
+		} else {
+			c.conf.Target.QUICMaxStreams = http.DefaultQUICMaxStreams
+		}
+	}
+
+	// Max idle timeout: scale with network latency (timeout/10, minimum 30s)
+	if c.conf.Target.QUICMaxIdleTimeout == 0 {
+		timeoutBased := c.conf.Timeout / 10
+		if timeoutBased > http.DefaultQUICMaxIdleTimeout {
+			c.conf.Target.QUICMaxIdleTimeout = timeoutBased
+		} else {
+			c.conf.Target.QUICMaxIdleTimeout = http.DefaultQUICMaxIdleTimeout
+		}
+	}
+
+	// Keep-alive: half of idle timeout (minimum 15s)
+	if c.conf.Target.QUICKeepAlive == 0 {
+		c.conf.Target.QUICKeepAlive = c.conf.Target.QUICMaxIdleTimeout / 2
+		if c.conf.Target.QUICKeepAlive < http.DefaultQUICKeepAlive {
+			c.conf.Target.QUICKeepAlive = http.DefaultQUICKeepAlive
+		}
+	}
+
+	// Stream receive window: default 6MB
+	if c.conf.Target.QUICMaxStreamReceiveWindow == 0 {
+		c.conf.Target.QUICMaxStreamReceiveWindow = http.DefaultQUICMaxStreamReceiveWindow
+	}
+
+	// Connection receive window: default 15MB
+	if c.conf.Target.QUICMaxConnectionReceiveWindow == 0 {
+		c.conf.Target.QUICMaxConnectionReceiveWindow = http.DefaultQUICMaxConnectionReceiveWindow
+	}
+
 	return
 }
 
@@ -298,17 +338,43 @@ func (c *clientApp) init() (err error) {
 		TLS:                  c.tls,
 		PartialsDecoder:      stage.ReadCompanions,
 		BandwidthLogInterval: c.conf.StatInterval,
+		// HTTP3/QUIC configuration
+		Protocol:    http.ParseProtocol(c.conf.Target.Protocol),
+		HTTP3Port:   c.conf.Target.HTTP3Port,
+		EnableHTTP3: c.conf.Target.EnableHTTP3,
+		QUICConfig: http.ConfigureQUICForClient(
+			c.conf.Target.QUICMaxStreams,
+			c.conf.Target.QUICMaxIdleTimeout,
+			c.conf.Target.QUICKeepAlive,
+			c.conf.Target.QUICMaxStreamReceiveWindow,
+			c.conf.Target.QUICMaxConnectionReceiveWindow,
+			c.conf.Target.QUICEnableDatagrams,
+			c.conf.Target.QUICDisablePathMTUDiscovery,
+			c.conf.Target.QUICDisable0RTT,
+		),
 	}
 
 	dump("Server Host: %s", c.host)
 	dump("Server Port: %d", c.port)
 	dump("Server Path: %s", c.conf.Target.PathPrefix)
 	dump("Compression: %d", c.conf.Compression)
-	if c.tls == nil {
-		dump("Using Secure HTTP: Yes")
-	} else {
-		dump("Using Secure HTTP: No")
+
+	// Update protocol reporting
+	protocol := "HTTP"
+	if c.tls != nil {
+		protocol = "HTTPS"
 	}
+	if c.conf.Target.Protocol != "" {
+		switch http.ParseProtocol(c.conf.Target.Protocol) {
+		case http.ProtocolHTTP3:
+			protocol = "HTTP3/QUIC"
+		case http.ProtocolAuto:
+			protocol = "HTTP3/QUIC (with HTTPS fallback)"
+		}
+	} else if c.conf.Target.EnableHTTP3 {
+		protocol = "HTTP3/QUIC (with HTTPS fallback)"
+	}
+	dump("Protocol: %s", protocol)
 
 	dump("Max Concurrent Requests: %d", c.conf.Threads)
 	dump("Request Size: %s", c.conf.BinSize.String())

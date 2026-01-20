@@ -13,5 +13,6 @@ IN: # Incoming configuration.
     http-tls-key: localhost.key
     http-tls-cert: localhost.crt
     hsts-enabled: true
+    http3-enabled: true
     compress: 0 # Use GZIP compression level (0-9) on response data
     # chance-of-simulated-failure: 0.10 # Chance of simulated network failure

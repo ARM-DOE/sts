@@ -19,6 +19,7 @@ import (
 	"github.com/arm-doe/sts/fileutil"
 	"github.com/arm-doe/sts/log"
 	"github.com/arm-doe/sts/marshal"
+	"github.com/quic-go/quic-go"
 	"go.bryk.io/pkg/net/middleware/hsts"
 )
 
@@ -31,6 +32,11 @@ type Server struct {
 	TLS         *tls.Config
 	Compression int
 	HSTS        *hsts.Options
+
+	// HTTP3/QUIC support
+	EnableHTTP3 bool
+	HTTP3Port   int // 0 means use same port as HTTPS
+	QUICConfig  *quic.Config
 
 	GateKeepers       map[string]sts.GateKeeper
 	GateKeeperFactory sts.GateKeeperFactory
@@ -78,33 +84,58 @@ func (s *Server) stopGateKeepers() {
 
 // Serve starts HTTP server.
 func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
-	http.Handle(s.PathPrefix+"/", s.handle(http.HandlerFunc(s.routeHealthCheck)))
-	http.Handle(s.PathPrefix+"/client/", s.handle(http.HandlerFunc(s.routeClientManagement)))
-	http.Handle(s.PathPrefix+"/data", s.handle(s.handleValidate(http.HandlerFunc(s.routeData))))
-	http.Handle(s.PathPrefix+"/data-recovery", s.handle(s.handleValidate(http.HandlerFunc(s.routeDataRecovery))))
-	http.Handle(s.PathPrefix+"/validate", s.handle(s.handleValidate(http.HandlerFunc(s.routeValidate))))
-	http.Handle(s.PathPrefix+"/partials", s.handle(s.handleValidate(http.HandlerFunc(s.routePartials))))
-	http.Handle(s.PathPrefix+"/static/", s.handle(s.handleValidate(http.HandlerFunc(s.routeFile))))
-	http.Handle(s.PathPrefix+"/check-mapping", s.handle(http.HandlerFunc(s.routeCheckMapping)))
+	// Create a shared ServeMux for both HTTP/1.1 and HTTP3 servers
+	mux := http.NewServeMux()
+	mux.Handle(s.PathPrefix+"/", s.handle(http.HandlerFunc(s.routeHealthCheck)))
+	mux.Handle(s.PathPrefix+"/client/", s.handle(http.HandlerFunc(s.routeClientManagement)))
+	mux.Handle(s.PathPrefix+"/data", s.handle(s.handleValidate(http.HandlerFunc(s.routeData))))
+	mux.Handle(s.PathPrefix+"/data-recovery", s.handle(s.handleValidate(http.HandlerFunc(s.routeDataRecovery))))
+	mux.Handle(s.PathPrefix+"/validate", s.handle(s.handleValidate(http.HandlerFunc(s.routeValidate))))
+	mux.Handle(s.PathPrefix+"/partials", s.handle(s.handleValidate(http.HandlerFunc(s.routePartials))))
+	mux.Handle(s.PathPrefix+"/static/", s.handle(s.handleValidate(http.HandlerFunc(s.routeFile))))
+	mux.Handle(s.PathPrefix+"/check-mapping", s.handle(http.HandlerFunc(s.routeCheckMapping)))
 
 	wg := sync.WaitGroup{}
-	wg.Add(2)
 
+	// Start HTTP/1.1 server
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
-		err := ListenAndServe(addr, s.TLS, nil)
+		err := ListenAndServe(addr, s.TLS, mux)
 		if err != http.ErrServerClosed {
-			log.Error("Error shutting down server:", err.Error())
+			log.Error("Error shutting down HTTP/1.1 server:", err.Error())
 		}
 		s.stopGateKeepers()
 	}()
 
+	// Start HTTP3 server if enabled
+	var http3Server *HTTP3Server
+	if s.EnableHTTP3 && s.TLS != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			http3Port := s.HTTP3Port
+			if http3Port == 0 {
+				http3Port = s.Port // Use same port as HTTPS
+			}
+			addr := fmt.Sprintf("%s:%d", s.Host, http3Port)
+
+			http3Server = NewHTTP3Server(addr, mux, s.TLS, s.QUICConfig)
+			err := http3Server.ListenAndServe()
+			if err != nil {
+				log.Error("Error shutting down HTTP3 server:", err.Error())
+			}
+		}()
+	}
+
+	// Start internal server (keep as HTTP/1.1 for simplicity)
 	iServer := NewGracefulServer(&http.Server{
 		Addr:    fmt.Sprintf(":%d", s.Port+1),
 		Handler: http.HandlerFunc(s.routeInternal),
 	}, nil)
 
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		err := iServer.ListenAndServe()
@@ -115,7 +146,11 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 
 	<-stop
 
-	_ = Close()
+	// Graceful shutdown
+	_ = Close() // HTTP/1.1 server
+	if http3Server != nil {
+		_ = http3Server.CloseGracefully(30 * time.Second)
+	}
 	iServer.Close()
 
 	wg.Wait()

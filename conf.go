@@ -479,6 +479,18 @@ type TargetConf struct {
 	PathPrefix    string `yaml:"http-path-prefix" json:"http-path-prefix"`
 	TLSCertPath   string `yaml:"http-tls-cert" json:"http-tls-cert"`
 	TLSCertBase64 string `yaml:"http-tls-cert-encoded" json:"http-tls-cert-encoded"`
+	// HTTP3/QUIC support
+	Protocol                       string        `yaml:"protocol" json:"protocol"`                                                     // "auto", "http3", "https", "http"
+	HTTP3Port                      int           `yaml:"http3-port" json:"http3-port"`                                                 // Optional separate port for HTTP3
+	EnableHTTP3                    bool          `yaml:"enable-http3" json:"enable-http3"`                                             // Enable HTTP3 when protocol is "auto"
+	QUICMaxStreams                 int64         `yaml:"quic-max-streams" json:"quic-max-streams"`                                     // Default: 100 or 2*threads
+	QUICMaxIdleTimeout             time.Duration `yaml:"quic-max-idle-timeout" json:"quic-max-idle-timeout"`                           // Default: 30s or timeout/10
+	QUICKeepAlive                  time.Duration `yaml:"quic-keep-alive" json:"quic-keep-alive"`                                       // Default: 15s or idle-timeout/2
+	QUICMaxStreamReceiveWindow     uint64        `yaml:"quic-max-stream-receive-window" json:"quic-max-stream-receive-window"`         // Default: 6MB
+	QUICMaxConnectionReceiveWindow uint64        `yaml:"quic-max-connection-receive-window" json:"quic-max-connection-receive-window"` // Default: 15MB
+	QUICEnableDatagrams            bool          `yaml:"quic-enable-datagrams" json:"quic-enable-datagrams"`                           // Enable unreliable datagrams (default: false)
+	QUICDisablePathMTUDiscovery    bool          `yaml:"quic-disable-path-mtu-discovery" json:"quic-disable-path-mtu-discovery"`       // Disable Path MTU Discovery (default: false/enabled)
+	QUICDisable0RTT                bool          `yaml:"quic-disable-0rtt" json:"quic-disable-0rtt"`                                   // Disable 0-RTT (default: false/enabled)
 }
 
 // ParseHost returns the hostname and port split out or uses default port
@@ -530,15 +542,25 @@ type ServerDirs struct {
 
 // HTTPServer is the struct for managing the incoming HTTP host
 type HTTPServer struct {
-	Host                     string       `yaml:"http-host" json:"http-host"`
-	Port                     int          `yaml:"http-port" json:"http-port"`
-	PathPrefix               string       `yaml:"http-path-prefix" json:"http-path-prefix"`
-	TLSCertPath              string       `yaml:"http-tls-cert" json:"http-tls-cert"`
-	TLSKeyPath               string       `yaml:"http-tls-key" json:"http-tls-key"`
-	Compression              int          `yaml:"compress" json:"compress"`
-	ChanceOfSimulatedFailure float64      `yaml:"chance-of-simulated-failure" json:"chance-of-simulated-failure"`
-	HSTSEnabled              bool         `yaml:"hsts-enabled" json:"hsts-enabled"`
-	HSTS                     hsts.Options `yaml:"hsts-options" json:"hsts-options"`
+	Host                     string  `yaml:"http-host" json:"http-host"`
+	Port                     int     `yaml:"http-port" json:"http-port"`
+	PathPrefix               string  `yaml:"http-path-prefix" json:"http-path-prefix"`
+	TLSCertPath              string  `yaml:"http-tls-cert" json:"http-tls-cert"`
+	TLSKeyPath               string  `yaml:"http-tls-key" json:"http-tls-key"`
+	Compression              int     `yaml:"compress" json:"compress"`
+	ChanceOfSimulatedFailure float64 `yaml:"chance-of-simulated-failure" json:"chance-of-simulated-failure"`
+	HSTSEnabled              bool    `yaml:"hsts-enabled" json:"hsts-enabled"`
+	// HTTP3/QUIC support
+	EnableHTTP3                    bool          `yaml:"http3-enabled" json:"http3-enabled"`                                           // Run HTTP3 server
+	HTTP3Port                      int           `yaml:"http3-port" json:"http3-port"`                                                 // Separate port or 0 for same
+	QUICMaxStreams                 int64         `yaml:"quic-max-streams" json:"quic-max-streams"`                                     // Default: 100
+	QUICMaxIdleTimeout             time.Duration `yaml:"quic-max-idle-timeout" json:"quic-max-idle-timeout"`                           // Default: 30s
+	QUICKeepAlive                  time.Duration `yaml:"quic-keep-alive" json:"quic-keep-alive"`                                       // Default: 15s
+	QUICMaxStreamReceiveWindow     uint64        `yaml:"quic-max-stream-receive-window" json:"quic-max-stream-receive-window"`         // Default: 6MB
+	QUICMaxConnectionReceiveWindow uint64        `yaml:"quic-max-connection-receive-window" json:"quic-max-connection-receive-window"` // Default: 15MB
+	QUICEnableDatagrams            bool          `yaml:"quic-enable-datagrams" json:"quic-enable-datagrams"`                           // Enable unreliable datagrams (default: false)
+	QUICDisablePathMTUDiscovery    bool          `yaml:"quic-disable-path-mtu-discovery" json:"quic-disable-path-mtu-discovery"`       // Disable Path MTU Discovery (default: false/enabled)
+	HSTS                           hsts.Options  `yaml:"hsts-options" json:"hsts-options"`
 }
 
 // S3 is the struct for managing the S3 storage configuration

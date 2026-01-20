@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/arm-doe/sts"
+	"github.com/quic-go/quic-go"
 )
 
 const apiVersion = 1
@@ -66,6 +67,12 @@ type Client struct {
 	PartialsDecoder      sts.DecodePartials
 	BandwidthLogInterval time.Duration
 
+	// HTTP3/QUIC support
+	Protocol    TransportProtocol
+	HTTP3Port   int
+	EnableHTTP3 bool
+	QUICConfig  *quic.Config
+
 	root   string
 	client *BandwidthLoggingClient
 }
@@ -90,10 +97,27 @@ func (h *Client) init() error {
 		return nil
 	}
 	var err error
-	if h.client, err = GetClient(
-		h.TLS,
-		h.BandwidthLogInterval,
-		fmt.Sprintf("(%s) ", h.SourceName)); err != nil {
+
+	// Determine protocol from configuration
+	protocol := h.Protocol
+	if protocol == 0 {
+		// Default based on legacy behavior
+		if h.EnableHTTP3 {
+			protocol = ProtocolAuto // Try HTTP3 first, fallback to HTTPS
+		} else {
+			protocol = ProtocolHTTPS
+		}
+	}
+
+	builder := &TransportBuilder{
+		TLSConfig:   h.TLS,
+		Protocol:    protocol,
+		LogInterval: h.BandwidthLogInterval,
+		LogPrefix:   fmt.Sprintf("(%s) ", h.SourceName),
+		QUICConfig:  h.QUICConfig,
+	}
+
+	if h.client, err = builder.Build(); err != nil {
 		return err
 	}
 	h.client.Timeout = h.Timeout
