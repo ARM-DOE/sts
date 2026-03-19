@@ -6,7 +6,7 @@ proj=$root/../../
 goversion=1.26.1
 gotarget=`uname -s | awk '{print tolower($0)}'`
 gobundle=go${goversion}.${gotarget}-amd64.tar.gz
-gourl=https://go.dev/dl/$gobundle
+gourl=https://dl.google.com/go/$gobundle
 GOROOT=$root/.go
 GOPATH=$root/.godev
 
