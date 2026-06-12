@@ -182,12 +182,22 @@ func (s *Server) handle(next http.Handler) http.Handler {
 
 func (s *Server) handleValidate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Debug(
+			"STS request validate:",
+			r.Method,
+			r.URL.RequestURI(),
+			"remote=", r.RemoteAddr,
+			"source=", getSourceName(r),
+			"key=", getKey(r),
+		)
 		gateKeeper := s.getGateKeeper(r)
 		if gateKeeper == nil {
+			log.Debug("STS request rejected: missing gatekeeper")
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		if !gateKeeper.Ready() {
+			log.Debug("STS request rejected: gatekeeper not ready")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
@@ -198,6 +208,7 @@ func (s *Server) handleValidate(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
+		log.Debug("STS request validated:", r.Method, r.URL.RequestURI(), "source=", source)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -361,9 +372,18 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 	sep := r.Header.Get(HeaderSep)
 	var metaLen int
 	if metaLen, err = strconv.Atoi(r.Header.Get(HeaderMetaLen)); err != nil {
+		log.Debug("STS data request rejected: invalid meta len", r.Header.Get(HeaderMetaLen))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	log.Debug(
+		"STS data request start:",
+		"source=", source,
+		"remote=", r.RemoteAddr,
+		"compressed=", compressed,
+		"metaLen=", metaLen,
+		"contentLength=", r.ContentLength,
+	)
 	reader := r.Body
 	if compressed {
 		if reader, err = gzip.NewReader(reader); err != nil {
@@ -383,10 +403,12 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 	for {
 		next, eof := decoder.Next()
 		if eof { // Reached end of multipart request
+			log.Debug("STS data request complete:", "source=", source, "parts=", index)
 			w.WriteHeader(http.StatusOK)
 			break
 		}
 		if index >= len(parts) {
+			log.Debug("STS data request rejected: part index overflow", index, len(parts))
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -407,6 +429,7 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 		err = gateKeeper.Receive(file, next)
 		if err != nil {
 			log.Error(err.Error())
+			log.Debug("STS data request partial failure:", "source=", source, "partsReceived=", index)
 			w.Header().Add(HeaderPartCount, strconv.Itoa(index))
 			w.WriteHeader(http.StatusPartialContent) // respond with a 206
 			break
@@ -420,6 +443,14 @@ func (s *Server) routeDataRecovery(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	compressed := r.Header.Get(HeaderContentEncoding) == HeaderGzip
 	sep := r.Header.Get(HeaderSep)
+	source := getSourceName(r)
+	log.Debug(
+		"STS data-recovery request start:",
+		"source=", source,
+		"remote=", r.RemoteAddr,
+		"compressed=", compressed,
+		"contentLength=", r.ContentLength,
+	)
 	reader := r.Body
 	if compressed {
 		if reader, err = gzip.NewReader(reader); err != nil {
@@ -433,7 +464,10 @@ func (s *Server) routeDataRecovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	gateKeeper := s.getGateKeeper(r)
-	n := gateKeeper.Received(decoder.GetParts())
+	parts := decoder.GetParts()
+	log.Debug("STS data-recovery decoded parts:", "source=", source, "parts=", len(parts))
+	n := gateKeeper.Received(parts)
+	log.Debug("STS data-recovery request complete:", "source=", source, "partsReceived=", n)
 	w.Header().Add(HeaderPartCount, strconv.Itoa(n))
 }
 

@@ -370,6 +370,11 @@ func (s *Stage) Received(parts []sts.Binned) (n int) {
 func (s *Stage) partReceived(part sts.Binned) bool {
 	s.logDebug("Checking for received part:", part.GetName())
 	when := part.GetFileTime()
+	now := time.Now()
+	if when.After(now) {
+		s.logInfo("Clamping future part time for cache build:", part.GetName(), when, now)
+		when = now
+	}
 	monthAgo := time.Now().Add(-1 * time.Hour * 24 * 30)
 	if when.Before(monthAgo) {
 		// Let's put a sensible cap in place
