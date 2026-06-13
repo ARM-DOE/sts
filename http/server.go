@@ -68,6 +68,35 @@ func (s *Server) getGateKeeper(r *http.Request) sts.GateKeeper {
 	return gk
 }
 
+func hasRequestBody(r *http.Request) bool {
+	return r.ContentLength != 0 || len(r.TransferEncoding) > 0
+}
+
+func normalizeRepeatedSlashes(path string) string {
+	if path == "" {
+		return "/"
+	}
+	for strings.Contains(path, "//") {
+		path = strings.ReplaceAll(path, "//", "/")
+	}
+	return path
+}
+
+func normalizeRequestPath(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cleanPath := normalizeRepeatedSlashes(r.URL.Path)
+		cleanRawPath := normalizeRepeatedSlashes(r.URL.RawPath)
+		if cleanPath == r.URL.Path && cleanRawPath == r.URL.RawPath {
+			next.ServeHTTP(w, r)
+			return
+		}
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = cleanPath
+		r2.URL.RawPath = cleanRawPath
+		next.ServeHTTP(w, r2)
+	})
+}
+
 func (s *Server) stopGateKeepers() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -94,6 +123,7 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 	mux.Handle(s.PathPrefix+"/partials", s.handle(s.handleValidate(http.HandlerFunc(s.routePartials))))
 	mux.Handle(s.PathPrefix+"/static/", s.handle(s.handleValidate(http.HandlerFunc(s.routeFile))))
 	mux.Handle(s.PathPrefix+"/check-mapping", s.handle(http.HandlerFunc(s.routeCheckMapping)))
+	handler := normalizeRequestPath(mux)
 
 	wg := sync.WaitGroup{}
 
@@ -102,7 +132,7 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 	go func() {
 		defer wg.Done()
 		addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
-		err := ListenAndServe(addr, s.TLS, mux)
+		err := ListenAndServe(addr, s.TLS, handler)
 		if err != http.ErrServerClosed {
 			log.Error("Error shutting down HTTP/1.1 server:", err.Error())
 		}
@@ -121,7 +151,7 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 			}
 			addr := fmt.Sprintf("%s:%d", s.Host, http3Port)
 
-			http3Server = NewHTTP3Server(addr, mux, s.TLS, s.QUICConfig)
+			http3Server = NewHTTP3Server(addr, handler, s.TLS, s.QUICConfig)
 			err := http3Server.ListenAndServe()
 			if err != nil {
 				log.Error("Error shutting down HTTP3 server:", err.Error())
@@ -219,6 +249,10 @@ func (s *Server) handleError(w http.ResponseWriter, err error) {
 }
 
 func (s *Server) routeHealthCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -304,6 +338,10 @@ func (s *Server) routeFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) routePartials(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	gateKeeper := s.getGateKeeper(r)
 	// Starting with v1, this API is versioned in order to allow for changes to
 	// the underlying structure of the partials.
@@ -325,6 +363,14 @@ func (s *Server) routePartials(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) routeValidate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !hasRequestBody(r) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 	source := getSourceName(r)
 	if source == "" {
 		w.WriteHeader(http.StatusBadRequest)
@@ -367,6 +413,14 @@ func (s *Server) routeValidate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 	var err error
 	defer r.Body.Close()
+	if r.Method != http.MethodPut {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !hasRequestBody(r) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 	source := getSourceName(r)
 	compressed := r.Header.Get(HeaderContentEncoding) == HeaderGzip
 	sep := r.Header.Get(HeaderSep)
@@ -441,6 +495,14 @@ func (s *Server) routeData(w http.ResponseWriter, r *http.Request) {
 func (s *Server) routeDataRecovery(w http.ResponseWriter, r *http.Request) {
 	var err error
 	defer r.Body.Close()
+	if r.Method != http.MethodPut {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !hasRequestBody(r) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 	compressed := r.Header.Get(HeaderContentEncoding) == HeaderGzip
 	sep := r.Header.Get(HeaderSep)
 	source := getSourceName(r)
@@ -465,7 +527,6 @@ func (s *Server) routeDataRecovery(w http.ResponseWriter, r *http.Request) {
 	}
 	gateKeeper := s.getGateKeeper(r)
 	parts := decoder.GetParts()
-	log.Debug("STS data-recovery decoded parts:", "source=", source, "parts=", len(parts))
 	n := gateKeeper.Received(parts)
 	log.Debug("STS data-recovery request complete:", "source=", source, "partsReceived=", n)
 	w.Header().Add(HeaderPartCount, strconv.Itoa(n))
@@ -474,6 +535,14 @@ func (s *Server) routeDataRecovery(w http.ResponseWriter, r *http.Request) {
 func (s *Server) routeCheckMapping(w http.ResponseWriter, r *http.Request) {
 	var err error
 	defer r.Body.Close()
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !hasRequestBody(r) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		s.handleError(w, err)

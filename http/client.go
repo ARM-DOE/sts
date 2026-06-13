@@ -86,8 +86,8 @@ func (h *Client) rootURL() string {
 		protocol += "s"
 	}
 	h.root = fmt.Sprintf("%s://%s:%d", protocol, h.TargetHost, h.TargetPort)
-	if h.TargetPrefix != "" {
-		h.root += h.TargetPrefix
+	if prefix := strings.Trim(h.TargetPrefix, "/"); prefix != "" {
+		h.root += "/" + prefix
 	}
 	return h.root
 }

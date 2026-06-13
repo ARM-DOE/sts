@@ -214,6 +214,21 @@ func TestMisc(t *testing.T) {
 	<-done
 }
 
+func TestNormalizeRepeatedSlashes(t *testing.T) {
+	tests := map[string]string{
+		"":                     "/",
+		"/sts//data":           "/sts/data",
+		"//sts///data-recovery": "/sts/data-recovery",
+		"/sts/data":            "/sts/data",
+	}
+
+	for input, expected := range tests {
+		if got := normalizeRepeatedSlashes(input); got != expected {
+			t.Fatalf("normalizeRepeatedSlashes(%q) = %q, want %q", input, got, expected)
+		}
+	}
+}
+
 type mockGk struct {
 	gotCleanedNow bool
 	gotPruned     bool
