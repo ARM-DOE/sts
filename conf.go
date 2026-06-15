@@ -482,7 +482,6 @@ type TargetConf struct {
 	// HTTP3/QUIC support
 	Protocol                       string        `yaml:"protocol" json:"protocol"`                                                     // "auto", "http3", "https", "http"
 	HTTP3Port                      int           `yaml:"http3-port" json:"http3-port"`                                                 // Optional separate port for HTTP3
-	EnableHTTP3                    bool          `yaml:"enable-http3" json:"enable-http3"`                                             // Enable HTTP3 when protocol is "auto"
 	QUICMaxStreams                 int64         `yaml:"quic-max-streams" json:"quic-max-streams"`                                     // Default: 100 or 2*threads
 	QUICMaxIdleTimeout             time.Duration `yaml:"quic-max-idle-timeout" json:"quic-max-idle-timeout"`                           // Default: 30s or timeout/10
 	QUICKeepAlive                  time.Duration `yaml:"quic-keep-alive" json:"quic-keep-alive"`                                       // Default: 15s or idle-timeout/2

@@ -68,10 +68,9 @@ type Client struct {
 	BandwidthLogInterval time.Duration
 
 	// HTTP3/QUIC support
-	Protocol    TransportProtocol
-	HTTP3Port   int
-	EnableHTTP3 bool
-	QUICConfig  *quic.Config
+	Protocol   TransportProtocol
+	HTTP3Port  int
+	QUICConfig *quic.Config
 
 	root   string
 	client *BandwidthLoggingClient
@@ -98,15 +97,9 @@ func (h *Client) init() error {
 	}
 	var err error
 
-	// Determine protocol from configuration
 	protocol := h.Protocol
 	if protocol == 0 {
-		// Default based on legacy behavior
-		if h.EnableHTTP3 {
-			protocol = ProtocolAuto // Try HTTP3 first, fallback to HTTPS
-		} else {
-			protocol = ProtocolHTTPS
-		}
+		protocol = ProtocolHTTPS
 	}
 
 	builder := &TransportBuilder{

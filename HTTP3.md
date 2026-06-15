@@ -253,7 +253,6 @@ If client IP changes (e.g., mobile network handoff), QUIC seamlessly migrates th
 ```yaml
 target:
   protocol: auto              # auto | http3 | https | http
-  http3-enabled: true         # Alternative to protocol: auto
   http3-port: 0               # 0 = use same port as http-host
 ```
 

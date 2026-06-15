@@ -339,9 +339,8 @@ func (c *clientApp) init() (err error) {
 		PartialsDecoder:      stage.ReadCompanions,
 		BandwidthLogInterval: c.conf.StatInterval,
 		// HTTP3/QUIC configuration
-		Protocol:    http.ParseProtocol(c.conf.Target.Protocol),
-		HTTP3Port:   c.conf.Target.HTTP3Port,
-		EnableHTTP3: c.conf.Target.EnableHTTP3,
+		Protocol:  http.ParseProtocol(c.conf.Target.Protocol),
+		HTTP3Port: c.conf.Target.HTTP3Port,
 		QUICConfig: http.ConfigureQUICForClient(
 			c.conf.Target.QUICMaxStreams,
 			c.conf.Target.QUICMaxIdleTimeout,
@@ -371,8 +370,6 @@ func (c *clientApp) init() (err error) {
 		case http.ProtocolAuto:
 			protocol = "HTTP3/QUIC (with HTTPS fallback)"
 		}
-	} else if c.conf.Target.EnableHTTP3 {
-		protocol = "HTTP3/QUIC (with HTTPS fallback)"
 	}
 	dump("Protocol: %s", protocol)
 
