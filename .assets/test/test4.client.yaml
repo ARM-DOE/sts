@@ -23,7 +23,7 @@ OUT: # Outgoing configuration
         name: stsin-1 # Name of the target
         http-host: localhost:1992
         http-tls-cert: localhost.crt
-        protocol: auto # Use HTTP3/QUIC with automatic fallback to HTTPS
+        protocol: http3 # Use HTTP3/QUIC with automatic fallback to HTTPS
       tags: # Tags are for configuration based on file patterns (omitted attributes are inherited)
         - pattern: DEFAULT # The file "tag" pattern
           priority: 1 # Relative importance (higher the number, greater the importance)
