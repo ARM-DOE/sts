@@ -94,6 +94,9 @@ func NewHTTP3Server(addr string, handler http.Handler, tlsConfig *tls.Config, qu
 	if tlsConfig != nil {
 		tlsConfig = tlsConfig.Clone()
 		tlsConfig.MinVersion = tls.VersionTLS13
+		// QUIC needs session tickets for safe post-handshake behavior.
+		// Keep this scoped to HTTP/3 so HTTPS settings are not changed.
+		tlsConfig.SessionTicketsDisabled = false
 
 		// Set ALPN for HTTP3
 		if len(tlsConfig.NextProtos) == 0 {
