@@ -213,7 +213,7 @@ func (a *serverApp) init() (err error) {
 	if conf.SourceControl != nil {
 		db := control.NewPostgres(
 			conf.SourceControl.Port,
-			conf.Server.Host,
+			conf.SourceControl.Host,
 			conf.SourceControl.Name,
 			conf.SourceControl.User,
 			conf.SourceControl.Pass,
