@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"math/rand/v2"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,6 +52,8 @@ type Server struct {
 
 	lock sync.RWMutex
 }
+
+var safePathSegmentRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 func (s *Server) getGateKeeper(r *http.Request) sts.GateKeeper {
 	source := getSourceName(r)
@@ -257,8 +262,18 @@ func (s *Server) routeHealthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) routeFile(w http.ResponseWriter, r *http.Request) {
-	source := getSourceName(r)
-	file := r.URL.Path[len("/static/"):]
+	source, err := sanitizePathSegment(getSourceName(r))
+	if err != nil {
+		log.Error(err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	file, err := sanitizeRelativePath(r.URL.Path[len("/static/"):])
+	if err != nil {
+		log.Error(err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 	serveRoot, err := fileutil.Clean(s.ServeDir)
 	if err != nil {
 		log.Error(err.Error())
@@ -297,17 +312,17 @@ func (s *Server) routeFile(w http.ResponseWriter, r *http.Request) {
 			return
 		case fi.IsDir():
 			var names []string
-			handleNode := func(path string, info os.FileInfo, err error) error {
-				if info == nil || err != nil {
+			handleNode := func(nodePath string, d fs.DirEntry, err error) error {
+				if d == nil || err != nil {
 					return err
 				}
-				if info.IsDir() {
+				if d.IsDir() {
 					return nil
 				}
-				names = append(names, path[len(root)+1:])
+				names = append(names, nodePath[len(root)+1:])
 				return nil
 			}
-			if err = fileutil.Walk(path, handleNode, true); err != nil {
+			if err = filepath.WalkDir(path, handleNode); err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
@@ -357,6 +372,39 @@ func isSubpath(base, target string) bool {
 	base = strings.TrimRight(base, string(os.PathSeparator)) + string(os.PathSeparator)
 	target = strings.TrimRight(target, string(os.PathSeparator)) + string(os.PathSeparator)
 	return strings.HasPrefix(target, base)
+}
+
+func sanitizePathSegment(value string) (string, error) {
+	if value == "" || !safePathSegmentRe.MatchString(value) {
+		return "", fmt.Errorf("invalid path segment: %s", value)
+	}
+	return value, nil
+}
+
+func sanitizeRelativePath(value string) (string, error) {
+	raw := strings.Trim(value, "/")
+	if raw == "" {
+		return "", nil
+	}
+	for _, segment := range strings.Split(raw, "/") {
+		switch segment {
+		case "", ".":
+			continue
+		case "..":
+			return "", fmt.Errorf("invalid path segment: %s", segment)
+		}
+		if _, err := sanitizePathSegment(segment); err != nil {
+			return "", err
+		}
+	}
+	cleaned := strings.TrimPrefix(path.Clean("/"+raw), "/")
+	if cleaned == "." {
+		return "", nil
+	}
+	if cleaned == "" {
+		return "", nil
+	}
+	return cleaned, nil
 }
 
 func (s *Server) routePartials(w http.ResponseWriter, r *http.Request) {

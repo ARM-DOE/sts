@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -226,6 +227,72 @@ func TestNormalizeRepeatedSlashes(t *testing.T) {
 		if got := normalizeRepeatedSlashes(input); got != expected {
 			t.Fatalf("normalizeRepeatedSlashes(%q) = %q, want %q", input, got, expected)
 		}
+	}
+}
+
+func TestSanitizeRelativePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{name: "empty", input: "", want: ""},
+		{name: "root_slash", input: "/", want: ""},
+		{name: "nested", input: "a/b/file.txt", want: "a/b/file.txt"},
+		{name: "leading_and_repeated_slashes", input: "/a//b///c", want: "a/b/c"},
+		{name: "dot_segments", input: "a/./b/./c", want: "a/b/c"},
+		{name: "traversal_parent", input: "../secret", wantErr: true},
+		{name: "traversal_nested", input: "a/../../secret", wantErr: true},
+		{name: "traversal_absolute_like", input: "/../secret", wantErr: true},
+		{name: "invalid_char_space", input: "a b/file", wantErr: true},
+		{name: "invalid_char_percent", input: "a/%2e%2e/file", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := sanitizeRelativePath(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("sanitizeRelativePath(%q) expected error, got none", tt.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("sanitizeRelativePath(%q) unexpected error: %v", tt.input, err)
+			}
+			if got != tt.want {
+				t.Fatalf("sanitizeRelativePath(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRouteFileRejectsTraversalPath(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{name: "parent_traversal", url: "/static/../etc/passwd"},
+		{name: "nested_parent_traversal", url: "/static/a/../../etc/passwd"},
+		{name: "encoded_parent_segment", url: "/static/%2e%2e/etc/passwd"},
+		{name: "invalid_segment_characters", url: "/static/a%20b/file.txt"},
+	}
+
+	server := &Server{ServeDir: root}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
+			req.Header.Set(HeaderSourceName, source)
+			w := httptest.NewRecorder()
+
+			server.routeFile(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("routeFile(%q) status=%d, want %d", tt.url, w.Code, http.StatusBadRequest)
+			}
+		})
 	}
 }
 
