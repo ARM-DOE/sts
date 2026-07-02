@@ -268,7 +268,9 @@ func (s *Server) routeFile(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	file, err := sanitizeRelativePath(r.URL.Path[len("/static/"):])
+	relPath := strings.TrimPrefix(r.URL.Path, "/static")
+	relPath = strings.TrimPrefix(relPath, "/")
+	file, err := sanitizeRelativePath(relPath)
 	if err != nil {
 		log.Error(err.Error())
 		w.WriteHeader(http.StatusBadRequest)
@@ -291,23 +293,28 @@ func (s *Server) routeFile(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	path, err := fileutil.Clean(filepath.Join(root, file))
+	rootFS, err := os.OpenRoot(root)
 	if err != nil {
-		log.Error(err.Error())
-		w.WriteHeader(http.StatusBadRequest)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	if !isSubpath(root, path) {
-		log.Error(fmt.Errorf("invalid file path outside source root: %s", file))
-		w.WriteHeader(http.StatusBadRequest)
-		return
+	defer rootFS.Close()
+	rootName := rootRelativePath(file)
+	fi, err := rootFS.Stat(rootName)
+	found := true
+	if err != nil {
+		if os.IsNotExist(err) {
+			found = false
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 	}
-	fi, err := os.Stat(path)
 	switch r.Method {
 	case http.MethodGet:
 		var data interface{}
 		switch {
-		case os.IsNotExist(err):
+		case !found:
 			w.WriteHeader(http.StatusNotFound)
 			return
 		case fi.IsDir():
@@ -319,10 +326,10 @@ func (s *Server) routeFile(w http.ResponseWriter, r *http.Request) {
 				if d.IsDir() {
 					return nil
 				}
-				names = append(names, nodePath[len(root)+1:])
+				names = append(names, nodePath)
 				return nil
 			}
-			if err = filepath.WalkDir(path, handleNode); err != nil {
+			if err = fs.WalkDir(rootFS.FS(), rootName, handleNode); err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
@@ -339,7 +346,7 @@ func (s *Server) routeFile(w http.ResponseWriter, r *http.Request) {
 			}
 		default:
 			var fp *os.File
-			fp, err = os.Open(path)
+			fp, err = rootFS.Open(rootName)
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
@@ -349,14 +356,14 @@ func (s *Server) routeFile(w http.ResponseWriter, r *http.Request) {
 		}
 	case http.MethodDelete:
 		switch {
-		case os.IsNotExist(err):
+		case !found:
 			w.WriteHeader(http.StatusNotFound)
 			return
 		case fi.IsDir():
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		default:
-			err = os.Remove(path)
+			err = rootFS.Remove(rootName)
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
@@ -405,6 +412,13 @@ func sanitizeRelativePath(value string) (string, error) {
 		return "", nil
 	}
 	return cleaned, nil
+}
+
+func rootRelativePath(relPath string) string {
+	if relPath == "" {
+		return "."
+	}
+	return relPath
 }
 
 func (s *Server) routePartials(w http.ResponseWriter, r *http.Request) {

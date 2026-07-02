@@ -296,6 +296,60 @@ func TestRouteFileRejectsTraversalPath(t *testing.T) {
 	}
 }
 
+func TestRootRelativePath(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "empty_maps_to_dot", input: "", want: "."},
+		{name: "file_path_unchanged", input: "a/b.txt", want: "a/b.txt"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := rootRelativePath(tt.input)
+			if got != tt.want {
+				t.Fatalf("rootRelativePath(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRouteFileRootListing(t *testing.T) {
+	rootDir := t.TempDir()
+	serveDir := filepath.Join(rootDir, "serve")
+	sourceDir := filepath.Join(serveDir, source)
+	if err := os.MkdirAll(filepath.Join(sourceDir, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "top.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "nested", "child.txt"), []byte("y"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	server := &Server{ServeDir: serveDir}
+	req := httptest.NewRequest(http.MethodGet, "/static", nil)
+	req.Header.Set(HeaderSourceName, source)
+	w := httptest.NewRecorder()
+
+	server.routeFile(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("routeFile(/static) status=%d, want %d", w.Code, http.StatusOK)
+	}
+
+	var names []string
+	if err := json.Unmarshal(w.Body.Bytes(), &names); err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 2 {
+		t.Fatalf("routeFile(/static) names=%v, want 2 file entries", names)
+	}
+}
+
 type mockGk struct {
 	gotCleanedNow bool
 	gotPruned     bool
