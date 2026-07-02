@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -492,6 +493,118 @@ type TargetConf struct {
 	QUICDisable0RTT                bool          `yaml:"quic-disable-0rtt" json:"quic-disable-0rtt"`                                   // Disable 0-RTT (default: false/enabled)
 }
 
+type auxTargetConf struct {
+	Name                            string        `yaml:"name" json:"name"`
+	Key                             string        `yaml:"key" json:"key"`
+	Host                            string        `yaml:"http-host" json:"http-host"`
+	PathPrefix                      string        `yaml:"http-path-prefix" json:"http-path-prefix"`
+	TLSCertPath                     string        `yaml:"http-tls-cert" json:"http-tls-cert"`
+	TLSCertBase64                   string        `yaml:"http-tls-cert-encoded" json:"http-tls-cert-encoded"`
+	Protocol                        string        `yaml:"protocol" json:"protocol"`
+	HTTP3Port                       int           `yaml:"http3-port" json:"http3-port"`
+	QUICMaxStreams                  int64         `yaml:"quic-max-streams" json:"quic-max-streams"`
+	QUICMaxIdleTimeout              time.Duration `yaml:"quic-max-idle-timeout" json:"quic-max-idle-timeout"`
+	QUICKeepAlive                   time.Duration `yaml:"quic-keep-alive" json:"quic-keep-alive"`
+	QUICMaxStreamReceiveWindow      interface{}   `yaml:"quic-max-stream-receive-window" json:"quic-max-stream-receive-window"`
+	QUICMaxConnectionReceiveWindow  interface{}   `yaml:"quic-max-connection-receive-window" json:"quic-max-connection-receive-window"`
+	QUICEnableDatagrams             bool          `yaml:"quic-enable-datagrams" json:"quic-enable-datagrams"`
+	QUICDisablePathMTUDiscovery     bool          `yaml:"quic-disable-path-mtu-discovery" json:"quic-disable-path-mtu-discovery"`
+	QUICDisable0RTT                 bool          `yaml:"quic-disable-0rtt" json:"quic-disable-0rtt"`
+}
+
+func parseByteCount(val interface{}, field string) (uint64, error) {
+	switch v := val.(type) {
+	case nil:
+		return 0, nil
+	case int:
+		if v < 0 {
+			return 0, fmt.Errorf("%s cannot be negative", field)
+		}
+		return uint64(v), nil
+	case int64:
+		if v < 0 {
+			return 0, fmt.Errorf("%s cannot be negative", field)
+		}
+		return uint64(v), nil
+	case uint64:
+		return v, nil
+	case float64:
+		if v < 0 {
+			return 0, fmt.Errorf("%s cannot be negative", field)
+		}
+		if math.Trunc(v) != v {
+			return 0, fmt.Errorf("%s must be a whole number of bytes", field)
+		}
+		return uint64(v), nil
+	case string:
+		if v == "" {
+			return 0, nil
+		}
+		n, err := units.ParseBase2Bytes(v)
+		if err != nil {
+			return 0, fmt.Errorf("cannot parse %s: %w", field, err)
+		}
+		if n < 0 {
+			return 0, fmt.Errorf("%s cannot be negative", field)
+		}
+		return uint64(n), nil
+	default:
+		return 0, fmt.Errorf("invalid type %T for %s", val, field)
+	}
+}
+
+func (t *TargetConf) applyAux(aux *auxTargetConf) (err error) {
+	t.Name = aux.Name
+	t.Key = aux.Key
+	t.Host = aux.Host
+	t.PathPrefix = aux.PathPrefix
+	t.TLSCertPath = aux.TLSCertPath
+	t.TLSCertBase64 = aux.TLSCertBase64
+	t.Protocol = aux.Protocol
+	t.HTTP3Port = aux.HTTP3Port
+	t.QUICMaxStreams = aux.QUICMaxStreams
+	t.QUICMaxIdleTimeout = aux.QUICMaxIdleTimeout
+	t.QUICKeepAlive = aux.QUICKeepAlive
+	if t.QUICMaxStreamReceiveWindow, err = parseByteCount(
+		aux.QUICMaxStreamReceiveWindow,
+		"quic-max-stream-receive-window"); err != nil {
+		return
+	}
+	if t.QUICMaxConnectionReceiveWindow, err = parseByteCount(
+		aux.QUICMaxConnectionReceiveWindow,
+		"quic-max-connection-receive-window"); err != nil {
+		return
+	}
+	t.QUICEnableDatagrams = aux.QUICEnableDatagrams
+	t.QUICDisablePathMTUDiscovery = aux.QUICDisablePathMTUDiscovery
+	t.QUICDisable0RTT = aux.QUICDisable0RTT
+	return
+}
+
+// UnmarshalYAML implements the Unmarshaler interface for handling custom member(s)
+// https://godoc.org/gopkg.in/yaml.v2
+func (t *TargetConf) UnmarshalYAML(
+	unmarshal func(interface{}) error,
+) (err error) {
+	aux := &auxTargetConf{}
+	if err = unmarshal(aux); err != nil {
+		return
+	}
+	err = t.applyAux(aux)
+	return
+}
+
+// UnmarshalJSON implements the Unmarshaler interface for handling custom member(s)
+// https://golang.org/pkg/encoding/json/#Unmarshal
+func (t *TargetConf) UnmarshalJSON(data []byte) (err error) {
+	aux := &auxTargetConf{}
+	if err = json.Unmarshal(data, aux); err != nil {
+		return
+	}
+	err = t.applyAux(aux)
+	return
+}
+
 // ParseHost returns the hostname and port split out or uses default port
 func (t *TargetConf) ParseHost() (host string, port int, err error) {
 	host = t.Host
@@ -560,6 +673,81 @@ type HTTPServer struct {
 	QUICEnableDatagrams            bool          `yaml:"quic-enable-datagrams" json:"quic-enable-datagrams"`                           // Enable unreliable datagrams (default: false)
 	QUICDisablePathMTUDiscovery    bool          `yaml:"quic-disable-path-mtu-discovery" json:"quic-disable-path-mtu-discovery"`       // Disable Path MTU Discovery (default: false/enabled)
 	HSTS                           hsts.Options  `yaml:"hsts-options" json:"hsts-options"`
+}
+
+type auxHTTPServer struct {
+	Host                            string        `yaml:"http-host" json:"http-host"`
+	Port                            int           `yaml:"http-port" json:"http-port"`
+	PathPrefix                      string        `yaml:"http-path-prefix" json:"http-path-prefix"`
+	TLSCertPath                     string        `yaml:"http-tls-cert" json:"http-tls-cert"`
+	TLSKeyPath                      string        `yaml:"http-tls-key" json:"http-tls-key"`
+	Compression                     int           `yaml:"compress" json:"compress"`
+	ChanceOfSimulatedFailure        float64       `yaml:"chance-of-simulated-failure" json:"chance-of-simulated-failure"`
+	HSTSEnabled                     bool          `yaml:"hsts-enabled" json:"hsts-enabled"`
+	EnableHTTP3                     bool          `yaml:"http3-enabled" json:"http3-enabled"`
+	HTTP3Port                       int           `yaml:"http3-port" json:"http3-port"`
+	QUICMaxStreams                  int64         `yaml:"quic-max-streams" json:"quic-max-streams"`
+	QUICMaxIdleTimeout              time.Duration `yaml:"quic-max-idle-timeout" json:"quic-max-idle-timeout"`
+	QUICKeepAlive                   time.Duration `yaml:"quic-keep-alive" json:"quic-keep-alive"`
+	QUICMaxStreamReceiveWindow      interface{}   `yaml:"quic-max-stream-receive-window" json:"quic-max-stream-receive-window"`
+	QUICMaxConnectionReceiveWindow  interface{}   `yaml:"quic-max-connection-receive-window" json:"quic-max-connection-receive-window"`
+	QUICEnableDatagrams             bool          `yaml:"quic-enable-datagrams" json:"quic-enable-datagrams"`
+	QUICDisablePathMTUDiscovery     bool          `yaml:"quic-disable-path-mtu-discovery" json:"quic-disable-path-mtu-discovery"`
+	HSTS                            hsts.Options  `yaml:"hsts-options" json:"hsts-options"`
+}
+
+func (h *HTTPServer) applyAux(aux *auxHTTPServer) (err error) {
+	h.Host = aux.Host
+	h.Port = aux.Port
+	h.PathPrefix = aux.PathPrefix
+	h.TLSCertPath = aux.TLSCertPath
+	h.TLSKeyPath = aux.TLSKeyPath
+	h.Compression = aux.Compression
+	h.ChanceOfSimulatedFailure = aux.ChanceOfSimulatedFailure
+	h.HSTSEnabled = aux.HSTSEnabled
+	h.EnableHTTP3 = aux.EnableHTTP3
+	h.HTTP3Port = aux.HTTP3Port
+	h.QUICMaxStreams = aux.QUICMaxStreams
+	h.QUICMaxIdleTimeout = aux.QUICMaxIdleTimeout
+	h.QUICKeepAlive = aux.QUICKeepAlive
+	if h.QUICMaxStreamReceiveWindow, err = parseByteCount(
+		aux.QUICMaxStreamReceiveWindow,
+		"quic-max-stream-receive-window"); err != nil {
+		return
+	}
+	if h.QUICMaxConnectionReceiveWindow, err = parseByteCount(
+		aux.QUICMaxConnectionReceiveWindow,
+		"quic-max-connection-receive-window"); err != nil {
+		return
+	}
+	h.QUICEnableDatagrams = aux.QUICEnableDatagrams
+	h.QUICDisablePathMTUDiscovery = aux.QUICDisablePathMTUDiscovery
+	h.HSTS = aux.HSTS
+	return
+}
+
+// UnmarshalYAML implements the Unmarshaler interface for handling custom member(s)
+// https://godoc.org/gopkg.in/yaml.v2
+func (h *HTTPServer) UnmarshalYAML(
+	unmarshal func(interface{}) error,
+) (err error) {
+	aux := &auxHTTPServer{}
+	if err = unmarshal(aux); err != nil {
+		return
+	}
+	err = h.applyAux(aux)
+	return
+}
+
+// UnmarshalJSON implements the Unmarshaler interface for handling custom member(s)
+// https://golang.org/pkg/encoding/json/#Unmarshal
+func (h *HTTPServer) UnmarshalJSON(data []byte) (err error) {
+	aux := &auxHTTPServer{}
+	if err = json.Unmarshal(data, aux); err != nil {
+		return
+	}
+	err = h.applyAux(aux)
+	return
 }
 
 // S3 is the struct for managing the S3 storage configuration
