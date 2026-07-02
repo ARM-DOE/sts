@@ -46,13 +46,18 @@ func (c *Client) GetClientStatus(
 	if err != nil {
 		return
 	}
-	status8, err := strconv.ParseUint(string(statusBytes), 10, 8)
+	statusInt, err := strconv.Atoi(strings.TrimSpace(string(statusBytes)))
 	if err != nil {
 		err = fmt.Errorf(
 			"failed to parse status: %s (server response: %s)", err, string(statusBytes),
 		)
+		return
 	}
-	status = sts.ClientStatus(status8)
+	if statusInt < 0 || statusInt > 255 {
+		err = fmt.Errorf("failed to parse status: out of uint8 range (server response: %s)", string(statusBytes))
+		return
+	}
+	status = sts.ClientStatus(uint8(statusInt))
 	return
 }
 

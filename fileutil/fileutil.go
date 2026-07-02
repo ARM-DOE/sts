@@ -213,6 +213,10 @@ func Move(src, dst string) error {
 // Readdir is a simple wrapper around File.Readdir that accepts a path argument
 // as opposed to a file pointer.
 func Readdir(dirname string) ([]os.FileInfo, error) {
+	dirname, err := cleanAbsPath(dirname)
+	if err != nil {
+		return nil, err
+	}
 	f, err := os.Open(dirname)
 	if err != nil {
 		return nil, err
@@ -260,7 +264,11 @@ func walk(
 		nodePath := filepath.Join(path, node.Name())
 		nodeEvalPath := nodePath
 		if history != nil {
-			nodeEvalPath, err = filepath.EvalSymlinks(nodePath)
+			nodeEvalPath, err = cleanAbsPath(nodePath)
+			if err != nil {
+				continue // Just skip it.
+			}
+			nodeEvalPath, err = filepath.EvalSymlinks(nodeEvalPath)
 			if err != nil {
 				continue // Just skip it.
 			}
@@ -291,9 +299,16 @@ func Walk(
 	walkFn filepath.WalkFunc,
 	followSymLinks bool) (err error) {
 
-	path := root
+	path, err := cleanAbsPath(root)
+	if err != nil {
+		return
+	}
 	if followSymLinks {
-		path, err = filepath.EvalSymlinks(root)
+		path, err = filepath.EvalSymlinks(path)
+		if err != nil {
+			return
+		}
+		path, err = cleanAbsPath(path)
 		if err != nil {
 			return
 		}
@@ -318,6 +333,10 @@ func PathsOverlap(path1, path2 string) bool {
 	path1 = strings.TrimRight(path1, string(os.PathSeparator)) + string(os.PathSeparator)
 	path2 = strings.TrimRight(path2, string(os.PathSeparator)) + string(os.PathSeparator)
 	return path1 == path2 || strings.HasPrefix(path1, path2) || strings.HasPrefix(path2, path1)
+}
+
+func cleanAbsPath(path string) (string, error) {
+	return filepath.Abs(filepath.Clean(path))
 }
 
 func Clean(path string) (string, error) {

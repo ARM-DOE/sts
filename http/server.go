@@ -259,15 +259,31 @@ func (s *Server) routeHealthCheck(w http.ResponseWriter, r *http.Request) {
 func (s *Server) routeFile(w http.ResponseWriter, r *http.Request) {
 	source := getSourceName(r)
 	file := r.URL.Path[len("/static/"):]
-	root, err := fileutil.Clean(filepath.Join(s.ServeDir, source))
+	serveRoot, err := fileutil.Clean(s.ServeDir)
 	if err != nil {
 		log.Error(err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	root, err := fileutil.Clean(filepath.Join(serveRoot, source))
+	if err != nil {
+		log.Error(err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if !isSubpath(serveRoot, root) {
+		log.Error(fmt.Errorf("invalid source path outside serve root: %s", source))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	path, err := fileutil.Clean(filepath.Join(root, file))
 	if err != nil {
 		log.Error(err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if !isSubpath(root, path) {
+		log.Error(fmt.Errorf("invalid file path outside source root: %s", file))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -335,6 +351,12 @@ func (s *Server) routeFile(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.WriteHeader(http.StatusBadRequest)
 	}
+}
+
+func isSubpath(base, target string) bool {
+	base = strings.TrimRight(base, string(os.PathSeparator)) + string(os.PathSeparator)
+	target = strings.TrimRight(target, string(os.PathSeparator)) + string(os.PathSeparator)
+	return strings.HasPrefix(target, base)
 }
 
 func (s *Server) routePartials(w http.ResponseWriter, r *http.Request) {
