@@ -3,6 +3,7 @@ package http
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -76,6 +77,8 @@ type Client struct {
 
 	root   string
 	client *BandwidthLoggingClient
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 func (h *Client) rootURL() string {
@@ -98,6 +101,7 @@ func (h *Client) init() error {
 		return nil
 	}
 	var err error
+	h.ctx, h.cancel = context.WithCancel(context.Background())
 
 	protocol := h.Protocol
 	if protocol == 0 {
@@ -115,6 +119,9 @@ func (h *Client) init() error {
 	}
 
 	if h.client, err = builder.Build(); err != nil {
+		h.cancel()
+		h.ctx = nil
+		h.cancel = nil
 		return err
 	}
 	h.client.Timeout = h.Timeout
@@ -122,8 +129,15 @@ func (h *Client) init() error {
 }
 
 func (h *Client) Destroy() {
+	h.CancelRequests()
 	if h.client != nil {
 		h.client.Stop()
+	}
+}
+
+func (h *Client) CancelRequests() {
+	if h.cancel != nil {
+		h.cancel()
 	}
 }
 
@@ -159,7 +173,7 @@ func (h *Client) Transmit(payload sts.Payload) (n int, err error) {
 		pw.Close()
 	}()
 	url := fmt.Sprintf("%s/data?v=%d", h.rootURL(), apiVersion)
-	req, err := http.NewRequest("PUT", url, pr)
+	req, err := http.NewRequestWithContext(h.ctx, "PUT", url, pr)
 	if err != nil {
 		return
 	}
@@ -221,7 +235,7 @@ func (h *Client) RecoverTransmission(payload sts.Payload) (n int, err error) {
 		pw.Close()
 	}()
 	url := fmt.Sprintf("%s/data-recovery?v=%d", h.rootURL(), apiVersion)
-	req, err := http.NewRequest("PUT", url, pr)
+	req, err := http.NewRequestWithContext(h.ctx, "PUT", url, pr)
 	if err != nil {
 		return
 	}
@@ -270,7 +284,7 @@ func (h *Client) Validate(sent []sts.Pollable) (polled []sts.Polled, err error) 
 	if err != nil {
 		return
 	}
-	req, err := http.NewRequest("POST", url, r)
+	req, err := http.NewRequestWithContext(h.ctx, "POST", url, r)
 	if h.Compression != gzip.NoCompression {
 		req.Header.Add(HeaderContentEncoding, HeaderGzip)
 	}
@@ -326,7 +340,7 @@ func (h *Client) Recover() (partials []*sts.Partial, err error) {
 	var resp *http.Response
 	var reader io.ReadCloser
 	url := fmt.Sprintf("%s/partials?v=%d", h.rootURL(), apiVersion)
-	if req, err = http.NewRequest("GET", url, bytes.NewReader([]byte(""))); err != nil {
+	if req, err = http.NewRequestWithContext(h.ctx, "GET", url, bytes.NewReader([]byte(""))); err != nil {
 		return
 	}
 	req.Header.Add(HeaderSourceName, h.SourceName)

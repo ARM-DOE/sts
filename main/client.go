@@ -446,3 +446,7 @@ func (c *clientApp) init() (err error) {
 func (c *clientApp) destroy() {
 	c.httpClient.Destroy()
 }
+
+func (c *clientApp) cancelRequests() {
+	c.httpClient.CancelRequests()
+}

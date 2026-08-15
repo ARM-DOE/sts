@@ -898,6 +898,9 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 			if err == nil {
 				break
 			}
+			if broker.shouldStopNow() {
+				return
+			}
 			nErr++
 			broker.error("Payload send failed:", err.Error())
 			payload = broker.handleSendError(payload, n)
@@ -1228,6 +1231,9 @@ func (broker *Broker) startValidate(wg *sync.WaitGroup) {
 			}
 			polled, err = broker.Conf.Validator(ready)
 			if err != nil {
+				if broker.shouldStopNow() {
+					return
+				}
 				broker.error("Poll request failed:", err.Error())
 				nErr++
 				broker.applyErrorBackoff(nErr)

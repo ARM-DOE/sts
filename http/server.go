@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -161,7 +162,7 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 
 			http3Server = NewHTTP3Server(addr, handler, s.TLS, s.QUICConfig)
 			err := http3Server.ListenAndServe()
-			if err != nil {
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Error("Error shutting down HTTP3 server:", err.Error())
 			}
 		}()

@@ -43,8 +43,11 @@ func TestKCPHTTPTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	releaseResponse := make(chan struct{})
 	server := &nethttp.Server{Handler: nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
 		_, _ = io.WriteString(w, "kcp")
+		w.(nethttp.Flusher).Flush()
+		<-releaseResponse
 	})}
 	serveDone := make(chan error, 1)
 	go func() {
@@ -79,6 +82,14 @@ func TestKCPHTTPTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if client.kcpSessions == nil {
+		t.Fatal("KCP session metrics registry was not configured")
+	}
+	metrics := client.kcpSessions.snapshot()
+	if metrics.Active != 1 {
+		t.Fatalf("unexpected active KCP session count: %d", metrics.Active)
+	}
+	close(releaseResponse)
 	body, err := io.ReadAll(response.Body)
 	response.Body.Close()
 	if err != nil {
@@ -87,14 +98,6 @@ func TestKCPHTTPTransport(t *testing.T) {
 	if string(body) != "kcp" {
 		t.Fatalf("unexpected response body: %q", body)
 	}
-	if client.kcpSessions == nil {
-		t.Fatal("KCP session metrics registry was not configured")
-	}
-	metrics := client.kcpSessions.snapshot()
-	if metrics.Active != 1 {
-		t.Fatalf("unexpected active KCP session count: %d", metrics.Active)
-	}
-
 	if err = server.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}

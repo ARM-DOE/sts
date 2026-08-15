@@ -380,6 +380,11 @@ func (a *app) stopClients(stopGraceful bool) {
 	if len(a.clients) == 0 {
 		return
 	}
+	if !stopGraceful {
+		for _, c := range a.clients {
+			c.cancelRequests()
+		}
+	}
 	var wg sync.WaitGroup
 	wg.Add(len(a.clientStop))
 	for stop, done := range a.clientStop {
