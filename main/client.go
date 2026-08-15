@@ -128,42 +128,47 @@ func (c *clientApp) setDefaults() (err error) {
 	}
 
 	// Set QUIC configuration defaults
+	if c.conf.Target.QUIC == nil {
+		c.conf.Target.QUIC = &sts.QUICConf{}
+	}
+	quicConf := c.conf.Target.QUIC
+
 	// Max streams: scale with concurrency (2x threads, minimum 100)
-	if c.conf.Target.QUICMaxStreams == 0 {
+	if quicConf.MaxStreams == 0 {
 		threadsDefault := int64(c.conf.Threads * 2)
 		if threadsDefault > http.DefaultQUICMaxStreams {
-			c.conf.Target.QUICMaxStreams = threadsDefault
+			quicConf.MaxStreams = threadsDefault
 		} else {
-			c.conf.Target.QUICMaxStreams = http.DefaultQUICMaxStreams
+			quicConf.MaxStreams = http.DefaultQUICMaxStreams
 		}
 	}
 
 	// Max idle timeout: scale with network latency (timeout/10, minimum 30s)
-	if c.conf.Target.QUICMaxIdleTimeout == 0 {
+	if quicConf.MaxIdleTimeout == 0 {
 		timeoutBased := c.conf.Timeout / 10
 		if timeoutBased > http.DefaultQUICMaxIdleTimeout {
-			c.conf.Target.QUICMaxIdleTimeout = timeoutBased
+			quicConf.MaxIdleTimeout = timeoutBased
 		} else {
-			c.conf.Target.QUICMaxIdleTimeout = http.DefaultQUICMaxIdleTimeout
+			quicConf.MaxIdleTimeout = http.DefaultQUICMaxIdleTimeout
 		}
 	}
 
 	// Keep-alive: half of idle timeout (minimum 15s)
-	if c.conf.Target.QUICKeepAlive == 0 {
-		c.conf.Target.QUICKeepAlive = c.conf.Target.QUICMaxIdleTimeout / 2
-		if c.conf.Target.QUICKeepAlive < http.DefaultQUICKeepAlive {
-			c.conf.Target.QUICKeepAlive = http.DefaultQUICKeepAlive
+	if quicConf.KeepAlive == 0 {
+		quicConf.KeepAlive = quicConf.MaxIdleTimeout / 2
+		if quicConf.KeepAlive < http.DefaultQUICKeepAlive {
+			quicConf.KeepAlive = http.DefaultQUICKeepAlive
 		}
 	}
 
 	// Stream receive window: default 6MB
-	if c.conf.Target.QUICMaxStreamReceiveWindow == 0 {
-		c.conf.Target.QUICMaxStreamReceiveWindow = http.DefaultQUICMaxStreamReceiveWindow
+	if quicConf.MaxStreamReceiveWindow == 0 {
+		quicConf.MaxStreamReceiveWindow = http.DefaultQUICMaxStreamReceiveWindow
 	}
 
 	// Connection receive window: default 15MB
-	if c.conf.Target.QUICMaxConnectionReceiveWindow == 0 {
-		c.conf.Target.QUICMaxConnectionReceiveWindow = http.DefaultQUICMaxConnectionReceiveWindow
+	if quicConf.MaxConnectionReceiveWindow == 0 {
+		quicConf.MaxConnectionReceiveWindow = http.DefaultQUICMaxConnectionReceiveWindow
 	}
 
 	return
@@ -355,14 +360,14 @@ func (c *clientApp) init() (err error) {
 		Protocol:  http.ParseProtocol(c.conf.Target.Protocol),
 		HTTP3Port: c.conf.Target.HTTP3Port,
 		QUICConfig: http.ConfigureQUICForClient(
-			c.conf.Target.QUICMaxStreams,
-			c.conf.Target.QUICMaxIdleTimeout,
-			c.conf.Target.QUICKeepAlive,
-			c.conf.Target.QUICMaxStreamReceiveWindow,
-			c.conf.Target.QUICMaxConnectionReceiveWindow,
-			c.conf.Target.QUICEnableDatagrams,
-			c.conf.Target.QUICDisablePathMTUDiscovery,
-			c.conf.Target.QUICDisable0RTT,
+			c.conf.Target.QUIC.MaxStreams,
+			c.conf.Target.QUIC.MaxIdleTimeout,
+			c.conf.Target.QUIC.KeepAlive,
+			c.conf.Target.QUIC.MaxStreamReceiveWindow,
+			c.conf.Target.QUIC.MaxConnectionReceiveWindow,
+			c.conf.Target.QUIC.EnableDatagrams,
+			c.conf.Target.QUIC.DisablePathMTUDiscovery,
+			c.conf.Target.QUIC.Disable0RTT,
 		),
 	}
 

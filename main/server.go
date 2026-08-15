@@ -186,28 +186,33 @@ func (a *serverApp) init() (err error) {
 	}
 	// Configure QUIC if HTTP3 is enabled
 	if conf.Server.EnableHTTP3 {
+		quicConf := conf.Server.QUIC
+		if quicConf == nil {
+			quicConf = &sts.QUICConf{}
+		}
+
 		// Apply smart defaults for server QUIC parameters
-		quicMaxStreams := conf.Server.QUICMaxStreams
+		quicMaxStreams := quicConf.MaxStreams
 		if quicMaxStreams == 0 {
 			quicMaxStreams = http.DefaultQUICMaxStreams
 		}
 
-		quicMaxIdleTimeout := conf.Server.QUICMaxIdleTimeout
+		quicMaxIdleTimeout := quicConf.MaxIdleTimeout
 		if quicMaxIdleTimeout == 0 {
 			quicMaxIdleTimeout = http.DefaultQUICMaxIdleTimeout
 		}
 
-		quicKeepAlive := conf.Server.QUICKeepAlive
+		quicKeepAlive := quicConf.KeepAlive
 		if quicKeepAlive == 0 {
 			quicKeepAlive = http.DefaultQUICKeepAlive
 		}
 
-		quicMaxStreamReceiveWindow := conf.Server.QUICMaxStreamReceiveWindow
+		quicMaxStreamReceiveWindow := quicConf.MaxStreamReceiveWindow
 		if quicMaxStreamReceiveWindow == 0 {
 			quicMaxStreamReceiveWindow = http.DefaultQUICMaxStreamReceiveWindow
 		}
 
-		quicMaxConnectionReceiveWindow := conf.Server.QUICMaxConnectionReceiveWindow
+		quicMaxConnectionReceiveWindow := quicConf.MaxConnectionReceiveWindow
 		if quicMaxConnectionReceiveWindow == 0 {
 			quicMaxConnectionReceiveWindow = http.DefaultQUICMaxConnectionReceiveWindow
 		}
@@ -219,8 +224,8 @@ func (a *serverApp) init() (err error) {
 			quicKeepAlive,
 			quicMaxStreamReceiveWindow,
 			quicMaxConnectionReceiveWindow,
-			conf.Server.QUICEnableDatagrams,
-			conf.Server.QUICDisablePathMTUDiscovery,
+			quicConf.EnableDatagrams,
+			quicConf.DisablePathMTUDiscovery,
 		)
 	}
 	if conf.SourceControl != nil {

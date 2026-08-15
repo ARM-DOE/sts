@@ -655,6 +655,29 @@ func (t *TagConf) MarshalJSON() ([]byte, error) {
 	return json.Marshal(aux)
 }
 
+// QUICConf configures QUIC transport behavior for HTTP3.
+type QUICConf struct {
+	MaxStreams                 int64         `yaml:"max-streams" json:"max-streams"`
+	MaxIdleTimeout             time.Duration `yaml:"max-idle-timeout" json:"max-idle-timeout"`
+	KeepAlive                  time.Duration `yaml:"keep-alive" json:"keep-alive"`
+	MaxStreamReceiveWindow     uint64        `yaml:"max-stream-receive-window" json:"max-stream-receive-window"`
+	MaxConnectionReceiveWindow uint64        `yaml:"max-connection-receive-window" json:"max-connection-receive-window"`
+	EnableDatagrams            bool          `yaml:"enable-datagrams" json:"enable-datagrams"`
+	DisablePathMTUDiscovery    bool          `yaml:"disable-path-mtu-discovery" json:"disable-path-mtu-discovery"`
+	Disable0RTT                bool          `yaml:"disable-0rtt" json:"disable-0rtt"`
+}
+
+type auxQUICConf struct {
+	MaxStreams                 int64         `yaml:"max-streams" json:"max-streams"`
+	MaxIdleTimeout             time.Duration `yaml:"max-idle-timeout" json:"max-idle-timeout"`
+	KeepAlive                  time.Duration `yaml:"keep-alive" json:"keep-alive"`
+	MaxStreamReceiveWindow     interface{}   `yaml:"max-stream-receive-window" json:"max-stream-receive-window"`
+	MaxConnectionReceiveWindow interface{}   `yaml:"max-connection-receive-window" json:"max-connection-receive-window"`
+	EnableDatagrams            bool          `yaml:"enable-datagrams" json:"enable-datagrams"`
+	DisablePathMTUDiscovery    bool          `yaml:"disable-path-mtu-discovery" json:"disable-path-mtu-discovery"`
+	Disable0RTT                bool          `yaml:"disable-0rtt" json:"disable-0rtt"`
+}
+
 // TargetConf houses the configuration for the target host for a given source
 type TargetConf struct {
 	Name          string   `yaml:"name" json:"name"`
@@ -665,36 +688,22 @@ type TargetConf struct {
 	TLSCertBase64 string   `yaml:"http-tls-cert-encoded" json:"http-tls-cert-encoded"`
 	KCP           *KCPConf `yaml:"kcp" json:"kcp"`
 	// HTTP3/QUIC support
-	Protocol                       string        `yaml:"protocol" json:"protocol"`                                                     // "auto", "http3", "https", "http", "kcp-http"
-	HTTP3Port                      int           `yaml:"http3-port" json:"http3-port"`                                                 // Optional separate port for HTTP3
-	QUICMaxStreams                 int64         `yaml:"quic-max-streams" json:"quic-max-streams"`                                     // Default: 100 or 2*threads
-	QUICMaxIdleTimeout             time.Duration `yaml:"quic-max-idle-timeout" json:"quic-max-idle-timeout"`                           // Default: 30s or timeout/10
-	QUICKeepAlive                  time.Duration `yaml:"quic-keep-alive" json:"quic-keep-alive"`                                       // Default: 15s or idle-timeout/2
-	QUICMaxStreamReceiveWindow     uint64        `yaml:"quic-max-stream-receive-window" json:"quic-max-stream-receive-window"`         // Default: 6MB
-	QUICMaxConnectionReceiveWindow uint64        `yaml:"quic-max-connection-receive-window" json:"quic-max-connection-receive-window"` // Default: 15MB
-	QUICEnableDatagrams            bool          `yaml:"quic-enable-datagrams" json:"quic-enable-datagrams"`                           // Enable unreliable datagrams (default: false)
-	QUICDisablePathMTUDiscovery    bool          `yaml:"quic-disable-path-mtu-discovery" json:"quic-disable-path-mtu-discovery"`       // Disable Path MTU Discovery (default: false/enabled)
-	QUICDisable0RTT                bool          `yaml:"quic-disable-0rtt" json:"quic-disable-0rtt"`                                   // Disable 0-RTT (default: false/enabled)
+	Protocol  string    `yaml:"protocol" json:"protocol"`     // "auto", "http3", "https", "http", "kcp-http"
+	HTTP3Port int       `yaml:"http3-port" json:"http3-port"` // Optional separate port for HTTP3
+	QUIC      *QUICConf `yaml:"quic" json:"quic"`
 }
 
 type auxTargetConf struct {
-	Name                           string        `yaml:"name" json:"name"`
-	Key                            string        `yaml:"key" json:"key"`
-	Host                           string        `yaml:"http-host" json:"http-host"`
-	PathPrefix                     string        `yaml:"http-path-prefix" json:"http-path-prefix"`
-	TLSCertPath                    string        `yaml:"http-tls-cert" json:"http-tls-cert"`
-	TLSCertBase64                  string        `yaml:"http-tls-cert-encoded" json:"http-tls-cert-encoded"`
-	KCP                            *KCPConf      `yaml:"kcp" json:"kcp"`
-	Protocol                       string        `yaml:"protocol" json:"protocol"`
-	HTTP3Port                      int           `yaml:"http3-port" json:"http3-port"`
-	QUICMaxStreams                 int64         `yaml:"quic-max-streams" json:"quic-max-streams"`
-	QUICMaxIdleTimeout             time.Duration `yaml:"quic-max-idle-timeout" json:"quic-max-idle-timeout"`
-	QUICKeepAlive                  time.Duration `yaml:"quic-keep-alive" json:"quic-keep-alive"`
-	QUICMaxStreamReceiveWindow     interface{}   `yaml:"quic-max-stream-receive-window" json:"quic-max-stream-receive-window"`
-	QUICMaxConnectionReceiveWindow interface{}   `yaml:"quic-max-connection-receive-window" json:"quic-max-connection-receive-window"`
-	QUICEnableDatagrams            bool          `yaml:"quic-enable-datagrams" json:"quic-enable-datagrams"`
-	QUICDisablePathMTUDiscovery    bool          `yaml:"quic-disable-path-mtu-discovery" json:"quic-disable-path-mtu-discovery"`
-	QUICDisable0RTT                bool          `yaml:"quic-disable-0rtt" json:"quic-disable-0rtt"`
+	Name          string    `yaml:"name" json:"name"`
+	Key           string    `yaml:"key" json:"key"`
+	Host          string    `yaml:"http-host" json:"http-host"`
+	PathPrefix    string    `yaml:"http-path-prefix" json:"http-path-prefix"`
+	TLSCertPath   string    `yaml:"http-tls-cert" json:"http-tls-cert"`
+	TLSCertBase64 string    `yaml:"http-tls-cert-encoded" json:"http-tls-cert-encoded"`
+	KCP           *KCPConf  `yaml:"kcp" json:"kcp"`
+	Protocol      string    `yaml:"protocol" json:"protocol"`
+	HTTP3Port     int       `yaml:"http3-port" json:"http3-port"`
+	QUIC          *QUICConf `yaml:"quic" json:"quic"`
 }
 
 func parseByteCount(val interface{}, field string) (uint64, error) {
@@ -738,6 +747,42 @@ func parseByteCount(val interface{}, field string) (uint64, error) {
 	}
 }
 
+func (c *QUICConf) applyAux(aux *auxQUICConf) (err error) {
+	c.MaxStreams = aux.MaxStreams
+	c.MaxIdleTimeout = aux.MaxIdleTimeout
+	c.KeepAlive = aux.KeepAlive
+	if c.MaxStreamReceiveWindow, err = parseByteCount(
+		aux.MaxStreamReceiveWindow,
+		"quic.max-stream-receive-window"); err != nil {
+		return
+	}
+	if c.MaxConnectionReceiveWindow, err = parseByteCount(
+		aux.MaxConnectionReceiveWindow,
+		"quic.max-connection-receive-window"); err != nil {
+		return
+	}
+	c.EnableDatagrams = aux.EnableDatagrams
+	c.DisablePathMTUDiscovery = aux.DisablePathMTUDiscovery
+	c.Disable0RTT = aux.Disable0RTT
+	return
+}
+
+func (c *QUICConf) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	aux := &auxQUICConf{}
+	if err := unmarshal(aux); err != nil {
+		return err
+	}
+	return c.applyAux(aux)
+}
+
+func (c *QUICConf) UnmarshalJSON(data []byte) error {
+	aux := &auxQUICConf{}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	return c.applyAux(aux)
+}
+
 func (t *TargetConf) applyAux(aux *auxTargetConf) (err error) {
 	t.Name = aux.Name
 	t.Key = aux.Key
@@ -748,22 +793,7 @@ func (t *TargetConf) applyAux(aux *auxTargetConf) (err error) {
 	t.KCP = aux.KCP
 	t.Protocol = aux.Protocol
 	t.HTTP3Port = aux.HTTP3Port
-	t.QUICMaxStreams = aux.QUICMaxStreams
-	t.QUICMaxIdleTimeout = aux.QUICMaxIdleTimeout
-	t.QUICKeepAlive = aux.QUICKeepAlive
-	if t.QUICMaxStreamReceiveWindow, err = parseByteCount(
-		aux.QUICMaxStreamReceiveWindow,
-		"quic-max-stream-receive-window"); err != nil {
-		return
-	}
-	if t.QUICMaxConnectionReceiveWindow, err = parseByteCount(
-		aux.QUICMaxConnectionReceiveWindow,
-		"quic-max-connection-receive-window"); err != nil {
-		return
-	}
-	t.QUICEnableDatagrams = aux.QUICEnableDatagrams
-	t.QUICDisablePathMTUDiscovery = aux.QUICDisablePathMTUDiscovery
-	t.QUICDisable0RTT = aux.QUICDisable0RTT
+	t.QUIC = aux.QUIC
 	return
 }
 
@@ -851,39 +881,27 @@ type HTTPServer struct {
 	EnableKCP                bool     `yaml:"kcp-enabled" json:"kcp-enabled"`
 	KCP                      *KCPConf `yaml:"kcp" json:"kcp"`
 	// HTTP3/QUIC support
-	EnableHTTP3                    bool          `yaml:"http3-enabled" json:"http3-enabled"`                                           // Run HTTP3 server
-	HTTP3Port                      int           `yaml:"http3-port" json:"http3-port"`                                                 // Separate port or 0 for same
-	QUICMaxStreams                 int64         `yaml:"quic-max-streams" json:"quic-max-streams"`                                     // Default: 100
-	QUICMaxIdleTimeout             time.Duration `yaml:"quic-max-idle-timeout" json:"quic-max-idle-timeout"`                           // Default: 30s
-	QUICKeepAlive                  time.Duration `yaml:"quic-keep-alive" json:"quic-keep-alive"`                                       // Default: 15s
-	QUICMaxStreamReceiveWindow     uint64        `yaml:"quic-max-stream-receive-window" json:"quic-max-stream-receive-window"`         // Default: 6MB
-	QUICMaxConnectionReceiveWindow uint64        `yaml:"quic-max-connection-receive-window" json:"quic-max-connection-receive-window"` // Default: 15MB
-	QUICEnableDatagrams            bool          `yaml:"quic-enable-datagrams" json:"quic-enable-datagrams"`                           // Enable unreliable datagrams (default: false)
-	QUICDisablePathMTUDiscovery    bool          `yaml:"quic-disable-path-mtu-discovery" json:"quic-disable-path-mtu-discovery"`       // Disable Path MTU Discovery (default: false/enabled)
-	HSTS                           hsts.Options  `yaml:"hsts-options" json:"hsts-options"`
+	EnableHTTP3 bool         `yaml:"http3-enabled" json:"http3-enabled"` // Run HTTP3 server
+	HTTP3Port   int          `yaml:"http3-port" json:"http3-port"`       // Separate port or 0 for same
+	QUIC        *QUICConf    `yaml:"quic" json:"quic"`
+	HSTS        hsts.Options `yaml:"hsts-options" json:"hsts-options"`
 }
 
 type auxHTTPServer struct {
-	Host                           string        `yaml:"http-host" json:"http-host"`
-	Port                           int           `yaml:"http-port" json:"http-port"`
-	PathPrefix                     string        `yaml:"http-path-prefix" json:"http-path-prefix"`
-	TLSCertPath                    string        `yaml:"http-tls-cert" json:"http-tls-cert"`
-	TLSKeyPath                     string        `yaml:"http-tls-key" json:"http-tls-key"`
-	Compression                    int           `yaml:"compress" json:"compress"`
-	ChanceOfSimulatedFailure       float64       `yaml:"chance-of-simulated-failure" json:"chance-of-simulated-failure"`
-	HSTSEnabled                    bool          `yaml:"hsts-enabled" json:"hsts-enabled"`
-	EnableKCP                      bool          `yaml:"kcp-enabled" json:"kcp-enabled"`
-	KCP                            *KCPConf      `yaml:"kcp" json:"kcp"`
-	EnableHTTP3                    bool          `yaml:"http3-enabled" json:"http3-enabled"`
-	HTTP3Port                      int           `yaml:"http3-port" json:"http3-port"`
-	QUICMaxStreams                 int64         `yaml:"quic-max-streams" json:"quic-max-streams"`
-	QUICMaxIdleTimeout             time.Duration `yaml:"quic-max-idle-timeout" json:"quic-max-idle-timeout"`
-	QUICKeepAlive                  time.Duration `yaml:"quic-keep-alive" json:"quic-keep-alive"`
-	QUICMaxStreamReceiveWindow     interface{}   `yaml:"quic-max-stream-receive-window" json:"quic-max-stream-receive-window"`
-	QUICMaxConnectionReceiveWindow interface{}   `yaml:"quic-max-connection-receive-window" json:"quic-max-connection-receive-window"`
-	QUICEnableDatagrams            bool          `yaml:"quic-enable-datagrams" json:"quic-enable-datagrams"`
-	QUICDisablePathMTUDiscovery    bool          `yaml:"quic-disable-path-mtu-discovery" json:"quic-disable-path-mtu-discovery"`
-	HSTS                           hsts.Options  `yaml:"hsts-options" json:"hsts-options"`
+	Host                     string       `yaml:"http-host" json:"http-host"`
+	Port                     int          `yaml:"http-port" json:"http-port"`
+	PathPrefix               string       `yaml:"http-path-prefix" json:"http-path-prefix"`
+	TLSCertPath              string       `yaml:"http-tls-cert" json:"http-tls-cert"`
+	TLSKeyPath               string       `yaml:"http-tls-key" json:"http-tls-key"`
+	Compression              int          `yaml:"compress" json:"compress"`
+	ChanceOfSimulatedFailure float64      `yaml:"chance-of-simulated-failure" json:"chance-of-simulated-failure"`
+	HSTSEnabled              bool         `yaml:"hsts-enabled" json:"hsts-enabled"`
+	EnableKCP                bool         `yaml:"kcp-enabled" json:"kcp-enabled"`
+	KCP                      *KCPConf     `yaml:"kcp" json:"kcp"`
+	EnableHTTP3              bool         `yaml:"http3-enabled" json:"http3-enabled"`
+	HTTP3Port                int          `yaml:"http3-port" json:"http3-port"`
+	QUIC                     *QUICConf    `yaml:"quic" json:"quic"`
+	HSTS                     hsts.Options `yaml:"hsts-options" json:"hsts-options"`
 }
 
 func (h *HTTPServer) applyAux(aux *auxHTTPServer) (err error) {
@@ -899,21 +917,7 @@ func (h *HTTPServer) applyAux(aux *auxHTTPServer) (err error) {
 	h.KCP = aux.KCP
 	h.EnableHTTP3 = aux.EnableHTTP3
 	h.HTTP3Port = aux.HTTP3Port
-	h.QUICMaxStreams = aux.QUICMaxStreams
-	h.QUICMaxIdleTimeout = aux.QUICMaxIdleTimeout
-	h.QUICKeepAlive = aux.QUICKeepAlive
-	if h.QUICMaxStreamReceiveWindow, err = parseByteCount(
-		aux.QUICMaxStreamReceiveWindow,
-		"quic-max-stream-receive-window"); err != nil {
-		return
-	}
-	if h.QUICMaxConnectionReceiveWindow, err = parseByteCount(
-		aux.QUICMaxConnectionReceiveWindow,
-		"quic-max-connection-receive-window"); err != nil {
-		return
-	}
-	h.QUICEnableDatagrams = aux.QUICEnableDatagrams
-	h.QUICDisablePathMTUDiscovery = aux.QUICDisablePathMTUDiscovery
+	h.QUIC = aux.QUIC
 	h.HSTS = aux.HSTS
 	return
 }

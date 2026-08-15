@@ -27,9 +27,10 @@ IN:
     http3-enabled: true
 
     # Optional: Advanced QUIC tuning
-    quic-max-streams: 100
-    quic-max-idle-timeout: 30s
-    quic-keep-alive: 15s
+    quic:
+      max-streams: 100
+      max-idle-timeout: 30s
+      keep-alive: 15s
 ```
 
 ### Client Configuration
@@ -104,7 +105,8 @@ Adjust concurrent stream limits based on your workload:
 ```yaml
 server:
   # More streams = more concurrent file transfers
-  quic-max-streams: 200  # Default: 100
+  quic:
+    max-streams: 200  # Default: 100
 ```
 
 ### Timeout Configuration
@@ -113,8 +115,9 @@ For high-latency networks, increase timeouts:
 
 ```yaml
 server:
-  quic-max-idle-timeout: 60s  # Default: 30s
-  quic-keep-alive: 20s        # Default: 15s
+  quic:
+    max-idle-timeout: 60s  # Default: 30s
+    keep-alive: 20s        # Default: 15s
 ```
 
 ### Client-Side Timeout
@@ -123,7 +126,7 @@ Ensure client timeout is longer than server idle timeout:
 
 ```yaml
 sources:
-  - timeout: 90s  # Should be > quic-max-idle-timeout
+  - timeout: 90s  # Should be > quic.max-idle-timeout
 ```
 
 ## Monitoring & Debugging
@@ -263,9 +266,10 @@ target:
 server:
   http3-enabled: true         # Enable HTTP3 server
   http3-port: 0               # 0 = use same port as http-port
-  quic-max-streams: 100       # Max concurrent streams per connection
-  quic-max-idle-timeout: 30s  # Connection idle timeout
-  quic-keep-alive: 15s        # Keep-alive interval
+  quic:
+    max-streams: 100          # Max concurrent streams per connection
+    max-idle-timeout: 30s     # Connection idle timeout
+    keep-alive: 15s           # Keep-alive interval
 ```
 
 ## Performance Expectations

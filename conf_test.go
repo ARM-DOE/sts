@@ -147,8 +147,9 @@ IN:
   server:
     http-host: localhost
     http-port: 1992
-    quic-max-stream-receive-window: 64MB
-    quic-max-connection-receive-window: 268435456
+    quic:
+      max-stream-receive-window: 64MB
+      max-connection-receive-window: 268435456
 OUT:
   dirs:
     cache: .sts/out
@@ -158,8 +159,9 @@ OUT:
     - name: stsout-1
       target:
         http-host: localhost:1992
-        quic-max-stream-receive-window: 33554432
-        quic-max-connection-receive-window: 128MB
+        quic:
+          max-stream-receive-window: 33554432
+          max-connection-receive-window: 128MB
   `
 	var conf Conf
 	encoded := strings.Trim(
@@ -173,22 +175,28 @@ OUT:
 	if conf.Server == nil || conf.Server.Server == nil {
 		t.Fatal("missing server config")
 	}
-	if conf.Server.Server.QUICMaxStreamReceiveWindow != 64*1024*1024 {
-		t.Fatalf("unexpected server stream window: %d", conf.Server.Server.QUICMaxStreamReceiveWindow)
+	if conf.Server.Server.QUIC == nil {
+		t.Fatal("missing server QUIC config")
 	}
-	if conf.Server.Server.QUICMaxConnectionReceiveWindow != 256*1024*1024 {
-		t.Fatalf("unexpected server connection window: %d", conf.Server.Server.QUICMaxConnectionReceiveWindow)
+	if conf.Server.Server.QUIC.MaxStreamReceiveWindow != 64*1024*1024 {
+		t.Fatalf("unexpected server stream window: %d", conf.Server.Server.QUIC.MaxStreamReceiveWindow)
+	}
+	if conf.Server.Server.QUIC.MaxConnectionReceiveWindow != 256*1024*1024 {
+		t.Fatalf("unexpected server connection window: %d", conf.Server.Server.QUIC.MaxConnectionReceiveWindow)
 	}
 
 	if conf.Client == nil || len(conf.Client.Sources) != 1 || conf.Client.Sources[0].Target == nil {
 		t.Fatal("missing target config")
 	}
 	target := conf.Client.Sources[0].Target
-	if target.QUICMaxStreamReceiveWindow != 32*1024*1024 {
-		t.Fatalf("unexpected target stream window: %d", target.QUICMaxStreamReceiveWindow)
+	if target.QUIC == nil {
+		t.Fatal("missing target QUIC config")
 	}
-	if target.QUICMaxConnectionReceiveWindow != 128*1024*1024 {
-		t.Fatalf("unexpected target connection window: %d", target.QUICMaxConnectionReceiveWindow)
+	if target.QUIC.MaxStreamReceiveWindow != 32*1024*1024 {
+		t.Fatalf("unexpected target stream window: %d", target.QUIC.MaxStreamReceiveWindow)
+	}
+	if target.QUIC.MaxConnectionReceiveWindow != 128*1024*1024 {
+		t.Fatalf("unexpected target connection window: %d", target.QUIC.MaxConnectionReceiveWindow)
 	}
 }
 
@@ -204,8 +212,10 @@ func TestJSONQUICWindowFriendlySizes(t *testing.T) {
       "server": {
         "http-host": "localhost",
         "http-port": 1992,
-        "quic-max-stream-receive-window": "64MB",
-        "quic-max-connection-receive-window": 268435456
+        "quic": {
+          "max-stream-receive-window": "64MB",
+          "max-connection-receive-window": 268435456
+        }
       }
     },
     "OUT": {
@@ -219,8 +229,10 @@ func TestJSONQUICWindowFriendlySizes(t *testing.T) {
           "name": "stsout-1",
           "target": {
             "http-host": "localhost:1992",
-            "quic-max-stream-receive-window": 33554432,
-            "quic-max-connection-receive-window": "128MB"
+            "quic": {
+              "max-stream-receive-window": 33554432,
+              "max-connection-receive-window": "128MB"
+            }
           }
         }
       ]
@@ -235,22 +247,28 @@ func TestJSONQUICWindowFriendlySizes(t *testing.T) {
 	if conf.Server == nil || conf.Server.Server == nil {
 		t.Fatal("missing server config")
 	}
-	if conf.Server.Server.QUICMaxStreamReceiveWindow != 64*1024*1024 {
-		t.Fatalf("unexpected server stream window: %d", conf.Server.Server.QUICMaxStreamReceiveWindow)
+	if conf.Server.Server.QUIC == nil {
+		t.Fatal("missing server QUIC config")
 	}
-	if conf.Server.Server.QUICMaxConnectionReceiveWindow != 256*1024*1024 {
-		t.Fatalf("unexpected server connection window: %d", conf.Server.Server.QUICMaxConnectionReceiveWindow)
+	if conf.Server.Server.QUIC.MaxStreamReceiveWindow != 64*1024*1024 {
+		t.Fatalf("unexpected server stream window: %d", conf.Server.Server.QUIC.MaxStreamReceiveWindow)
+	}
+	if conf.Server.Server.QUIC.MaxConnectionReceiveWindow != 256*1024*1024 {
+		t.Fatalf("unexpected server connection window: %d", conf.Server.Server.QUIC.MaxConnectionReceiveWindow)
 	}
 
 	if conf.Client == nil || len(conf.Client.Sources) != 1 || conf.Client.Sources[0].Target == nil {
 		t.Fatal("missing target config")
 	}
 	target := conf.Client.Sources[0].Target
-	if target.QUICMaxStreamReceiveWindow != 32*1024*1024 {
-		t.Fatalf("unexpected target stream window: %d", target.QUICMaxStreamReceiveWindow)
+	if target.QUIC == nil {
+		t.Fatal("missing target QUIC config")
 	}
-	if target.QUICMaxConnectionReceiveWindow != 128*1024*1024 {
-		t.Fatalf("unexpected target connection window: %d", target.QUICMaxConnectionReceiveWindow)
+	if target.QUIC.MaxStreamReceiveWindow != 32*1024*1024 {
+		t.Fatalf("unexpected target stream window: %d", target.QUIC.MaxStreamReceiveWindow)
+	}
+	if target.QUIC.MaxConnectionReceiveWindow != 128*1024*1024 {
+		t.Fatalf("unexpected target connection window: %d", target.QUIC.MaxConnectionReceiveWindow)
 	}
 }
 
