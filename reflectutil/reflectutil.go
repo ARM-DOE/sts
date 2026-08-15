@@ -19,7 +19,7 @@ func CopyStruct(tgt interface{}, src interface{}) {
 		fv := v.Field(i)
 		fz := z.Field(i)
 		// Skip unexported fields
-		if !fv.CanInterface() || !fz.CanInterface() {
+		if !fv.CanSet() || !fv.CanInterface() || !fz.CanInterface() {
 			continue
 		}
 		if IsZero(fv) {
