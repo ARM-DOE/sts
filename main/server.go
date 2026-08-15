@@ -56,6 +56,17 @@ func (a *serverApp) init() (err error) {
 		err = fmt.Errorf("HTTP port not specified")
 		return
 	}
+	if conf.Server.EnableKCP {
+		if conf.Server.KCP == nil {
+			return fmt.Errorf("KCP server configuration is required when kcp-enabled is true")
+		}
+		if conf.Server.KCP.Host == "" {
+			conf.Server.KCP.Host = conf.Server.Host
+		}
+		if err = conf.Server.KCP.Validate(); err != nil {
+			return fmt.Errorf("invalid server KCP configuration: %w", err)
+		}
+	}
 	dirs := conf.Dirs
 	log.Init(dirs.LogMsg, a.debug, nil, nil)
 
@@ -163,6 +174,8 @@ func (a *serverApp) init() (err error) {
 		// HTTP3/QUIC configuration
 		EnableHTTP3: conf.Server.EnableHTTP3,
 		HTTP3Port:   conf.Server.HTTP3Port,
+		EnableKCP:   conf.Server.EnableKCP,
+		KCPConfig:   conf.Server.KCP,
 	}
 	if conf.Server.TLSCertPath != "" && conf.Server.TLSKeyPath != "" {
 		if a.server.TLS, err = http.LoadTLSConf(

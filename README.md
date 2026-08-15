@@ -7,6 +7,8 @@ STS is a utility used for transmitting data over wide-area networks with the fol
 - Efficient use of bandwidth using HTTP and gzip compression
 - Bandwidth sharing among configured groups of files to avoid starvation
 
+For reliable UDP operation on high-bandwidth, high-latency paths, see [HTTP over KCP](KCP.md). For HTTP/3 configuration, see [HTTP3/QUIC Support](HTTP3.md).
+
 ## Usage
 
 ```text

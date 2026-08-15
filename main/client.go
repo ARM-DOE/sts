@@ -65,6 +65,23 @@ func (c *clientApp) setDefaults() (err error) {
 	if c.tls, err = getTLSConf(c.conf.Target); err != nil {
 		return
 	}
+	if c.conf.Target.Transfer == "" {
+		c.conf.Target.Transfer = sts.TransferHTTP
+	}
+	if c.conf.Target.Transfer != sts.TransferHTTP && c.conf.Target.Transfer != sts.TransferKCPHTTP {
+		return fmt.Errorf("unsupported transfer %q", c.conf.Target.Transfer)
+	}
+	if c.conf.Target.Transfer == sts.TransferKCPHTTP {
+		if c.conf.Target.KCP == nil {
+			return fmt.Errorf("kcp configuration is required for kcp-http transfer")
+		}
+		if c.conf.Target.KCP.Host == "" {
+			c.conf.Target.KCP.Host = c.host
+		}
+		if err = c.conf.Target.KCP.Validate(); err != nil {
+			return fmt.Errorf("invalid target KCP configuration: %w", err)
+		}
+	}
 	if c.conf.BinSize == 0 {
 		c.conf.BinSize = 10 * 1024 * 1024 * 1024
 	}
@@ -338,6 +355,9 @@ func (c *clientApp) init() (err error) {
 		TLS:                  c.tls,
 		PartialsDecoder:      stage.ReadCompanions,
 		BandwidthLogInterval: c.conf.StatInterval,
+		Transfer:             c.conf.Target.Transfer,
+		KCPConfig:            c.conf.Target.KCP,
+		MaxConnections:       c.conf.Threads,
 		// HTTP3/QUIC configuration
 		Protocol:  http.ParseProtocol(c.conf.Target.Protocol),
 		HTTP3Port: c.conf.Target.HTTP3Port,
@@ -372,6 +392,11 @@ func (c *clientApp) init() (err error) {
 		}
 	}
 	dump("Protocol: %s", protocol)
+	if c.conf.Target.Transfer == sts.TransferKCPHTTP {
+		dump("Transfer: HTTP/1.1 over KCP/UDP")
+		dump("KCP Server: %s:%d", c.conf.Target.KCP.Host, c.conf.Target.KCP.Port)
+		dump("KCP Tuning: %s", c.conf.Target.KCP.Tuning)
+	}
 
 	dump("Max Concurrent Requests: %d", c.conf.Threads)
 	dump("Request Size: %s", c.conf.BinSize.String())

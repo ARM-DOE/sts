@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arm-doe/sts"
 	"github.com/arm-doe/sts/log"
 	"github.com/quic-go/quic-go"
 )
@@ -59,16 +60,22 @@ func (p TransportProtocol) String() string {
 
 // TransportBuilder creates appropriate transport based on protocol
 type TransportBuilder struct {
-	TLSConfig   *tls.Config
-	Protocol    TransportProtocol
-	LogInterval time.Duration
-	LogPrefix   string
+	TLSConfig      *tls.Config
+	Protocol       TransportProtocol
+	Transfer       string
+	LogInterval    time.Duration
+	LogPrefix      string
+	KCPConfig      *sts.KCPConf
+	MaxConnections int
 	// QUIC configuration (for HTTP3)
 	QUICConfig *quic.Config
 }
 
 // Build creates a BandwidthLoggingClient with the appropriate protocol
 func (tb *TransportBuilder) Build() (*BandwidthLoggingClient, error) {
+	if tb.Transfer == sts.TransferKCPHTTP {
+		return tb.buildKCPHTTPClient()
+	}
 	switch tb.Protocol {
 	case ProtocolHTTP3:
 		return tb.buildHTTP3Client()

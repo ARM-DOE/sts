@@ -478,6 +478,7 @@ func (r *readCounter) Close() error {
 type BandwidthLoggingClient struct {
 	*http.Client
 	monitor         *bandwidthMonitorTransport
+	kcpSessions     *kcpSessionRegistry
 	stopChan        chan struct{}
 	FallbackOnError func(error) (*BandwidthLoggingClient, error)
 	hasFallenBack   bool
@@ -534,6 +535,7 @@ func (blc *BandwidthLoggingClient) Do(req *http.Request) (*http.Response, error)
 }
 
 func (blc *BandwidthLoggingClient) Stop() {
+	blc.Client.CloseIdleConnections()
 	close(blc.stopChan)
 }
 

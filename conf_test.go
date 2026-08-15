@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/davecgh/go-spew/spew"
 
@@ -250,5 +251,160 @@ func TestJSONQUICWindowFriendlySizes(t *testing.T) {
 	}
 	if target.QUICMaxConnectionReceiveWindow != 128*1024*1024 {
 		t.Fatalf("unexpected target connection window: %d", target.QUICMaxConnectionReceiveWindow)
+	}
+}
+
+func TestYAMLKCPHTTPConfiguration(t *testing.T) {
+	confEncoded := `
+IN:
+  dirs:
+    stage: data/stage
+    final: data/in
+    logs: data/log
+  server:
+    http-host: localhost
+    http-port: 1992
+    kcp-enabled: true
+    kcp:
+      host: 0.0.0.0
+      port: 1993
+      send-window: 8192
+      receive-window: 16384
+      socket-read-buffer: 32MB
+      socket-write-buffer: 64MB
+      idle-timeout: 90s
+OUT:
+  dirs:
+    cache: .sts/out
+    logs: data/log
+    out: data/out
+  sources:
+    - name: stsout-1
+      target:
+        http-host: localhost:1992
+        transfer: kcp-http
+        kcp:
+          host: receiver.example.org
+          port: 1993
+          data-shards: 10
+          parity-shards: 3
+          disable-congestion-control: true
+  `
+
+	var conf Conf
+	if err := yaml.Unmarshal([]byte(confEncoded), &conf); err != nil {
+		t.Fatal(err)
+	}
+
+	serverKCP := conf.Server.Server.KCP
+	if !conf.Server.Server.EnableKCP || serverKCP == nil {
+		t.Fatal("missing server KCP configuration")
+	}
+	if serverKCP.Host != "0.0.0.0" || serverKCP.Port != 1993 {
+		t.Fatalf("unexpected server KCP address: %s:%d", serverKCP.Host, serverKCP.Port)
+	}
+	if serverKCP.Tuning != KCPTuningBalanced {
+		t.Fatalf("unexpected server KCP tuning profile: %q", serverKCP.Tuning)
+	}
+	if serverKCP.MTU != 1350 || serverKCP.DataShards != 20 || serverKCP.ParityShards != 2 {
+		t.Fatalf("unexpected server KCP defaults: %+v", serverKCP)
+	}
+	if serverKCP.SendWindow != 8192 || serverKCP.ReceiveWindow != 16384 {
+		t.Fatalf("unexpected server KCP windows: %+v", serverKCP)
+	}
+	if serverKCP.SocketReadBuffer != 32*1024*1024 || serverKCP.SocketWriteBuffer != 64*1024*1024 {
+		t.Fatalf("unexpected server KCP socket buffers: %+v", serverKCP)
+	}
+	if serverKCP.IdleTimeout != 90*time.Second {
+		t.Fatalf("unexpected server KCP idle timeout: %s", serverKCP.IdleTimeout)
+	}
+
+	target := conf.Client.Sources[0].Target
+	if target.Transfer != TransferKCPHTTP || target.KCP == nil {
+		t.Fatalf("unexpected target transfer configuration: %+v", target)
+	}
+	if target.KCP.Host != "receiver.example.org" || target.KCP.Port != 1993 {
+		t.Fatalf("unexpected target KCP address: %+v", target.KCP)
+	}
+	if target.KCP.DataShards != 10 || target.KCP.ParityShards != 3 {
+		t.Fatalf("unexpected target FEC configuration: %+v", target.KCP)
+	}
+	if !target.KCP.NoDelay || target.KCP.Interval != 20*time.Millisecond || target.KCP.FastResend != 2 {
+		t.Fatalf("unexpected target KCP timing defaults: %+v", target.KCP)
+	}
+	if !target.KCP.DisableCongestionControl {
+		t.Fatal("expected congestion control to be disabled")
+	}
+}
+
+func TestYAMLKCPFECDisabledAndInherited(t *testing.T) {
+	confEncoded := `
+OUT:
+  sources:
+    - name: first
+      target:
+        http-host: receiver.example.org:1992
+        transfer: kcp-http
+        kcp:
+          port: 1993
+          fec-enabled: false
+    - name: second
+      target:
+        name: inherited-target
+  `
+	var conf Conf
+	if err := yaml.Unmarshal([]byte(confEncoded), &conf); err != nil {
+		t.Fatal(err)
+	}
+	first := conf.Client.Sources[0].Target
+	if first.KCP == nil || first.KCP.FECEnabled || first.KCP.DataShards != 0 || first.KCP.ParityShards != 0 {
+		t.Fatalf("FEC was not disabled: %+v", first.KCP)
+	}
+	second := conf.Client.Sources[1].Target
+	if second.Transfer != TransferKCPHTTP || second.KCP == nil || second.KCP.Port != 1993 {
+		t.Fatalf("KCP target configuration was not inherited: %+v", second)
+	}
+}
+
+func TestKCPConfValidate(t *testing.T) {
+	valid := KCPConf{
+		Port:              1993,
+		Tuning:            KCPTuningBalanced,
+		MTU:               1350,
+		SendWindow:        4096,
+		ReceiveWindow:     4096,
+		FECEnabled:        true,
+		DataShards:        20,
+		ParityShards:      2,
+		Interval:          20 * time.Millisecond,
+		SocketReadBuffer:  1024,
+		SocketWriteBuffer: 1024,
+		IdleTimeout:       time.Minute,
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("valid configuration rejected: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*KCPConf)
+	}{
+		{name: "port", mutate: func(c *KCPConf) { c.Port = 0 }},
+		{name: "tuning", mutate: func(c *KCPConf) { c.Tuning = "auto" }},
+		{name: "mtu", mutate: func(c *KCPConf) { c.MTU = 1501 }},
+		{name: "window", mutate: func(c *KCPConf) { c.SendWindow = 65536 }},
+		{name: "fec pair", mutate: func(c *KCPConf) { c.ParityShards = 0 }},
+		{name: "fec total", mutate: func(c *KCPConf) { c.DataShards, c.ParityShards = 250, 10 }},
+		{name: "interval", mutate: func(c *KCPConf) { c.Interval = time.Millisecond }},
+		{name: "idle timeout", mutate: func(c *KCPConf) { c.IdleTimeout = 0 }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			conf := valid
+			test.mutate(&conf)
+			if err := conf.Validate(); err == nil {
+				t.Fatalf("invalid configuration accepted: %+v", conf)
+			}
+		})
 	}
 }

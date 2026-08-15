@@ -23,6 +23,11 @@ import (
 const (
 	defaultTag = "DEFAULT"
 
+	TransferHTTP      = "http"
+	TransferKCPHTTP   = "kcp-http"
+	KCPTuningBalanced = "balanced"
+	KCPTuningManual   = "manual"
+
 	// OrderFIFO indicates first-in, first-out sorting
 	OrderFIFO = "fifo"
 
@@ -35,6 +40,186 @@ const (
 	// OrderAlpha indicates alphabetic ordering
 	OrderAlpha = ""
 )
+
+const (
+	defaultKCPPort         = 1993
+	defaultKCPMTU          = 1350
+	defaultKCPWindow       = 4096
+	defaultKCPDataShards   = 20
+	defaultKCPParityShards = 2
+	defaultKCPInterval     = 20 * time.Millisecond
+	defaultKCPFastResend   = 2
+	defaultKCPSocketBuffer = 64 * 1024 * 1024
+	defaultKCPIdleTimeout  = 2 * time.Minute
+)
+
+// KCPConf configures HTTP/1.1 carried over a KCP reliable UDP session.
+type KCPConf struct {
+	Host                     string        `yaml:"host" json:"host"`
+	Port                     int           `yaml:"port" json:"port"`
+	Tuning                   string        `yaml:"tuning" json:"tuning"`
+	MTU                      int           `yaml:"mtu" json:"mtu"`
+	SendWindow               int           `yaml:"send-window" json:"send-window"`
+	ReceiveWindow            int           `yaml:"receive-window" json:"receive-window"`
+	FECEnabled               bool          `yaml:"fec-enabled" json:"fec-enabled"`
+	DataShards               int           `yaml:"data-shards" json:"data-shards"`
+	ParityShards             int           `yaml:"parity-shards" json:"parity-shards"`
+	NoDelay                  bool          `yaml:"no-delay" json:"no-delay"`
+	Interval                 time.Duration `yaml:"interval" json:"interval"`
+	FastResend               int           `yaml:"fast-resend" json:"fast-resend"`
+	DisableCongestionControl bool          `yaml:"disable-congestion-control" json:"disable-congestion-control"`
+	ACKNoDelay               bool          `yaml:"ack-no-delay" json:"ack-no-delay"`
+	SocketReadBuffer         uint64        `yaml:"socket-read-buffer" json:"socket-read-buffer"`
+	SocketWriteBuffer        uint64        `yaml:"socket-write-buffer" json:"socket-write-buffer"`
+	IdleTimeout              time.Duration `yaml:"idle-timeout" json:"idle-timeout"`
+}
+
+type auxKCPConf struct {
+	Host                     string           `yaml:"host" json:"host"`
+	Port                     int              `yaml:"port" json:"port"`
+	Tuning                   string           `yaml:"tuning" json:"tuning"`
+	MTU                      int              `yaml:"mtu" json:"mtu"`
+	SendWindow               int              `yaml:"send-window" json:"send-window"`
+	ReceiveWindow            int              `yaml:"receive-window" json:"receive-window"`
+	FECEnabled               *bool            `yaml:"fec-enabled" json:"fec-enabled"`
+	DataShards               int              `yaml:"data-shards" json:"data-shards"`
+	ParityShards             int              `yaml:"parity-shards" json:"parity-shards"`
+	NoDelay                  *bool            `yaml:"no-delay" json:"no-delay"`
+	Interval                 marshal.Duration `yaml:"interval" json:"interval"`
+	FastResend               int              `yaml:"fast-resend" json:"fast-resend"`
+	DisableCongestionControl bool             `yaml:"disable-congestion-control" json:"disable-congestion-control"`
+	ACKNoDelay               *bool            `yaml:"ack-no-delay" json:"ack-no-delay"`
+	SocketReadBuffer         interface{}      `yaml:"socket-read-buffer" json:"socket-read-buffer"`
+	SocketWriteBuffer        interface{}      `yaml:"socket-write-buffer" json:"socket-write-buffer"`
+	IdleTimeout              marshal.Duration `yaml:"idle-timeout" json:"idle-timeout"`
+}
+
+func (c *KCPConf) applyAux(aux *auxKCPConf) (err error) {
+	c.Host = aux.Host
+	c.Port = aux.Port
+	c.Tuning = strings.ToLower(aux.Tuning)
+	if c.Tuning == "" {
+		c.Tuning = KCPTuningBalanced
+	}
+	if c.Port == 0 {
+		c.Port = defaultKCPPort
+	}
+	c.MTU = aux.MTU
+	if c.MTU == 0 {
+		c.MTU = defaultKCPMTU
+	}
+	c.SendWindow = aux.SendWindow
+	if c.SendWindow == 0 {
+		c.SendWindow = defaultKCPWindow
+	}
+	c.ReceiveWindow = aux.ReceiveWindow
+	if c.ReceiveWindow == 0 {
+		c.ReceiveWindow = defaultKCPWindow
+	}
+	c.FECEnabled = true
+	if aux.FECEnabled != nil {
+		c.FECEnabled = *aux.FECEnabled
+	}
+	c.DataShards = aux.DataShards
+	c.ParityShards = aux.ParityShards
+	if c.FECEnabled && c.DataShards == 0 && c.ParityShards == 0 {
+		c.DataShards = defaultKCPDataShards
+		c.ParityShards = defaultKCPParityShards
+	}
+	if !c.FECEnabled {
+		c.DataShards = 0
+		c.ParityShards = 0
+	}
+	c.NoDelay = true
+	if aux.NoDelay != nil {
+		c.NoDelay = *aux.NoDelay
+	}
+	c.Interval = aux.Interval.Duration
+	if c.Interval == 0 {
+		c.Interval = defaultKCPInterval
+	}
+	c.FastResend = aux.FastResend
+	if c.FastResend == 0 {
+		c.FastResend = defaultKCPFastResend
+	}
+	c.DisableCongestionControl = aux.DisableCongestionControl
+	c.ACKNoDelay = true
+	if aux.ACKNoDelay != nil {
+		c.ACKNoDelay = *aux.ACKNoDelay
+	}
+	if c.SocketReadBuffer, err = parseByteCount(aux.SocketReadBuffer, "socket-read-buffer"); err != nil {
+		return
+	}
+	if c.SocketReadBuffer == 0 {
+		c.SocketReadBuffer = defaultKCPSocketBuffer
+	}
+	if c.SocketWriteBuffer, err = parseByteCount(aux.SocketWriteBuffer, "socket-write-buffer"); err != nil {
+		return
+	}
+	if c.SocketWriteBuffer == 0 {
+		c.SocketWriteBuffer = defaultKCPSocketBuffer
+	}
+	c.IdleTimeout = aux.IdleTimeout.Duration
+	if c.IdleTimeout == 0 {
+		c.IdleTimeout = defaultKCPIdleTimeout
+	}
+	return
+}
+
+func (c *KCPConf) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	aux := &auxKCPConf{}
+	if err := unmarshal(aux); err != nil {
+		return err
+	}
+	return c.applyAux(aux)
+}
+
+func (c *KCPConf) UnmarshalJSON(data []byte) error {
+	aux := &auxKCPConf{}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	return c.applyAux(aux)
+}
+
+// Validate checks values constrained by KCP's wire format and session APIs.
+func (c *KCPConf) Validate() error {
+	if c.Tuning != KCPTuningBalanced && c.Tuning != KCPTuningManual {
+		return fmt.Errorf("kcp tuning must be %q or %q", KCPTuningBalanced, KCPTuningManual)
+	}
+	if c.Port < 1 || c.Port > 65535 {
+		return fmt.Errorf("kcp port must be between 1 and 65535")
+	}
+	if c.MTU < 576 || c.MTU > 1500 {
+		return fmt.Errorf("kcp mtu must be between 576 and 1500 bytes")
+	}
+	if c.SendWindow < 1 || c.SendWindow > 65535 || c.ReceiveWindow < 1 || c.ReceiveWindow > 65535 {
+		return fmt.Errorf("kcp send and receive windows must be between 1 and 65535 packets")
+	}
+	if c.DataShards < 0 || c.ParityShards < 0 || c.DataShards+c.ParityShards > 255 {
+		return fmt.Errorf("kcp FEC shards must be non-negative and total no more than 255")
+	}
+	if (c.DataShards == 0) != (c.ParityShards == 0) {
+		return fmt.Errorf("kcp data-shards and parity-shards must both be zero or both be positive")
+	}
+	if c.Interval < 10*time.Millisecond || c.Interval > 5*time.Second {
+		return fmt.Errorf("kcp interval must be between 10ms and 5s")
+	}
+	if c.FastResend < 0 {
+		return fmt.Errorf("kcp fast-resend cannot be negative")
+	}
+	if c.SocketReadBuffer == 0 || c.SocketWriteBuffer == 0 {
+		return fmt.Errorf("kcp socket buffers must be positive")
+	}
+	maxInt := uint64(^uint(0) >> 1)
+	if c.SocketReadBuffer > maxInt || c.SocketWriteBuffer > maxInt {
+		return fmt.Errorf("kcp socket buffers exceed platform integer capacity")
+	}
+	if c.IdleTimeout <= 0 {
+		return fmt.Errorf("kcp idle-timeout must be positive")
+	}
+	return nil
+}
 
 // Conf is the outer struct for decoding a YAML config file
 type Conf struct {
@@ -474,12 +659,14 @@ func (t *TagConf) MarshalJSON() ([]byte, error) {
 
 // TargetConf houses the configuration for the target host for a given source
 type TargetConf struct {
-	Name          string `yaml:"name" json:"name"`
-	Key           string `yaml:"key" json:"key"`
-	Host          string `yaml:"http-host" json:"http-host"`
-	PathPrefix    string `yaml:"http-path-prefix" json:"http-path-prefix"`
-	TLSCertPath   string `yaml:"http-tls-cert" json:"http-tls-cert"`
-	TLSCertBase64 string `yaml:"http-tls-cert-encoded" json:"http-tls-cert-encoded"`
+	Name          string   `yaml:"name" json:"name"`
+	Key           string   `yaml:"key" json:"key"`
+	Host          string   `yaml:"http-host" json:"http-host"`
+	PathPrefix    string   `yaml:"http-path-prefix" json:"http-path-prefix"`
+	TLSCertPath   string   `yaml:"http-tls-cert" json:"http-tls-cert"`
+	TLSCertBase64 string   `yaml:"http-tls-cert-encoded" json:"http-tls-cert-encoded"`
+	Transfer      string   `yaml:"transfer" json:"transfer"`
+	KCP           *KCPConf `yaml:"kcp" json:"kcp"`
 	// HTTP3/QUIC support
 	Protocol                       string        `yaml:"protocol" json:"protocol"`                                                     // "auto", "http3", "https", "http"
 	HTTP3Port                      int           `yaml:"http3-port" json:"http3-port"`                                                 // Optional separate port for HTTP3
@@ -494,22 +681,24 @@ type TargetConf struct {
 }
 
 type auxTargetConf struct {
-	Name                            string        `yaml:"name" json:"name"`
-	Key                             string        `yaml:"key" json:"key"`
-	Host                            string        `yaml:"http-host" json:"http-host"`
-	PathPrefix                      string        `yaml:"http-path-prefix" json:"http-path-prefix"`
-	TLSCertPath                     string        `yaml:"http-tls-cert" json:"http-tls-cert"`
-	TLSCertBase64                   string        `yaml:"http-tls-cert-encoded" json:"http-tls-cert-encoded"`
-	Protocol                        string        `yaml:"protocol" json:"protocol"`
-	HTTP3Port                       int           `yaml:"http3-port" json:"http3-port"`
-	QUICMaxStreams                  int64         `yaml:"quic-max-streams" json:"quic-max-streams"`
-	QUICMaxIdleTimeout              time.Duration `yaml:"quic-max-idle-timeout" json:"quic-max-idle-timeout"`
-	QUICKeepAlive                   time.Duration `yaml:"quic-keep-alive" json:"quic-keep-alive"`
-	QUICMaxStreamReceiveWindow      interface{}   `yaml:"quic-max-stream-receive-window" json:"quic-max-stream-receive-window"`
-	QUICMaxConnectionReceiveWindow  interface{}   `yaml:"quic-max-connection-receive-window" json:"quic-max-connection-receive-window"`
-	QUICEnableDatagrams             bool          `yaml:"quic-enable-datagrams" json:"quic-enable-datagrams"`
-	QUICDisablePathMTUDiscovery     bool          `yaml:"quic-disable-path-mtu-discovery" json:"quic-disable-path-mtu-discovery"`
-	QUICDisable0RTT                 bool          `yaml:"quic-disable-0rtt" json:"quic-disable-0rtt"`
+	Name                           string        `yaml:"name" json:"name"`
+	Key                            string        `yaml:"key" json:"key"`
+	Host                           string        `yaml:"http-host" json:"http-host"`
+	PathPrefix                     string        `yaml:"http-path-prefix" json:"http-path-prefix"`
+	TLSCertPath                    string        `yaml:"http-tls-cert" json:"http-tls-cert"`
+	TLSCertBase64                  string        `yaml:"http-tls-cert-encoded" json:"http-tls-cert-encoded"`
+	Transfer                       string        `yaml:"transfer" json:"transfer"`
+	KCP                            *KCPConf      `yaml:"kcp" json:"kcp"`
+	Protocol                       string        `yaml:"protocol" json:"protocol"`
+	HTTP3Port                      int           `yaml:"http3-port" json:"http3-port"`
+	QUICMaxStreams                 int64         `yaml:"quic-max-streams" json:"quic-max-streams"`
+	QUICMaxIdleTimeout             time.Duration `yaml:"quic-max-idle-timeout" json:"quic-max-idle-timeout"`
+	QUICKeepAlive                  time.Duration `yaml:"quic-keep-alive" json:"quic-keep-alive"`
+	QUICMaxStreamReceiveWindow     interface{}   `yaml:"quic-max-stream-receive-window" json:"quic-max-stream-receive-window"`
+	QUICMaxConnectionReceiveWindow interface{}   `yaml:"quic-max-connection-receive-window" json:"quic-max-connection-receive-window"`
+	QUICEnableDatagrams            bool          `yaml:"quic-enable-datagrams" json:"quic-enable-datagrams"`
+	QUICDisablePathMTUDiscovery    bool          `yaml:"quic-disable-path-mtu-discovery" json:"quic-disable-path-mtu-discovery"`
+	QUICDisable0RTT                bool          `yaml:"quic-disable-0rtt" json:"quic-disable-0rtt"`
 }
 
 func parseByteCount(val interface{}, field string) (uint64, error) {
@@ -560,6 +749,8 @@ func (t *TargetConf) applyAux(aux *auxTargetConf) (err error) {
 	t.PathPrefix = aux.PathPrefix
 	t.TLSCertPath = aux.TLSCertPath
 	t.TLSCertBase64 = aux.TLSCertBase64
+	t.Transfer = aux.Transfer
+	t.KCP = aux.KCP
 	t.Protocol = aux.Protocol
 	t.HTTP3Port = aux.HTTP3Port
 	t.QUICMaxStreams = aux.QUICMaxStreams
@@ -654,14 +845,16 @@ type ServerDirs struct {
 
 // HTTPServer is the struct for managing the incoming HTTP host
 type HTTPServer struct {
-	Host                     string  `yaml:"http-host" json:"http-host"`
-	Port                     int     `yaml:"http-port" json:"http-port"`
-	PathPrefix               string  `yaml:"http-path-prefix" json:"http-path-prefix"`
-	TLSCertPath              string  `yaml:"http-tls-cert" json:"http-tls-cert"`
-	TLSKeyPath               string  `yaml:"http-tls-key" json:"http-tls-key"`
-	Compression              int     `yaml:"compress" json:"compress"`
-	ChanceOfSimulatedFailure float64 `yaml:"chance-of-simulated-failure" json:"chance-of-simulated-failure"`
-	HSTSEnabled              bool    `yaml:"hsts-enabled" json:"hsts-enabled"`
+	Host                     string   `yaml:"http-host" json:"http-host"`
+	Port                     int      `yaml:"http-port" json:"http-port"`
+	PathPrefix               string   `yaml:"http-path-prefix" json:"http-path-prefix"`
+	TLSCertPath              string   `yaml:"http-tls-cert" json:"http-tls-cert"`
+	TLSKeyPath               string   `yaml:"http-tls-key" json:"http-tls-key"`
+	Compression              int      `yaml:"compress" json:"compress"`
+	ChanceOfSimulatedFailure float64  `yaml:"chance-of-simulated-failure" json:"chance-of-simulated-failure"`
+	HSTSEnabled              bool     `yaml:"hsts-enabled" json:"hsts-enabled"`
+	EnableKCP                bool     `yaml:"kcp-enabled" json:"kcp-enabled"`
+	KCP                      *KCPConf `yaml:"kcp" json:"kcp"`
 	// HTTP3/QUIC support
 	EnableHTTP3                    bool          `yaml:"http3-enabled" json:"http3-enabled"`                                           // Run HTTP3 server
 	HTTP3Port                      int           `yaml:"http3-port" json:"http3-port"`                                                 // Separate port or 0 for same
@@ -676,24 +869,26 @@ type HTTPServer struct {
 }
 
 type auxHTTPServer struct {
-	Host                            string        `yaml:"http-host" json:"http-host"`
-	Port                            int           `yaml:"http-port" json:"http-port"`
-	PathPrefix                      string        `yaml:"http-path-prefix" json:"http-path-prefix"`
-	TLSCertPath                     string        `yaml:"http-tls-cert" json:"http-tls-cert"`
-	TLSKeyPath                      string        `yaml:"http-tls-key" json:"http-tls-key"`
-	Compression                     int           `yaml:"compress" json:"compress"`
-	ChanceOfSimulatedFailure        float64       `yaml:"chance-of-simulated-failure" json:"chance-of-simulated-failure"`
-	HSTSEnabled                     bool          `yaml:"hsts-enabled" json:"hsts-enabled"`
-	EnableHTTP3                     bool          `yaml:"http3-enabled" json:"http3-enabled"`
-	HTTP3Port                       int           `yaml:"http3-port" json:"http3-port"`
-	QUICMaxStreams                  int64         `yaml:"quic-max-streams" json:"quic-max-streams"`
-	QUICMaxIdleTimeout              time.Duration `yaml:"quic-max-idle-timeout" json:"quic-max-idle-timeout"`
-	QUICKeepAlive                   time.Duration `yaml:"quic-keep-alive" json:"quic-keep-alive"`
-	QUICMaxStreamReceiveWindow      interface{}   `yaml:"quic-max-stream-receive-window" json:"quic-max-stream-receive-window"`
-	QUICMaxConnectionReceiveWindow  interface{}   `yaml:"quic-max-connection-receive-window" json:"quic-max-connection-receive-window"`
-	QUICEnableDatagrams             bool          `yaml:"quic-enable-datagrams" json:"quic-enable-datagrams"`
-	QUICDisablePathMTUDiscovery     bool          `yaml:"quic-disable-path-mtu-discovery" json:"quic-disable-path-mtu-discovery"`
-	HSTS                            hsts.Options  `yaml:"hsts-options" json:"hsts-options"`
+	Host                           string        `yaml:"http-host" json:"http-host"`
+	Port                           int           `yaml:"http-port" json:"http-port"`
+	PathPrefix                     string        `yaml:"http-path-prefix" json:"http-path-prefix"`
+	TLSCertPath                    string        `yaml:"http-tls-cert" json:"http-tls-cert"`
+	TLSKeyPath                     string        `yaml:"http-tls-key" json:"http-tls-key"`
+	Compression                    int           `yaml:"compress" json:"compress"`
+	ChanceOfSimulatedFailure       float64       `yaml:"chance-of-simulated-failure" json:"chance-of-simulated-failure"`
+	HSTSEnabled                    bool          `yaml:"hsts-enabled" json:"hsts-enabled"`
+	EnableKCP                      bool          `yaml:"kcp-enabled" json:"kcp-enabled"`
+	KCP                            *KCPConf      `yaml:"kcp" json:"kcp"`
+	EnableHTTP3                    bool          `yaml:"http3-enabled" json:"http3-enabled"`
+	HTTP3Port                      int           `yaml:"http3-port" json:"http3-port"`
+	QUICMaxStreams                 int64         `yaml:"quic-max-streams" json:"quic-max-streams"`
+	QUICMaxIdleTimeout             time.Duration `yaml:"quic-max-idle-timeout" json:"quic-max-idle-timeout"`
+	QUICKeepAlive                  time.Duration `yaml:"quic-keep-alive" json:"quic-keep-alive"`
+	QUICMaxStreamReceiveWindow     interface{}   `yaml:"quic-max-stream-receive-window" json:"quic-max-stream-receive-window"`
+	QUICMaxConnectionReceiveWindow interface{}   `yaml:"quic-max-connection-receive-window" json:"quic-max-connection-receive-window"`
+	QUICEnableDatagrams            bool          `yaml:"quic-enable-datagrams" json:"quic-enable-datagrams"`
+	QUICDisablePathMTUDiscovery    bool          `yaml:"quic-disable-path-mtu-discovery" json:"quic-disable-path-mtu-discovery"`
+	HSTS                           hsts.Options  `yaml:"hsts-options" json:"hsts-options"`
 }
 
 func (h *HTTPServer) applyAux(aux *auxHTTPServer) (err error) {
@@ -705,6 +900,8 @@ func (h *HTTPServer) applyAux(aux *auxHTTPServer) (err error) {
 	h.Compression = aux.Compression
 	h.ChanceOfSimulatedFailure = aux.ChanceOfSimulatedFailure
 	h.HSTSEnabled = aux.HSTSEnabled
+	h.EnableKCP = aux.EnableKCP
+	h.KCP = aux.KCP
 	h.EnableHTTP3 = aux.EnableHTTP3
 	h.HTTP3Port = aux.HTTP3Port
 	h.QUICMaxStreams = aux.QUICMaxStreams

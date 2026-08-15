@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"math/rand/v2"
+	"net"
 	"net/http"
 	"os"
 	"path"
@@ -40,6 +41,8 @@ type Server struct {
 	EnableHTTP3 bool
 	HTTP3Port   int // 0 means use same port as HTTPS
 	QUICConfig  *quic.Config
+	EnableKCP   bool
+	KCPConfig   *sts.KCPConf
 
 	GateKeepers       map[string]sts.GateKeeper
 	GateKeeperFactory sts.GateKeeperFactory
@@ -164,6 +167,32 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 		}()
 	}
 
+	var kcpServer *GracefulServer
+	if s.EnableKCP && s.KCPConfig != nil {
+		addr := net.JoinHostPort(s.KCPConfig.Host, strconv.Itoa(s.KCPConfig.Port))
+		listener, err := ListenKCP(addr, s.KCPConfig)
+		if err != nil {
+			log.Error("Error starting KCP/HTTP server:", err.Error())
+		} else {
+			kcpServer = NewGracefulServer(&http.Server{
+				Addr:         addr,
+				Handler:      handler,
+				ReadTimeout:  readTimeout,
+				WriteTimeout: writeTimeout,
+				IdleTimeout:  s.KCPConfig.IdleTimeout,
+			}, nil)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				log.Info("Starting KCP/HTTP server on", addr)
+				err := kcpServer.Serve(tlsKCPListener(listener, s.TLS))
+				if err != nil && err != http.ErrServerClosed {
+					log.Error("Error shutting down KCP/HTTP server:", err.Error())
+				}
+			}()
+		}
+	}
+
 	// Start internal server (keep as HTTP/1.1 for simplicity)
 	iServer := NewGracefulServer(&http.Server{
 		Addr:    fmt.Sprintf(":%d", s.Port+1),
@@ -185,6 +214,9 @@ func (s *Server) Serve(stop <-chan bool, done chan<- bool) {
 	_ = Close() // HTTP/1.1 server
 	if http3Server != nil {
 		_ = http3Server.CloseGracefully(30 * time.Second)
+	}
+	if kcpServer != nil {
+		_ = kcpServer.Close()
 	}
 	iServer.Close()
 

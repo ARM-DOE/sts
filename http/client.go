@@ -68,9 +68,12 @@ type Client struct {
 	BandwidthLogInterval time.Duration
 
 	// HTTP3/QUIC support
-	Protocol   TransportProtocol
-	HTTP3Port  int
-	QUICConfig *quic.Config
+	Protocol       TransportProtocol
+	HTTP3Port      int
+	QUICConfig     *quic.Config
+	Transfer       string
+	KCPConfig      *sts.KCPConf
+	MaxConnections int
 
 	root   string
 	client *BandwidthLoggingClient
@@ -103,11 +106,14 @@ func (h *Client) init() error {
 	}
 
 	builder := &TransportBuilder{
-		TLSConfig:   h.TLS,
-		Protocol:    protocol,
-		LogInterval: h.BandwidthLogInterval,
-		LogPrefix:   fmt.Sprintf("(%s) ", h.SourceName),
-		QUICConfig:  h.QUICConfig,
+		TLSConfig:      h.TLS,
+		Protocol:       protocol,
+		Transfer:       h.Transfer,
+		LogInterval:    h.BandwidthLogInterval,
+		LogPrefix:      fmt.Sprintf("(%s) ", h.SourceName),
+		QUICConfig:     h.QUICConfig,
+		KCPConfig:      h.KCPConfig,
+		MaxConnections: h.MaxConnections,
 	}
 
 	if h.client, err = builder.Build(); err != nil {
