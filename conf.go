@@ -23,8 +23,6 @@ import (
 const (
 	defaultTag = "DEFAULT"
 
-	TransferHTTP      = "http"
-	TransferKCPHTTP   = "kcp-http"
 	KCPTuningBalanced = "balanced"
 	KCPTuningManual   = "manual"
 
@@ -665,10 +663,9 @@ type TargetConf struct {
 	PathPrefix    string   `yaml:"http-path-prefix" json:"http-path-prefix"`
 	TLSCertPath   string   `yaml:"http-tls-cert" json:"http-tls-cert"`
 	TLSCertBase64 string   `yaml:"http-tls-cert-encoded" json:"http-tls-cert-encoded"`
-	Transfer      string   `yaml:"transfer" json:"transfer"`
 	KCP           *KCPConf `yaml:"kcp" json:"kcp"`
 	// HTTP3/QUIC support
-	Protocol                       string        `yaml:"protocol" json:"protocol"`                                                     // "auto", "http3", "https", "http"
+	Protocol                       string        `yaml:"protocol" json:"protocol"`                                                     // "auto", "http3", "https", "http", "kcp-http"
 	HTTP3Port                      int           `yaml:"http3-port" json:"http3-port"`                                                 // Optional separate port for HTTP3
 	QUICMaxStreams                 int64         `yaml:"quic-max-streams" json:"quic-max-streams"`                                     // Default: 100 or 2*threads
 	QUICMaxIdleTimeout             time.Duration `yaml:"quic-max-idle-timeout" json:"quic-max-idle-timeout"`                           // Default: 30s or timeout/10
@@ -687,7 +684,6 @@ type auxTargetConf struct {
 	PathPrefix                     string        `yaml:"http-path-prefix" json:"http-path-prefix"`
 	TLSCertPath                    string        `yaml:"http-tls-cert" json:"http-tls-cert"`
 	TLSCertBase64                  string        `yaml:"http-tls-cert-encoded" json:"http-tls-cert-encoded"`
-	Transfer                       string        `yaml:"transfer" json:"transfer"`
 	KCP                            *KCPConf      `yaml:"kcp" json:"kcp"`
 	Protocol                       string        `yaml:"protocol" json:"protocol"`
 	HTTP3Port                      int           `yaml:"http3-port" json:"http3-port"`
@@ -749,7 +745,6 @@ func (t *TargetConf) applyAux(aux *auxTargetConf) (err error) {
 	t.PathPrefix = aux.PathPrefix
 	t.TLSCertPath = aux.TLSCertPath
 	t.TLSCertBase64 = aux.TLSCertBase64
-	t.Transfer = aux.Transfer
 	t.KCP = aux.KCP
 	t.Protocol = aux.Protocol
 	t.HTTP3Port = aux.HTTP3Port

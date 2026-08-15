@@ -22,12 +22,12 @@ OUT:
       target:
         http-host: receiver.example.org:1992
         http-tls-cert: conf/server.pem
-        transfer: kcp-http
+        protocol: kcp-http
         kcp:
           tuning: balanced
 ```
 
-`balanced` is the default tuning profile and may be omitted. `kcp.host` defaults to the hostname in `http-host`, and the KCP port defaults to `1993`. `transfer` defaults to `http`, so existing configurations are unchanged.
+`balanced` is the default tuning profile and may be omitted. `kcp.host` defaults to the hostname in `http-host`, and the KCP port defaults to `1993`. Existing configurations without `protocol: kcp-http` are unchanged.
 
 ## Server configuration
 
@@ -44,6 +44,8 @@ IN:
 ```
 
 The client and server must use the same FEC shard settings. Permit UDP traffic to `kcp.port` in both host and network firewalls.
+
+Enabling KCP on the server adds a parallel UDP listener; it does not replace the existing HTTP/HTTPS listener. Clients using `protocol: http`, `https`, `http3`, or `auto` continue using their existing transport.
 
 ## Tuning profiles
 

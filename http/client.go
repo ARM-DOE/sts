@@ -71,7 +71,6 @@ type Client struct {
 	Protocol       TransportProtocol
 	HTTP3Port      int
 	QUICConfig     *quic.Config
-	Transfer       string
 	KCPConfig      *sts.KCPConf
 	MaxConnections int
 
@@ -108,7 +107,6 @@ func (h *Client) init() error {
 	builder := &TransportBuilder{
 		TLSConfig:      h.TLS,
 		Protocol:       protocol,
-		Transfer:       h.Transfer,
 		LogInterval:    h.BandwidthLogInterval,
 		LogPrefix:      fmt.Sprintf("(%s) ", h.SourceName),
 		QUICConfig:     h.QUICConfig,

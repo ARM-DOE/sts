@@ -58,6 +58,7 @@ The `protocol` field supports these values:
 | `http3` | Use HTTP3 only (fails if HTTP3 unavailable) |
 | `https` | Use HTTPS/HTTP2 only (traditional behavior) |
 | `http` | Use HTTP without TLS (not recommended for production) |
+| `kcp-http` | Use HTTP/1.1 over KCP reliable UDP |
 
 **Recommended**: Use `protocol: auto` for gradual migration and resilience.
 
@@ -252,7 +253,7 @@ If client IP changes (e.g., mobile network handoff), QUIC seamlessly migrates th
 
 ```yaml
 target:
-  protocol: auto              # auto | http3 | https | http
+  protocol: auto              # auto | http3 | https | http | kcp-http
   http3-port: 0               # 0 = use same port as http-host
 ```
 

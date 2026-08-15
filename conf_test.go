@@ -282,7 +282,7 @@ OUT:
     - name: stsout-1
       target:
         http-host: localhost:1992
-        transfer: kcp-http
+        protocol: kcp-http
         kcp:
           host: receiver.example.org
           port: 1993
@@ -320,8 +320,8 @@ OUT:
 	}
 
 	target := conf.Client.Sources[0].Target
-	if target.Transfer != TransferKCPHTTP || target.KCP == nil {
-		t.Fatalf("unexpected target transfer configuration: %+v", target)
+	if target.Protocol != "kcp-http" || target.KCP == nil {
+		t.Fatalf("unexpected target protocol configuration: %+v", target)
 	}
 	if target.KCP.Host != "receiver.example.org" || target.KCP.Port != 1993 {
 		t.Fatalf("unexpected target KCP address: %+v", target.KCP)
@@ -344,7 +344,7 @@ OUT:
     - name: first
       target:
         http-host: receiver.example.org:1992
-        transfer: kcp-http
+        protocol: kcp-http
         kcp:
           port: 1993
           fec-enabled: false
@@ -361,7 +361,7 @@ OUT:
 		t.Fatalf("FEC was not disabled: %+v", first.KCP)
 	}
 	second := conf.Client.Sources[1].Target
-	if second.Transfer != TransferKCPHTTP || second.KCP == nil || second.KCP.Port != 1993 {
+	if second.Protocol != "kcp-http" || second.KCP == nil || second.KCP.Port != 1993 {
 		t.Fatalf("KCP target configuration was not inherited: %+v", second)
 	}
 }

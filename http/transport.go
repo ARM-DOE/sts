@@ -24,6 +24,8 @@ const (
 	ProtocolHTTPS
 	// ProtocolHTTP3 forces HTTP/3 over QUIC
 	ProtocolHTTP3
+	// ProtocolKCPHTTP carries HTTP/1.1 over KCP reliable UDP
+	ProtocolKCPHTTP
 )
 
 // ParseProtocol converts a string to TransportProtocol
@@ -31,6 +33,8 @@ func ParseProtocol(s string) TransportProtocol {
 	switch strings.ToLower(s) {
 	case "http3", "h3", "quic":
 		return ProtocolHTTP3
+	case "kcp-http":
+		return ProtocolKCPHTTP
 	case "https", "h2", "http2":
 		return ProtocolHTTPS
 	case "http", "http1", "http1.1":
@@ -53,6 +57,8 @@ func (p TransportProtocol) String() string {
 		return "http"
 	case ProtocolAuto:
 		return "auto"
+	case ProtocolKCPHTTP:
+		return "kcp-http"
 	default:
 		return "unknown"
 	}
@@ -62,7 +68,6 @@ func (p TransportProtocol) String() string {
 type TransportBuilder struct {
 	TLSConfig      *tls.Config
 	Protocol       TransportProtocol
-	Transfer       string
 	LogInterval    time.Duration
 	LogPrefix      string
 	KCPConfig      *sts.KCPConf
@@ -73,10 +78,9 @@ type TransportBuilder struct {
 
 // Build creates a BandwidthLoggingClient with the appropriate protocol
 func (tb *TransportBuilder) Build() (*BandwidthLoggingClient, error) {
-	if tb.Transfer == sts.TransferKCPHTTP {
-		return tb.buildKCPHTTPClient()
-	}
 	switch tb.Protocol {
+	case ProtocolKCPHTTP:
+		return tb.buildKCPHTTPClient()
 	case ProtocolHTTP3:
 		return tb.buildHTTP3Client()
 	case ProtocolHTTPS, ProtocolHTTP1:

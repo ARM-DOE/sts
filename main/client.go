@@ -65,15 +65,9 @@ func (c *clientApp) setDefaults() (err error) {
 	if c.tls, err = getTLSConf(c.conf.Target); err != nil {
 		return
 	}
-	if c.conf.Target.Transfer == "" {
-		c.conf.Target.Transfer = sts.TransferHTTP
-	}
-	if c.conf.Target.Transfer != sts.TransferHTTP && c.conf.Target.Transfer != sts.TransferKCPHTTP {
-		return fmt.Errorf("unsupported transfer %q", c.conf.Target.Transfer)
-	}
-	if c.conf.Target.Transfer == sts.TransferKCPHTTP {
+	if http.ParseProtocol(c.conf.Target.Protocol) == http.ProtocolKCPHTTP {
 		if c.conf.Target.KCP == nil {
-			return fmt.Errorf("kcp configuration is required for kcp-http transfer")
+			return fmt.Errorf("kcp configuration is required for kcp-http protocol")
 		}
 		if c.conf.Target.KCP.Host == "" {
 			c.conf.Target.KCP.Host = c.host
@@ -355,7 +349,6 @@ func (c *clientApp) init() (err error) {
 		TLS:                  c.tls,
 		PartialsDecoder:      stage.ReadCompanions,
 		BandwidthLogInterval: c.conf.StatInterval,
-		Transfer:             c.conf.Target.Transfer,
 		KCPConfig:            c.conf.Target.KCP,
 		MaxConnections:       c.conf.Threads,
 		// HTTP3/QUIC configuration
@@ -389,11 +382,12 @@ func (c *clientApp) init() (err error) {
 			protocol = "HTTP3/QUIC"
 		case http.ProtocolAuto:
 			protocol = "HTTP3/QUIC (with HTTPS fallback)"
+		case http.ProtocolKCPHTTP:
+			protocol = "HTTP/1.1 over KCP/UDP"
 		}
 	}
 	dump("Protocol: %s", protocol)
-	if c.conf.Target.Transfer == sts.TransferKCPHTTP {
-		dump("Transfer: HTTP/1.1 over KCP/UDP")
+	if http.ParseProtocol(c.conf.Target.Protocol) == http.ProtocolKCPHTTP {
 		dump("KCP Server: %s:%d", c.conf.Target.KCP.Host, c.conf.Target.KCP.Port)
 		dump("KCP Tuning: %s", c.conf.Target.KCP.Tuning)
 	}

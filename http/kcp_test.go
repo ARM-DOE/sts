@@ -63,7 +63,7 @@ func TestKCPHTTPTransport(t *testing.T) {
 	clientConf.Host = host
 	clientConf.Port = port
 	builder := &TransportBuilder{
-		Transfer:       sts.TransferKCPHTTP,
+		Protocol:       ProtocolKCPHTTP,
 		KCPConfig:      clientConf,
 		MaxConnections: 1,
 		TLSConfig:      clientTLS,
@@ -100,5 +100,14 @@ func TestKCPHTTPTransport(t *testing.T) {
 	}
 	if err = <-serveDone; err != nethttp.ErrServerClosed {
 		t.Fatalf("unexpected server result: %v", err)
+	}
+}
+
+func TestParseKCPHTTPProtocol(t *testing.T) {
+	if protocol := ParseProtocol("kcp-http"); protocol != ProtocolKCPHTTP {
+		t.Fatalf("ParseProtocol(%q) = %s", "kcp-http", protocol)
+	}
+	if ProtocolKCPHTTP.String() != "kcp-http" {
+		t.Fatalf("unexpected canonical KCP protocol: %s", ProtocolKCPHTTP)
 	}
 }
