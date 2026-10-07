@@ -15,6 +15,8 @@ import (
 	kcp "github.com/xtaci/kcp-go/v5"
 )
 
+const kcpResponseHeaderTimeout = 30 * time.Second
+
 // KCPListener applies STS KCP settings to every accepted reliable UDP session.
 type KCPListener struct {
 	*kcp.Listener
@@ -41,6 +43,35 @@ type kcpSessionMetrics struct {
 	MaximumRTTVar time.Duration
 	AverageRTO    time.Duration
 	MaximumRTO    time.Duration
+}
+
+type kcpTransportMetrics struct {
+	OutSegments     uint64
+	Retransmissions uint64
+	LostSegments    uint64
+	FECRecovered    uint64
+	FECErrors       uint64
+	InputErrors     uint64
+}
+
+func kcpCounterDelta(current, previous uint64) uint64 {
+	if current < previous {
+		return current
+	}
+	return current - previous
+}
+
+func snapshotKCPTransport(previous *kcp.Snmp) (kcpTransportMetrics, *kcp.Snmp) {
+	current := kcp.DefaultSnmp.Copy()
+	return kcpTransportMetrics{
+		OutSegments:     kcpCounterDelta(current.OutSegs, previous.OutSegs),
+		Retransmissions: kcpCounterDelta(current.RetransSegs, previous.RetransSegs),
+		LostSegments:    kcpCounterDelta(current.LostSegs, previous.LostSegs),
+		FECRecovered:    kcpCounterDelta(current.FECRecovered, previous.FECRecovered),
+		FECErrors:       kcpCounterDelta(current.FECErrs, previous.FECErrs),
+		InputErrors: kcpCounterDelta(current.InErrs, previous.InErrs) +
+			kcpCounterDelta(current.KCPInErrors, previous.KCPInErrors),
+	}, current
 }
 
 func newKCPSessionRegistry() *kcpSessionRegistry {
@@ -104,19 +135,25 @@ func (r *kcpSessionRegistry) snapshot() kcpSessionMetrics {
 func (r *kcpSessionRegistry) log(interval time.Duration, prefix string, stop <-chan struct{}) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	previousTransport := kcp.DefaultSnmp.Copy()
 	for {
 		select {
 		case <-ticker.C:
 			metrics := r.snapshot()
+			transport, currentTransport := snapshotKCPTransport(previousTransport)
+			previousTransport = currentTransport
 			if metrics.Active == 0 {
 				continue
 			}
 			log.Info(fmt.Sprintf(
-				"%sKCP session metrics (interval %s): active=%d sampled=%d srtt_avg=%s srtt_max=%s rttvar_avg=%s rttvar_max=%s rto_avg=%s rto_max=%s",
+				"%sKCP session metrics (interval %s): active=%d sampled=%d srtt_avg=%s srtt_max=%s rttvar_avg=%s rttvar_max=%s rto_avg=%s rto_max=%s out_segs=%d retrans=%d lost=%d fec_recovered=%d fec_errors=%d input_errors=%d",
 				prefix, interval, metrics.Active, metrics.Samples,
 				metrics.AverageSRTT, metrics.MaximumSRTT,
 				metrics.AverageRTTVar, metrics.MaximumRTTVar,
 				metrics.AverageRTO, metrics.MaximumRTO,
+				transport.OutSegments, transport.Retransmissions,
+				transport.LostSegments, transport.FECRecovered,
+				transport.FECErrors, transport.InputErrors,
 			))
 		case <-stop:
 			return
@@ -170,6 +207,7 @@ func configureKCPSession(session *kcp.UDPSession, conf *sts.KCPConf) {
 	session.SetWindowSize(conf.SendWindow, conf.ReceiveWindow)
 	session.SetMtu(conf.MTU)
 	session.SetACKNoDelay(conf.ACKNoDelay)
+	session.SetDUP(conf.DuplicatePackets)
 	session.SetWriteDelay(false)
 }
 
@@ -199,6 +237,10 @@ func dialKCPContext(ctx context.Context, conf *sts.KCPConf, address string, regi
 	return registry.track(session), nil
 }
 
+func kcpClientIdleTimeout(timeout time.Duration) time.Duration {
+	return timeout / 2
+}
+
 func (tb *TransportBuilder) buildKCPHTTPClient() (*BandwidthLoggingClient, error) {
 	if tb.KCPConfig == nil {
 		return nil, fmt.Errorf("KCP configuration is required")
@@ -210,13 +252,14 @@ func (tb *TransportBuilder) buildKCPHTTPClient() (*BandwidthLoggingClient, error
 	address := net.JoinHostPort(tb.KCPConfig.Host, strconv.Itoa(tb.KCPConfig.Port))
 	sessions := newKCPSessionRegistry()
 	transport := &http.Transport{
-		TLSClientConfig:     tb.TLSConfig,
-		DisableKeepAlives:   false,
-		MaxIdleConns:        maxConnections,
-		MaxIdleConnsPerHost: maxConnections,
-		MaxConnsPerHost:     maxConnections,
-		IdleConnTimeout:     tb.KCPConfig.IdleTimeout,
-		ForceAttemptHTTP2:   false,
+		TLSClientConfig:       tb.TLSConfig,
+		DisableKeepAlives:     true,
+		MaxIdleConns:          maxConnections,
+		MaxIdleConnsPerHost:   maxConnections,
+		MaxConnsPerHost:       maxConnections,
+		IdleConnTimeout:       kcpClientIdleTimeout(tb.KCPConfig.IdleTimeout),
+		ResponseHeaderTimeout: kcpResponseHeaderTimeout,
+		ForceAttemptHTTP2:     false,
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return dialKCPContext(ctx, tb.KCPConfig, address, sessions)
 		},
@@ -225,9 +268,8 @@ func (tb *TransportBuilder) buildKCPHTTPClient() (*BandwidthLoggingClient, error
 		transport.TLSClientConfig = tb.TLSConfig.Clone()
 		transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
 	}
-	monitor := &bandwidthMonitorTransport{transport: transport}
-	client := newBandwidthLoggingClient(monitor, tb.LogInterval, func(i ...interface{}) {
-		log.Info(append([]interface{}{tb.LogPrefix}, i...)...)
+	client := newBandwidthLoggingClient(transport, tb.LogInterval, func(i ...interface{}) {
+		log.Info(tb.LogPrefix + fmt.Sprint(i...))
 	})
 	client.kcpSessions = sessions
 	if tb.LogInterval > 0 {

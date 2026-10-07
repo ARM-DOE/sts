@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/tls"
@@ -160,29 +161,30 @@ func GetReqReader(r *http.Request) (io.ReadCloser, error) {
 	return r.Body, nil
 }
 
-// GetJSONReader takes an arbitrary struct and generates a JSON reader with no
-// intermediate buffer.  It will also add gzip compression at specified level.
+// GetJSONReader takes an arbitrary struct and generates a replayable JSON
+// reader. It will also add gzip compression at the specified level.
 func GetJSONReader(data interface{}, compression int) (r io.Reader, err error) {
-	rp, wp := io.Pipe()
+	var encoded bytes.Buffer
 	var wz *gzip.Writer
 	var wj *json.Encoder
 	if compression != gzip.NoCompression {
-		wz, err = gzip.NewWriterLevel(wp, compression)
+		wz, err = gzip.NewWriterLevel(&encoded, compression)
 		if err != nil {
 			return
 		}
 		wj = json.NewEncoder(wz)
 	} else {
-		wj = json.NewEncoder(wp)
+		wj = json.NewEncoder(&encoded)
 	}
-	go func(d interface{}) {
-		_ = wj.Encode(d)
-		if wz != nil {
-			wz.Close()
+	if err = wj.Encode(data); err != nil {
+		return nil, err
+	}
+	if wz != nil {
+		if err = wz.Close(); err != nil {
+			return nil, err
 		}
-		wp.Close()
-	}(data)
-	return rp, nil
+	}
+	return bytes.NewReader(encoded.Bytes()), nil
 }
 
 // GracefulServer is net/http compatible graceful server.
@@ -410,19 +412,14 @@ type bandwidthMonitorTransport struct {
 	transport     http.RoundTripper
 	bytesSent     uint64
 	bytesReceived uint64
-	totalDuration uint64 // in nanoseconds
+	requests      uint64
 }
 
 func (t *bandwidthMonitorTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if t.transport == nil {
 		t.transport = http.DefaultTransport
 	}
-
-	start := time.Now()
-	defer func() {
-		duration := time.Since(start)
-		atomic.AddUint64(&t.totalDuration, uint64(duration))
-	}()
+	atomic.AddUint64(&t.requests, 1)
 
 	if req.Body != nil {
 		originalBody := req.Body
@@ -447,14 +444,14 @@ func (t *bandwidthMonitorTransport) GetBytesReceived() uint64 {
 	return atomic.LoadUint64(&t.bytesReceived)
 }
 
-func (t *bandwidthMonitorTransport) GetTotalDuration() time.Duration {
-	return time.Duration(atomic.LoadUint64(&t.totalDuration))
+func (t *bandwidthMonitorTransport) GetRequests() uint64 {
+	return atomic.LoadUint64(&t.requests)
 }
 
 func (t *bandwidthMonitorTransport) ResetCounters() {
 	atomic.StoreUint64(&t.bytesSent, 0)
 	atomic.StoreUint64(&t.bytesReceived, 0)
-	atomic.StoreUint64(&t.totalDuration, 0)
+	atomic.StoreUint64(&t.requests, 0)
 }
 
 type readCounter struct {
@@ -545,23 +542,26 @@ func (blc *BandwidthLoggingClient) logBandwidthUsage(
 ) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	lastReport := time.Now()
 
 	for {
 		select {
 		case <-ticker.C:
+			duration := time.Since(lastReport)
+			lastReport = time.Now()
 			sent := blc.monitor.GetBytesSent()
 			received := blc.monitor.GetBytesReceived()
-			duration := blc.monitor.GetTotalDuration()
+			requests := blc.monitor.GetRequests()
 
-			if duration > 0 {
+			if requests > 0 || sent > 0 || received > 0 {
 				sentBps := int64(float64(sent) / duration.Seconds())
 				receivedBps := int64(float64(received) / duration.Seconds())
 
 				lines := []string{
 					fmt.Sprintf("Raw bandwidth usage in the last %s:", interval),
+					fmt.Sprintf("  - Requests started: %d", requests),
 					fmt.Sprintf("  - Sent: %s (%s/s)", units.Base2Bytes(sent), units.Base2Bytes(sentBps)),
 					fmt.Sprintf("  - Received: %s (%s/s)", units.Base2Bytes(received), units.Base2Bytes(receivedBps)),
-					fmt.Sprintf("  - Total duration: %s", duration),
 				}
 				logFn(strings.Join(lines, "\n"))
 			} else {

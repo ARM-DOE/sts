@@ -285,7 +285,6 @@ IN:
     kcp-enabled: true
     kcp:
       host: 0.0.0.0
-      port: 1993
       send-window: 8192
       receive-window: 16384
       socket-read-buffer: 32MB
@@ -303,7 +302,6 @@ OUT:
         protocol: kcp-http
         kcp:
           host: receiver.example.org
-          port: 1993
           data-shards: 10
           parity-shards: 3
           disable-congestion-control: true
@@ -318,7 +316,7 @@ OUT:
 	if !conf.Server.Server.EnableKCP || serverKCP == nil {
 		t.Fatal("missing server KCP configuration")
 	}
-	if serverKCP.Host != "0.0.0.0" || serverKCP.Port != 1993 {
+	if serverKCP.Host != "0.0.0.0" || serverKCP.Port != 1992 {
 		t.Fatalf("unexpected server KCP address: %s:%d", serverKCP.Host, serverKCP.Port)
 	}
 	if serverKCP.Tuning != KCPTuningBalanced {
@@ -341,7 +339,7 @@ OUT:
 	if target.Protocol != "kcp-http" || target.KCP == nil {
 		t.Fatalf("unexpected target protocol configuration: %+v", target)
 	}
-	if target.KCP.Host != "receiver.example.org" || target.KCP.Port != 1993 {
+	if target.KCP.Host != "receiver.example.org" || target.KCP.Port != 1992 {
 		t.Fatalf("unexpected target KCP address: %+v", target.KCP)
 	}
 	if target.KCP.DataShards != 10 || target.KCP.ParityShards != 3 {
@@ -366,6 +364,7 @@ OUT:
         kcp:
           port: 1993
           fec-enabled: false
+          duplicate-packets: 1
     - name: second
       target:
         name: inherited-target
@@ -375,12 +374,30 @@ OUT:
 		t.Fatal(err)
 	}
 	first := conf.Client.Sources[0].Target
-	if first.KCP == nil || first.KCP.FECEnabled || first.KCP.DataShards != 0 || first.KCP.ParityShards != 0 {
+	if first.KCP == nil || first.KCP.FECEnabled || first.KCP.DataShards != 0 || first.KCP.ParityShards != 0 || first.KCP.DuplicatePackets != 1 {
 		t.Fatalf("FEC was not disabled: %+v", first.KCP)
 	}
 	second := conf.Client.Sources[1].Target
 	if second.Protocol != "kcp-http" || second.KCP == nil || second.KCP.Port != 1993 {
 		t.Fatalf("KCP target configuration was not inherited: %+v", second)
+	}
+}
+
+func TestYAMLKCPExplicitPortOverridesHTTPPort(t *testing.T) {
+	confEncoded := `
+IN:
+  server:
+    http-port: 1992
+    kcp-enabled: true
+    kcp:
+      port: 1993
+`
+	var conf Conf
+	if err := yaml.Unmarshal([]byte(confEncoded), &conf); err != nil {
+		t.Fatal(err)
+	}
+	if conf.Server.Server.KCP.Port != 1993 {
+		t.Fatalf("explicit KCP port was replaced: %d", conf.Server.Server.KCP.Port)
 	}
 }
 
@@ -413,6 +430,8 @@ func TestKCPConfValidate(t *testing.T) {
 		{name: "window", mutate: func(c *KCPConf) { c.SendWindow = 65536 }},
 		{name: "fec pair", mutate: func(c *KCPConf) { c.ParityShards = 0 }},
 		{name: "fec total", mutate: func(c *KCPConf) { c.DataShards, c.ParityShards = 250, 10 }},
+		{name: "duplicate packets", mutate: func(c *KCPConf) { c.DuplicatePackets = 11 }},
+		{name: "duplicate packets with fec", mutate: func(c *KCPConf) { c.DuplicatePackets = 1 }},
 		{name: "interval", mutate: func(c *KCPConf) { c.Interval = time.Millisecond }},
 		{name: "idle timeout", mutate: func(c *KCPConf) { c.IdleTimeout = 0 }},
 	}

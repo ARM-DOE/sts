@@ -72,6 +72,7 @@ func (c *clientApp) setDefaults() (err error) {
 		if c.conf.Target.KCP.Host == "" {
 			c.conf.Target.KCP.Host = c.host
 		}
+		c.conf.Target.KCP.ApplyDefaultPort(c.port)
 		if err = c.conf.Target.KCP.Validate(); err != nil {
 			return fmt.Errorf("invalid target KCP configuration: %w", err)
 		}

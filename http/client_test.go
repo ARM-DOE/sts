@@ -3,8 +3,10 @@ package http
 import (
 	"context"
 	"errors"
+	"io"
 	stdhttp "net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -58,5 +60,35 @@ func TestClientDestroyCancelsActiveRequest(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("request was not canceled")
+	}
+}
+
+func TestValidateRequestIsReplayableAndIdempotent(t *testing.T) {
+	var request *stdhttp.Request
+	transport := roundTripFunc(func(req *stdhttp.Request) (*stdhttp.Response, error) {
+		request = req
+		return &stdhttp.Response{
+			StatusCode: stdhttp.StatusOK,
+			Header:     make(stdhttp.Header),
+			Body:       io.NopCloser(strings.NewReader("{}")),
+		}, nil
+	})
+	client := &Client{
+		root: "https://example.test",
+		ctx:  context.Background(),
+		client: &BandwidthLoggingClient{
+			Client:  &stdhttp.Client{Transport: transport},
+			monitor: &bandwidthMonitorTransport{transport: transport},
+		},
+	}
+
+	if _, err := client.Validate(nil); err != nil {
+		t.Fatal(err)
+	}
+	if request.GetBody == nil {
+		t.Fatal("validation body is not replayable")
+	}
+	if request.Header.Get("Idempotency-Key") == "" {
+		t.Fatal("validation request is not marked idempotent")
 	}
 }

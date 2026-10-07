@@ -63,6 +63,7 @@ func (a *serverApp) init() (err error) {
 		if conf.Server.KCP.Host == "" {
 			conf.Server.KCP.Host = conf.Server.Host
 		}
+		conf.Server.KCP.ApplyDefaultPort(conf.Server.Port)
 		if err = conf.Server.KCP.Validate(); err != nil {
 			return fmt.Errorf("invalid server KCP configuration: %w", err)
 		}

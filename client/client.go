@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/alecthomas/units"
@@ -67,6 +68,8 @@ type Broker struct {
 	stop         bool
 	stopMux      sync.RWMutex
 	stopGraceful bool
+	transmitID   uint64
+	activeSends  int64
 
 	// Channels
 	chStop        chan bool
@@ -894,7 +897,25 @@ func (broker *Broker) startSend(wg *sync.WaitGroup) {
 				log.Debug("Sending:", p.GetName(), beg, beg+len,
 					"T:", p.GetFileTime())
 			}
+			transmitID := atomic.AddUint64(&broker.transmitID, 1)
+			activeSends := atomic.AddInt64(&broker.activeSends, 1)
+			callStarted := time.Now()
+			broker.info(fmt.Sprintf(
+				"Transmission %d started: active=%d, %.2f MB",
+				transmitID,
+				activeSends,
+				float64(payload.GetSize())/float64(1024*1024),
+			))
 			n, err := broker.Conf.Transmitter(payload)
+			activeSends = atomic.AddInt64(&broker.activeSends, -1)
+			broker.info(fmt.Sprintf(
+				"Transmission %d finished: active=%d, call=%s, body=%s to %s",
+				transmitID,
+				activeSends,
+				time.Since(callStarted).Round(time.Millisecond),
+				payload.GetStarted().Format(time.RFC3339Nano),
+				payload.GetCompleted().Format(time.RFC3339Nano),
+			))
 			if err == nil {
 				break
 			}

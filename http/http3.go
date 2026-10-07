@@ -14,11 +14,11 @@ import (
 
 // Default QUIC configuration values
 const (
-	DefaultQUICMaxStreams           int64         = 100
-	DefaultQUICMaxIdleTimeout       time.Duration = 30 * time.Second
-	DefaultQUICKeepAlive            time.Duration = 15 * time.Second
-	DefaultQUICMaxStreamReceiveWindow      uint64 = 6 * (1 << 20)  // 6 MB
-	DefaultQUICMaxConnectionReceiveWindow  uint64 = 15 * (1 << 20) // 15 MB
+	DefaultQUICMaxStreams                 int64         = 100
+	DefaultQUICMaxIdleTimeout             time.Duration = 30 * time.Second
+	DefaultQUICKeepAlive                  time.Duration = 15 * time.Second
+	DefaultQUICMaxStreamReceiveWindow     uint64        = 6 * (1 << 20)  // 6 MB
+	DefaultQUICMaxConnectionReceiveWindow uint64        = 15 * (1 << 20) // 15 MB
 )
 
 // buildHTTP3Client creates an HTTP3-capable client with QUIC transport
@@ -72,9 +72,8 @@ func (tb *TransportBuilder) buildHTTP3Client() (*BandwidthLoggingClient, error) 
 	}
 
 	// Wrap with bandwidth monitor
-	monitor := &bandwidthMonitorTransport{transport: transport}
-	client := newBandwidthLoggingClient(monitor, tb.LogInterval, func(i ...interface{}) {
-		log.Info(append([]interface{}{tb.LogPrefix}, i...)...)
+	client := newBandwidthLoggingClient(transport, tb.LogInterval, func(i ...interface{}) {
+		log.Info(tb.LogPrefix + fmt.Sprint(i...))
 	})
 
 	return client, nil

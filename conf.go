@@ -62,6 +62,7 @@ type KCPConf struct {
 	FECEnabled               bool          `yaml:"fec-enabled" json:"fec-enabled"`
 	DataShards               int           `yaml:"data-shards" json:"data-shards"`
 	ParityShards             int           `yaml:"parity-shards" json:"parity-shards"`
+	DuplicatePackets         int           `yaml:"duplicate-packets" json:"duplicate-packets"`
 	NoDelay                  bool          `yaml:"no-delay" json:"no-delay"`
 	Interval                 time.Duration `yaml:"interval" json:"interval"`
 	FastResend               int           `yaml:"fast-resend" json:"fast-resend"`
@@ -70,6 +71,7 @@ type KCPConf struct {
 	SocketReadBuffer         uint64        `yaml:"socket-read-buffer" json:"socket-read-buffer"`
 	SocketWriteBuffer        uint64        `yaml:"socket-write-buffer" json:"socket-write-buffer"`
 	IdleTimeout              time.Duration `yaml:"idle-timeout" json:"idle-timeout"`
+	isPortSet                bool
 }
 
 type auxKCPConf struct {
@@ -82,6 +84,7 @@ type auxKCPConf struct {
 	FECEnabled               *bool            `yaml:"fec-enabled" json:"fec-enabled"`
 	DataShards               int              `yaml:"data-shards" json:"data-shards"`
 	ParityShards             int              `yaml:"parity-shards" json:"parity-shards"`
+	DuplicatePackets         int              `yaml:"duplicate-packets" json:"duplicate-packets"`
 	NoDelay                  *bool            `yaml:"no-delay" json:"no-delay"`
 	Interval                 marshal.Duration `yaml:"interval" json:"interval"`
 	FastResend               int              `yaml:"fast-resend" json:"fast-resend"`
@@ -95,6 +98,7 @@ type auxKCPConf struct {
 func (c *KCPConf) applyAux(aux *auxKCPConf) (err error) {
 	c.Host = aux.Host
 	c.Port = aux.Port
+	c.isPortSet = aux.Port != 0
 	c.Tuning = strings.ToLower(aux.Tuning)
 	if c.Tuning == "" {
 		c.Tuning = KCPTuningBalanced
@@ -128,6 +132,7 @@ func (c *KCPConf) applyAux(aux *auxKCPConf) (err error) {
 		c.DataShards = 0
 		c.ParityShards = 0
 	}
+	c.DuplicatePackets = aux.DuplicatePackets
 	c.NoDelay = true
 	if aux.NoDelay != nil {
 		c.NoDelay = *aux.NoDelay
@@ -180,6 +185,13 @@ func (c *KCPConf) UnmarshalJSON(data []byte) error {
 	return c.applyAux(aux)
 }
 
+// ApplyDefaultPort replaces the KCP fallback when no explicit port was configured.
+func (c *KCPConf) ApplyDefaultPort(port int) {
+	if !c.isPortSet {
+		c.Port = port
+	}
+}
+
 // Validate checks values constrained by KCP's wire format and session APIs.
 func (c *KCPConf) Validate() error {
 	if c.Tuning != KCPTuningBalanced && c.Tuning != KCPTuningManual {
@@ -199,6 +211,12 @@ func (c *KCPConf) Validate() error {
 	}
 	if (c.DataShards == 0) != (c.ParityShards == 0) {
 		return fmt.Errorf("kcp data-shards and parity-shards must both be zero or both be positive")
+	}
+	if c.DuplicatePackets < 0 || c.DuplicatePackets > 10 {
+		return fmt.Errorf("kcp duplicate-packets must be between 0 and 10")
+	}
+	if c.FECEnabled && c.DuplicatePackets > 0 {
+		return fmt.Errorf("kcp duplicate-packets cannot be combined with FEC")
 	}
 	if c.Interval < 10*time.Millisecond || c.Interval > 5*time.Second {
 		return fmt.Errorf("kcp interval must be between 10ms and 5s")
@@ -794,6 +812,11 @@ func (t *TargetConf) applyAux(aux *auxTargetConf) (err error) {
 	t.Protocol = aux.Protocol
 	t.HTTP3Port = aux.HTTP3Port
 	t.QUIC = aux.QUIC
+	if t.KCP != nil && t.Host != "" {
+		var port int
+		_, port, err = t.ParseHost()
+		t.KCP.ApplyDefaultPort(port)
+	}
 	return
 }
 
@@ -919,6 +942,9 @@ func (h *HTTPServer) applyAux(aux *auxHTTPServer) (err error) {
 	h.HTTP3Port = aux.HTTP3Port
 	h.QUIC = aux.QUIC
 	h.HSTS = aux.HSTS
+	if h.KCP != nil {
+		h.KCP.ApplyDefaultPort(h.Port)
+	}
 	return
 }
 

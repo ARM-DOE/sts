@@ -285,6 +285,12 @@ func (h *Client) Validate(sent []sts.Pollable) (polled []sts.Polled, err error) 
 		return
 	}
 	req, err := http.NewRequestWithContext(h.ctx, "POST", url, r)
+	if err != nil {
+		return
+	}
+	// Validation only reads server state, so retrying it on a stale pooled
+	// connection is safe. A replayable body lets net/http perform that retry.
+	req.Header.Set("Idempotency-Key", "sts-validate")
 	if h.Compression != gzip.NoCompression {
 		req.Header.Add(HeaderContentEncoding, HeaderGzip)
 	}
@@ -293,9 +299,6 @@ func (h *Client) Validate(sent []sts.Pollable) (polled []sts.Polled, err error) 
 	req.Header.Add(HeaderSep, string(os.PathSeparator))
 	if h.TargetKey != "" {
 		req.Header.Add(HeaderKey, h.TargetKey)
-	}
-	if err != nil {
-		return
 	}
 	resp, err := h.client.Do(req)
 	if err != nil {

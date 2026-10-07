@@ -56,3 +56,22 @@ func TestComputeThroughput(t *testing.T) {
 	}
 	verify(t, outputs, "50, 5.00s, 10.00 b/s (47% idle)")
 }
+
+func TestComputeConcurrentThroughputOutOfCompletionOrder(t *testing.T) {
+	start := time.Now()
+	outputs := []throughput{
+		{100, start.Add(time.Second).UnixNano(), start.Add(3 * time.Second).UnixNano()},
+		{100, start.UnixNano(), start.Add(4 * time.Second).UnixNano()},
+		{100, start.Add(5 * time.Second).UnixNano(), start.Add(6 * time.Second).UnixNano()},
+	}
+	verify(t, outputs, "300, 5.00s, 60.00 b/s (16% idle)")
+}
+
+func TestComputeConcurrentThroughputWithContainedInterval(t *testing.T) {
+	start := time.Now()
+	outputs := []throughput{
+		{100, start.UnixNano(), start.Add(10 * time.Second).UnixNano()},
+		{100, start.Add(5 * time.Second).UnixNano(), start.Add(6 * time.Second).UnixNano()},
+	}
+	verify(t, outputs, "200, 10.00s, 20.00 b/s (0% idle)")
+}

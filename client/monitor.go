@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -68,19 +69,25 @@ func compute(output []throughput) (bytes int64, seconds, pct float64) {
 	if len(output) == 0 {
 		return
 	}
-	var t int64
-	duration := output[len(output)-1].nanoStop - output[0].nanoStart
-	active := duration
-	bytes = output[0].bytes
-	// Attempt to remove times where nothing was being sent
-	for i, r := range output[1:] {
-		// i is actually the real index minus 1 since we are slicing at 1
-		t = output[i].nanoStop
-		if r.nanoStart > t {
-			active -= (r.nanoStart - t)
+	intervals := append([]throughput(nil), output...)
+	sort.Slice(intervals, func(i, j int) bool {
+		return intervals[i].nanoStart < intervals[j].nanoStart
+	})
+	start := intervals[0].nanoStart
+	stop := intervals[0].nanoStop
+	active := int64(0)
+	for _, interval := range intervals {
+		bytes += interval.bytes
+		if interval.nanoStart > stop {
+			active += stop - start
+			start = interval.nanoStart
+			stop = interval.nanoStop
+		} else if interval.nanoStop > stop {
+			stop = interval.nanoStop
 		}
-		bytes += r.bytes
 	}
+	active += stop - start
+	duration := stop - intervals[0].nanoStart
 	seconds = time.Duration(time.Nanosecond * time.Duration(active)).Seconds()
 	pct = float64(100) * float64(duration-active) / float64(duration)
 	return

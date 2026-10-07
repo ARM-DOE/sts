@@ -101,9 +101,8 @@ func (tb *TransportBuilder) buildHTTPSClient() (*BandwidthLoggingClient, error) 
 	}
 	tr.DisableKeepAlives = true
 
-	monitor := &bandwidthMonitorTransport{transport: tr}
-	client := newBandwidthLoggingClient(monitor, tb.LogInterval, func(i ...interface{}) {
-		log.Info(append([]interface{}{tb.LogPrefix}, i...)...)
+	client := newBandwidthLoggingClient(tr, tb.LogInterval, func(i ...interface{}) {
+		log.Info(tb.LogPrefix + fmt.Sprint(i...))
 	})
 
 	return client, nil

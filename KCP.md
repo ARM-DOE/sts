@@ -67,6 +67,7 @@ Enabling KCP on the server adds a parallel UDP listener; it does not replace the
 | `fec-enabled` | `true` |
 | `data-shards` | `20` |
 | `parity-shards` | `2` |
+| `duplicate-packets` | `0` |
 | `no-delay` | `true` |
 | `interval` | `20ms` |
 | `fast-resend` | `2` |
@@ -88,6 +89,7 @@ kcp:
   fec-enabled: true
   data-shards: 20
   parity-shards: 2
+  duplicate-packets: 0
   no-delay: true
   interval: 20ms
   fast-resend: 2
@@ -99,6 +101,8 @@ kcp:
 ```
 
 Set `fec-enabled: false` on both peers to benchmark without forward error correction. With FEC enabled, approximate parity overhead is `parity-shards / data-shards`; `20/2` adds approximately 10% before retransmissions and other protocol overhead.
+
+`duplicate-packets` sends that many additional copies of every KCP output packet. It cannot be combined with FEC. For example, `fec-enabled: false` with `duplicate-packets: 1` provides two identical wire copies without Reed-Solomon encoding and decoding.
 
 ## Window sizing
 
@@ -120,10 +124,15 @@ The sender logs KCP session metrics at the source's existing `stat-interval`; th
 - Average and maximum smoothed RTT
 - Average and maximum RTT variance
 - Average and maximum retransmission timeout
+- Process-wide interval counts for outbound segments, retransmissions, inferred
+  loss, FEC recovery/errors, and KCP/UDP input errors
 
 Useful request throughput continues to be logged at the same interval by the existing bandwidth monitor. Use `stat-interval: 10s` to `30s` for short controlled benchmarks. For normal operation, keep the five-minute default to reveal trends without producing excessive logs.
 
-Retransmission, inferred-loss, and FEC-recovery counters in `kcp-go` are process-global rather than session-local. They are not currently labeled as per-source metrics; a process-level collector is the next prerequisite for adaptive `auto` tuning.
+Retransmission, inferred-loss, and FEC-recovery counters in `kcp-go` are
+process-global rather than session-local. Their interval deltas are included in
+the sender log but may combine traffic from multiple KCP sources in one process.
+Per-source counters remain a prerequisite for adaptive `auto` tuning.
 
 ## Security
 
