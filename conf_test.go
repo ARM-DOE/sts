@@ -2,6 +2,7 @@ package sts
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,62 @@ import (
 
 	yaml "gopkg.in/yaml.v2"
 )
+
+func TestServerS3Destinations(t *testing.T) {
+	for _, format := range []string{"yaml", "json"} {
+		for _, withOverrides := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/overrides=%t", format, withOverrides), func(t *testing.T) {
+				serverConfig := map[string]interface{}{
+					"s3": map[string]interface{}{
+						"aws-region": "us-west-2",
+						"bucket":     "default-bucket",
+						"prefix":     "incoming",
+					},
+				}
+				if withOverrides {
+					serverConfig["s3-sources"] = map[string]interface{}{
+						"client-b": map[string]interface{}{
+							"aws-region": "us-east-1",
+							"bucket":     "client-b-bucket",
+						},
+					}
+				}
+				input := map[string]interface{}{"IN": serverConfig}
+				var encoded []byte
+				var err error
+				var conf Conf
+				if format == "yaml" {
+					encoded, err = yaml.Marshal(input)
+					if err == nil {
+						err = yaml.Unmarshal(encoded, &conf)
+					}
+				} else {
+					encoded, err = json.Marshal(input)
+					if err == nil {
+						err = json.Unmarshal(encoded, &conf)
+					}
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if conf.Server == nil || conf.Server.S3 == nil {
+					t.Fatal("missing default S3 destination")
+				}
+				if *conf.Server.S3 != (S3{Region: "us-west-2", Bucket: "default-bucket", Prefix: "incoming"}) {
+					t.Fatalf("unexpected default destination: %+v", conf.Server.S3)
+				}
+				if withOverrides {
+					destination := conf.Server.S3Sources["client-b"]
+					if destination == nil || *destination != (S3{Region: "us-east-1", Bucket: "client-b-bucket"}) {
+						t.Fatalf("unexpected source destination: %+v", destination)
+					}
+				} else if len(conf.Server.S3Sources) != 0 {
+					t.Fatal("legacy config unexpectedly has source overrides")
+				}
+			})
+		}
+	}
+}
 
 func TestJSON(t *testing.T) {
 	confEncoded := `

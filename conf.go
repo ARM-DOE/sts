@@ -860,14 +860,15 @@ func (t *TargetConf) ParseHost() (host string, port int, err error) {
 
 // ServerConf is the struct for housing all incoming configuration
 type ServerConf struct {
-	SourceControl *DBConf     `yaml:"control" json:"control"`
-	Sources       []string    `yaml:"sources" json:"sources"`
-	Keys          []string    `yaml:"keys" json:"keys"`
-	Dirs          *ServerDirs `yaml:"dirs" json:"dirs"`
-	Server        *HTTPServer `yaml:"server" json:"server"`
-	Queue         *Queue      `yaml:"queue" json:"queue"`
-	S3            *S3         `yaml:"s3" json:"s3"`
-	PermitLogBuf  bool        `yaml:"log-buffering" json:"log-buffering"`
+	SourceControl *DBConf        `yaml:"control" json:"control"`
+	Sources       []string       `yaml:"sources" json:"sources"`
+	Keys          []string       `yaml:"keys" json:"keys"`
+	Dirs          *ServerDirs    `yaml:"dirs" json:"dirs"`
+	Server        *HTTPServer    `yaml:"server" json:"server"`
+	Queue         *Queue         `yaml:"queue" json:"queue"`
+	S3            *S3            `yaml:"s3" json:"s3"`
+	S3Sources     map[string]*S3 `yaml:"s3-sources,omitempty" json:"s3-sources,omitempty"`
+	PermitLogBuf  bool           `yaml:"log-buffering" json:"log-buffering"`
 }
 
 // DBConf is the struct for defining a database connection

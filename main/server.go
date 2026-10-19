@@ -50,6 +50,50 @@ func (a *serverApp) standardValidator(source, key string) bool {
 	return true
 }
 
+func newS3ExporterForSource(conf *sts.ServerConf) (func(string) sts.Exporter, error) {
+	newExporter := func(destination *sts.S3) (sts.Exporter, error) {
+		if destination == nil || strings.TrimSpace(destination.Bucket) == "" {
+			return nil, fmt.Errorf("S3 destination requires a bucket")
+		}
+		cfg, err := config.LoadDefaultConfig(context.Background(), func(options *config.LoadOptions) error {
+			if destination.Region != "" {
+				options.Region = destination.Region
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		return export.NewS3Upload(cfg, destination.Bucket, destination.Prefix)
+	}
+
+	var defaultExporter sts.Exporter
+	if conf.S3 != nil {
+		var err error
+		defaultExporter, err = newExporter(conf.S3)
+		if err != nil {
+			return nil, fmt.Errorf("default S3 destination: %w", err)
+		}
+	}
+	sourceExporters := make(map[string]sts.Exporter, len(conf.S3Sources))
+	for source, destination := range conf.S3Sources {
+		if strings.TrimSpace(source) == "" {
+			return nil, fmt.Errorf("S3 source name must not be empty")
+		}
+		exporter, err := newExporter(destination)
+		if err != nil {
+			return nil, fmt.Errorf("S3 destination for source %q: %w", source, err)
+		}
+		sourceExporters[source] = exporter
+	}
+	return func(source string) sts.Exporter {
+		if exporter, ok := sourceExporters[source]; ok {
+			return exporter
+		}
+		return defaultExporter
+	}, nil
+}
+
 func (a *serverApp) init() (err error) {
 	conf := a.conf
 	if conf.Server.Port == 0 {
@@ -93,33 +137,9 @@ func (a *serverApp) init() (err error) {
 		}
 	}
 
-	var exporter sts.Exporter
-	if conf.S3 != nil {
-		log.Debug("Initializing S3 exporter with bucket:", conf.S3.Bucket, "region:", conf.S3.Region, "prefix:", conf.S3.Prefix)
-		var cfg aws.Config
-		cfg, err = config.LoadDefaultConfig(context.Background(),
-			func(o *config.LoadOptions) error {
-				if conf.S3.Region != "" {
-					o.Region = conf.S3.Region
-				}
-				return nil
-			})
-		if err != nil {
-			log.Error("Failed to load AWS config:", err)
-			return
-		}
-		exporter, err = export.NewS3Upload(
-			cfg,
-			conf.S3.Bucket,
-			conf.S3.Prefix,
-		)
-		if err != nil {
-			log.Error("Failed to create S3 exporter:", err)
-			return
-		}
-		log.Debug("S3 exporter initialized successfully")
-	} else {
-		log.Debug("S3 configuration is nil, exporter will not be initialized")
+	exporterForSource, err := newS3ExporterForSource(conf)
+	if err != nil {
+		return err
 	}
 
 	pathSep := string(os.PathSeparator)
@@ -135,7 +155,7 @@ func (a *serverApp) init() (err error) {
 				filepath.Join(dirs.LogIn, sourcePathReady),
 				nil, nil, !a.conf.PermitLogBuf),
 			dispatcher,
-			exporter,
+			exporterForSource(source),
 		)
 	}
 
