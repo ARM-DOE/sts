@@ -1,12 +1,16 @@
 package export
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -186,6 +190,105 @@ func TestS3Upload_Upload(t *testing.T) {
 				if err := verifyUpload(tt.fileName); err != nil {
 					t.Errorf("Failed to verify upload: %v", err)
 				}
+			}
+		})
+	}
+}
+
+func TestS3UploadTransferManager(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		size         int
+		wantParts    int
+		uploadFails  bool
+		etagMismatch bool
+		wantErr      string
+	}{
+		{name: "small", size: 100},
+		{name: "exact part size", size: DefaultPartSize},
+		{name: "above part size", size: DefaultPartSize + 1, wantParts: 2},
+		{name: "multiple parts", size: 2*DefaultPartSize + 17, wantParts: 3},
+		{name: "upload failure", size: 100, uploadFails: true, wantErr: "failed to upload file"},
+		{name: "ETag mismatch", size: 100, etagMismatch: true, wantErr: "ETag mismatch"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			filePath := filepath.Join(t.TempDir(), "upload.bin")
+			if err := os.WriteFile(filePath, bytes.Repeat([]byte("a"), test.size), 0600); err != nil {
+				t.Fatal(err)
+			}
+			etag, err := computeS3MultipartETag(filePath, DefaultPartSize)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.etagMismatch {
+				etag = `"mismatch"`
+			}
+
+			var mutex sync.Mutex
+			parts := make(map[string]bool)
+			singleUploads, starts, completions := 0, 0, 0
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				mutex.Lock()
+				defer mutex.Unlock()
+				if request.URL.Path != "/test-bucket/test/upload.bin" {
+					t.Errorf("unexpected upload path: %s", request.URL.Path)
+				}
+				if _, err := io.Copy(io.Discard, request.Body); err != nil {
+					t.Errorf("read request body: %v", err)
+				}
+				if test.uploadFails {
+					http.Error(writer, "upload rejected", http.StatusForbidden)
+					return
+				}
+				writer.Header().Set("Content-Type", "application/xml")
+				switch {
+				case request.Method == http.MethodPost && request.URL.Query().Has("uploads"):
+					starts++
+					fmt.Fprint(writer, "<InitiateMultipartUploadResult><UploadId>test-upload</UploadId></InitiateMultipartUploadResult>")
+				case request.Method == http.MethodPut && request.URL.Query().Get("uploadId") == "test-upload":
+					parts[request.URL.Query().Get("partNumber")] = true
+					writer.Header().Set("ETag", `"part-etag"`)
+				case request.Method == http.MethodPost && request.URL.Query().Get("uploadId") == "test-upload":
+					completions++
+					fmt.Fprintf(writer, "<CompleteMultipartUploadResult><ETag>%s</ETag></CompleteMultipartUploadResult>", etag)
+				case request.Method == http.MethodPut && request.URL.Query().Get("uploadId") == "":
+					singleUploads++
+					writer.Header().Set("ETag", etag)
+				default:
+					t.Errorf("unexpected request: %s %s", request.Method, request.URL)
+					writer.WriteHeader(http.StatusBadRequest)
+				}
+			}))
+			defer server.Close()
+
+			upload, err := NewS3Upload(aws.Config{
+				Region:           "us-east-1",
+				BaseEndpoint:     aws.String(server.URL),
+				Credentials:      aws.AnonymousCredentials{},
+				HTTPClient:       server.Client(),
+				RetryMaxAttempts: 1,
+			}, "test-bucket", "test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = upload.Upload(filePath, "upload.bin")
+			if test.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+					t.Fatalf("Upload() error = %v, want %q", err, test.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			mutex.Lock()
+			defer mutex.Unlock()
+			if test.wantParts == 0 {
+				if singleUploads != 1 || starts != 0 || len(parts) != 0 || completions != 0 {
+					t.Fatalf("expected one single-part upload, got single=%d starts=%d parts=%d completions=%d", singleUploads, starts, len(parts), completions)
+				}
+			} else if singleUploads != 0 || starts != 1 || len(parts) != test.wantParts || completions != 1 {
+				t.Fatalf("expected %d-part upload, got single=%d starts=%d parts=%d completions=%d", test.wantParts, singleUploads, starts, len(parts), completions)
 			}
 		})
 	}

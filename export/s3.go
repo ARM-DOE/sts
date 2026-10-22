@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
@@ -22,22 +22,23 @@ type S3Upload struct {
 	bucket     string
 	pathPrefix string
 	ctx        context.Context
-	uploader   *manager.Uploader
+	uploader   *transfermanager.Client
 }
 
 func NewS3Upload(cfg aws.Config, bucket, pathPrefix string) (*S3Upload, error) {
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		if cfg.BaseEndpoint != nil && *cfg.BaseEndpoint != "" {
+			o.UsePathStyle = true
+		}
+	})
 	return &S3Upload{
 		bucket:     bucket,
 		pathPrefix: pathPrefix,
 		ctx:        context.Background(),
-		uploader: manager.NewUploader(s3.NewFromConfig(cfg), func(u *manager.Uploader) {
-			u.PartSize = DefaultPartSize
+		uploader: transfermanager.New(client, func(u *transfermanager.Options) {
+			u.PartSizeBytes = DefaultPartSize
+			u.MultipartUploadThreshold = DefaultPartSize + 1
 			u.Concurrency = DefaultConcurrency
-			if cfg.BaseEndpoint != nil && *cfg.BaseEndpoint != "" {
-				u.ClientOptions = append(u.ClientOptions, func(o *s3.Options) {
-					o.UsePathStyle = true // Use path-style requests for MinIO compatibility
-				})
-			}
 		}),
 	}, nil
 }
@@ -50,7 +51,7 @@ func (s *S3Upload) Upload(filePath, fileName string) error {
 	}
 	defer file.Close()
 
-	out, err := s.uploader.Upload(s.ctx, &s3.PutObjectInput{
+	out, err := s.uploader.UploadObject(s.ctx, &transfermanager.UploadObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(filepath.Join(s.pathPrefix, fileName)),
 		Body:   file,
